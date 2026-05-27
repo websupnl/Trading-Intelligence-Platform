@@ -1,0 +1,105 @@
+import logging
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import select
+from app.config import get_settings
+from app.database import AsyncSessionLocal
+from app.models.signals import Signal
+from app.services.risk_engine import RiskEngine
+from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
+from app.schemas.risk import RiskCheckRequest
+
+logger = logging.getLogger(__name__)
+
+AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.78
+MAX_AUTO_NOTIONAL = 500.0  # max $500 per auto trade
+
+
+class AutoTraderService:
+    def __init__(self):
+        self.settings = get_settings()
+        self.risk_engine = RiskEngine()
+        self.broker = AlpacaBroker()
+
+    async def process_pending_signals(self) -> int:
+        """Auto-trade high-confidence signals in paper mode. Returns count traded."""
+        # Safety checks
+        if self.settings.kill_switch_enabled:
+            logger.info("Kill switch actief - auto trader gestopt")
+            return 0
+        if self.settings.trading_mode != "paper":
+            logger.info("Auto trader alleen in paper mode")
+            return 0
+        if self.settings.require_manual_confirmation:
+            logger.info("Handmatige bevestiging vereist - auto trader gestopt")
+            return 0
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Signal).where(
+                    Signal.status == "pending",
+                    Signal.confidence >= AUTO_TRADE_CONFIDENCE_THRESHOLD,
+                ).order_by(Signal.confidence.desc()).limit(5)
+            )
+            signals = result.scalars().all()
+
+        if not signals:
+            return 0
+
+        executed = 0
+        for signal in signals:
+            try:
+                result = await self._execute_signal(signal)
+                if result:
+                    executed += 1
+            except Exception as e:
+                logger.error(f"Auto trade fout voor {signal.asset}: {e}")
+
+        return executed
+
+    async def _execute_signal(self, signal: Signal) -> bool:
+        risk_req = RiskCheckRequest(
+            symbol=signal.asset,
+            side=signal.direction,
+            quantity=1,
+            confidence=signal.confidence,
+            stop_loss=signal.suggested_stop,
+            mode="paper",
+            estimated_notional=MAX_AUTO_NOTIONAL,
+        )
+        risk_result = self.risk_engine.check(risk_req)
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Signal).where(Signal.id == signal.id))
+            db_signal = result.scalar_one_or_none()
+            if not db_signal:
+                return False
+
+            if not risk_result.approved:
+                db_signal.status = "risk_rejected"
+                db_signal.risk_check_result = risk_result.model_dump()
+                await db.commit()
+                logger.info(f"Auto trade geweigerd door risk: {signal.asset} — {risk_result.reasons}")
+                return False
+
+            try:
+                order = await self.broker.submit_order(
+                    symbol=signal.asset,
+                    qty=1,
+                    notional=None,
+                    side=signal.direction,
+                )
+                db_signal.status = "paper_traded"
+                db_signal.risk_check_result = risk_result.model_dump()
+                await db.commit()
+                logger.info(f"Auto paper trade uitgevoerd: {signal.asset} {signal.direction}")
+                return True
+
+            except AlpacaNotConfiguredError:
+                db_signal.status = "broker_error"
+                await db.commit()
+                return False
+            except AlpacaAPIError as e:
+                logger.error(f"Broker fout voor {signal.asset}: {e}")
+                db_signal.status = "broker_error"
+                await db.commit()
+                return False

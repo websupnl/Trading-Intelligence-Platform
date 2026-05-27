@@ -26,3 +26,15 @@ async def ingest_news(db: AsyncSession = Depends(get_db)):
         return {"status": "ok", "ingested": count}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/trigger-pipeline")
+async def trigger_pipeline():
+    """Manually trigger the full analysis pipeline."""
+    from app.workers.celery_app import celery_app
+    celery_app.send_task("app.tasks.news_tasks.ingest_news")
+    celery_app.send_task("app.tasks.social_tasks.fetch_reddit")
+    celery_app.send_task("app.tasks.analysis_tasks.analyze_news")
+    celery_app.send_task("app.tasks.analysis_tasks.detect_rumours")
+    celery_app.send_task("app.tasks.signal_tasks.generate_signals")
+    return {"status": "ok", "message": "Pipeline getriggerd — data verschijnt binnen 2-5 minuten"}

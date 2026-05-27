@@ -72,3 +72,17 @@ class RiskEngine:
             max_position_size=MAX_POSITION_SIZE_USD,
             blocked_by_rule=blocked_by,
         )
+
+    async def get_status(self) -> dict:
+        return {
+            "trading_mode": settings.trading_mode,
+            "live_trading_enabled": settings.live_trading_enabled,
+            "kill_switch_enabled": settings.kill_switch_enabled,
+            "require_manual_confirmation": settings.require_manual_confirmation,
+            "max_position_size_usd": MAX_POSITION_SIZE_USD,
+            "max_daily_loss_pct": MAX_DAILY_LOSS_PCT,
+            "max_open_positions": MAX_OPEN_POSITIONS,
+            "max_trades_per_day": MAX_TRADES_PER_DAY,
+            "min_confidence_for_auto": MIN_CONFIDENCE_FOR_AUTO,
+            "auto_trade_threshold": 0.78,
+        }
