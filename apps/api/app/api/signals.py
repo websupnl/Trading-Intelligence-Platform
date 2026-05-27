@@ -1,0 +1,68 @@
+from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
+from app.database import get_db
+from app.models.signals import Signal
+from app.services.risk_engine import RiskEngine
+from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
+from app.schemas.risk import RiskCheckRequest
+
+router = APIRouter(prefix="/api/signals")
+risk_engine = RiskEngine()
+broker = AlpacaBroker()
+
+
+@router.get("")
+async def get_signals(limit: int = Query(50, le=200), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Signal).order_by(desc(Signal.created_at)).limit(limit))
+    items = result.scalars().all()
+    return [{"id": i.id, "asset": i.asset, "direction": i.direction, "confidence": i.confidence,
+             "reason": i.reason, "status": i.status, "risk_reward": i.risk_reward,
+             "suggested_entry": i.suggested_entry, "suggested_stop": i.suggested_stop,
+             "risk_check_result": i.risk_check_result, "created_at": i.created_at}
+            for i in items]
+
+
+@router.post("/{signal_id}/paper-trade")
+async def paper_trade_signal(signal_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Signal).where(Signal.id == signal_id))
+    signal = result.scalar_one_or_none()
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal niet gevonden")
+
+    risk_req = RiskCheckRequest(
+        symbol=signal.asset,
+        side=signal.direction,
+        quantity=1,
+        confidence=signal.confidence,
+        stop_loss=signal.suggested_stop,
+        mode="paper",
+    )
+    risk_result = risk_engine.check(risk_req)
+
+    if not risk_result.approved:
+        signal.status = "risk_rejected"
+        await db.commit()
+        raise HTTPException(status_code=422, detail={"status": "risk_rejected", "reasons": risk_result.reasons})
+
+    try:
+        order = await broker.submit_order(symbol=signal.asset, qty=1, notional=None, side=signal.direction)
+        signal.status = "paper_traded"
+        signal.risk_check_result = risk_result.model_dump()
+        await db.commit()
+        return {"status": "paper_traded", "order": order}
+    except AlpacaNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except AlpacaAPIError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/{signal_id}/reject")
+async def reject_signal(signal_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Signal).where(Signal.id == signal_id))
+    signal = result.scalar_one_or_none()
+    if not signal:
+        raise HTTPException(status_code=404, detail="Signal niet gevonden")
+    signal.status = "rejected"
+    await db.commit()
+    return {"status": "rejected"}

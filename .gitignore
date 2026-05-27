@@ -1,0 +1,67 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node.js
+node_modules/
+.next/
+out/
+.turbo/
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+*.crt
+
+# Memory (keep structure, not content for sensitive data)
+memory/trades/*.md
+memory/reflections/*.md
+memory/daily/*.md
+memory/weekly/*.md
+memory/pending-rules/*.md
+memory/active-rules/*.md
+memory/rejected-rules/*.md
+memory/sources/*.md
+memory/lessons/*.md
+memory/strategies/*.md
+memory/raw/*.md
+
+# Celery beat schedule
+celerybeat-schedule
+celerybeat.pid
+
+# Alembic
+apps/api/app/migrations/versions/*.pyc
