@@ -139,9 +139,9 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - INTERNAL_API_URL=http://api:8000
     expose:
       - "3000"
@@ -154,3 +154,8 @@ volumes:
   redis_data:
   qdrant_data:
   memory_data:
+
+networks:
+  default:
+    name: coolify
+    external: true
