@@ -181,6 +181,8 @@ async def stream_chat(messages: list[dict], context: str | None = None) -> Async
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
     system = SYSTEM_PROMPT
+    if settings.anthropic_enable_web_search:
+        system += "\n\nJe hebt toegang tot internet zoeken via de web_search tool. Gebruik dit voor actueel nieuws, koersen, earnings, en marktonderzoek."
     if context:
         system += f"\n\nHuidige pagina context: {context}"
 
@@ -189,13 +191,23 @@ async def stream_chat(messages: list[dict], context: str | None = None) -> Async
     max_iterations = 5
 
     for iteration in range(max_iterations):
+        # Build tools list
+        tools_list = list(TOOLS)
+        if settings.anthropic_enable_web_search:
+            tools_list.append({
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 5,
+            })
+
         # Non-streaming call to detect tool use
         response = client.messages.create(
             model=settings.anthropic_model,
             max_tokens=settings.anthropic_max_tokens,
             system=system,
-            tools=TOOLS,
+            tools=tools_list,
             messages=current_messages,
+            betas=["web-search-2025-03-05"] if settings.anthropic_enable_web_search else [],
         )
 
         # Collect text from this response
