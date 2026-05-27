@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.logging_config import setup_logging
-from app.api import health, config, trading, risk, news, social, rumours, signals, memory, audit, settings as settings_router
+from app.api import health, config, trading, risk, news, social, rumours, signals, memory, audit, settings as settings_router, chat
 from app.services.audit import AuditLogService
 from app.database import AsyncSessionLocal
 from app.config import get_settings
@@ -48,3 +48,4 @@ app.include_router(signals.router)
 app.include_router(memory.router)
 app.include_router(audit.router)
 app.include_router(settings_router.router)
+app.include_router(chat.router)

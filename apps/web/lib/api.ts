@@ -60,4 +60,13 @@ export const api = {
 
   // Settings
   getSettings: () => apiFetch('/api/settings'),
+
+  // Chat - returns a ReadableStream for SSE
+  chatStream: async (messages: {role: string; content: string}[], context?: string): Promise<Response> => {
+    return fetch(`${API_BASE}/api/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, context }),
+    });
+  },
 };
