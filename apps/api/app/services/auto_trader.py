@@ -11,6 +11,7 @@ from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, A
 from app.schemas.risk import RiskCheckRequest
 from app.services.runtime_state import get_runtime_value
 from app.services.order_recorder import record_submitted_order
+from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,14 @@ class AutoTraderService:
                 ))
 
                 await db.commit()
+                await NotificationService(db).send(
+                    "auto_trade_executed",
+                    f"Trading OS - Auto {mode} trade: {signal.asset} {signal.direction.upper()}",
+                    f"Confidence: {signal.confidence:.0%}. Order is door risk checks goedgekeurd.",
+                    severity="warning" if mode == "paper" else "critical",
+                    entity_type="signal",
+                    entity_id=signal.id,
+                )
                 logger.info(f"Auto {mode} trade uitgevoerd: {signal.asset} {signal.direction}")
                 return True
 

@@ -15,6 +15,7 @@ from app.database import AsyncSessionLocal
 from app.models.trades import Trade
 from app.models.memory import MemoryEntry
 from app.models.audit import AuditLog
+from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +311,17 @@ class TradeTrackerService:
                     updated_at=datetime.now(timezone.utc),
                 ))
                 await db.commit()
+                await NotificationService(db).send(
+                    "trade_reflection_written",
+                    f"Trading OS - AI trade-les: {symbol} {side.upper()}",
+                    (
+                        f"P&L: ${pnl:.2f} ({pnl_pct:.1f}%)\n"
+                        f"Les: {(lesson or 'Geen les gegenereerd')[:350]}"
+                    ),
+                    severity="info" if pnl >= 0 else "warning",
+                    entity_type="trade",
+                    entity_id=trade_data["id"],
+                )
 
             # Write to memory file
             await self._write_memory_file(symbol, reflection, trade_data)

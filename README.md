@@ -44,6 +44,7 @@ Vul in `.env` in om functies te activeren:
 | `OPENAI_API_KEY` | https://platform.openai.com/ | AI fallback |
 | `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` | https://www.reddit.com/prefs/apps | Social monitoring |
 | `X_BEARER_TOKEN` | https://developer.twitter.com/ | Social monitoring |
+| `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Telegram `@BotFather` | Safety- en intelligence-alerts |
 
 Het systeem start ook **zonder** API keys. Modules zonder keys tonen een duidelijke melding.
 
@@ -114,6 +115,7 @@ trading-os/
 - **AI War Room** — Bull/Bear/Risk/Strategy agent analyses
 - **Memory** — Pending rules goedkeuren/afwijzen, active rules
 - **Audit** — Volledig auditlog van alle systeemgebeurtenissen
+- **Alerts** — Telegram-meldingen en lokaal notificatielog voor safety-, signal- en outcome-events
 - **Instellingen** — Integratiestatus, risk limieten, kill switch
 
 ## Disclaimer

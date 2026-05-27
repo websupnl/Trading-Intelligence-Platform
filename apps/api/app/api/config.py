@@ -23,5 +23,6 @@ async def api_status():
             "openai": cfg.openai.configured,
             "reddit": cfg.reddit.configured,
             "x_twitter": cfg.x_twitter.configured,
+            "telegram": cfg.telegram.configured,
         }
     }

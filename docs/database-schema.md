@@ -24,6 +24,7 @@
 | settings | Systeeminstellingen |
 | pending_rules | Wachtende regels |
 | active_rules | Actieve regels |
+| notifications | Telegram-alerts en afleverstatus |
 
 ## Sleutelvelden
 
@@ -126,6 +127,7 @@ Migraties staan in `apps/api/app/migrations/versions/`.
 Migraties:
 - `001_initial.py` - maakt de basisschema-tabellen aan.
 - `002_signal_outcomes.py` - voegt objectieve signaaluitkomsten toe.
+- `003_notifications.py` - voegt Telegram-notificatielog en afleverstatus toe.
 
 Nieuwe migratie aanmaken:
 ```bash

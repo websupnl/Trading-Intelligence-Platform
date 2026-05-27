@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, ShoppingCart, Zap, Radio,
   Newspaper, MessageSquare, Brain, Database, Settings, Activity,
-  Cpu, LogOut, MonitorPlay, BarChart3
+  Cpu, LogOut, MonitorPlay, BarChart3, Bell
 } from 'lucide-react';
 import { clearPin } from '@/lib/api';
 
@@ -16,6 +16,7 @@ const nav = [
   { href: '/orders', label: 'Orders', icon: ShoppingCart },
   { href: '/signals', label: 'Signals', icon: Zap },
   { href: '/performance', label: 'Performance', icon: BarChart3 },
+  { href: '/notifications', label: 'Alerts', icon: Bell },
   { href: '/rumour-radar', label: 'Rumour Radar', icon: Radio },
   { href: '/news', label: 'Nieuws', icon: Newspaper },
   { href: '/social', label: 'Social', icon: MessageSquare },

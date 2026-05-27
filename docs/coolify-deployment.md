@@ -50,9 +50,24 @@ OPENAI_API_KEY=
 REDDIT_CLIENT_ID=
 REDDIT_CLIENT_SECRET=
 X_BEARER_TOKEN=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 NEWS_FEEDS=
 CRYPTO_NEWS_FEEDS=
 ```
+
+### Telegram koppelen
+
+1. Open Telegram en stuur `/newbot` naar `@BotFather`.
+2. Kies een naam en gebruikersnaam; bewaar de bot token als `TELEGRAM_BOT_TOKEN`.
+3. Open je nieuwe bot en stuur zelf eerst een bericht, bijvoorbeeld `start`.
+4. Open in de browser:
+   ```text
+   https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getUpdates
+   ```
+5. Neem het nummer onder `message.chat.id` over als `TELEGRAM_CHAT_ID`.
+6. Zet beide waarden in Coolify Environment Variables en redeploy `api` en `worker`.
+7. Open na deployment de pagina **Alerts** en klik **Stuur testbericht**.
 
 ## Stap 3 — Domeinen instellen in Coolify
 
@@ -71,12 +86,13 @@ Stel in Coolify per service het domein in.
 
 1. Klik **Deploy** in Coolify
 2. Coolify bouwt alle images en start de containers
-3. Na eerste start, voer migrations uit via Coolify terminal:
+3. Na eerste start of na deze update, voer migrations uit via Coolify terminal:
    ```bash
    docker compose -f docker-compose.prod.yml exec api \
      python -m alembic -c app/migrations/alembic.ini upgrade head
    ```
    Of via Coolify's **Terminal** knop op de `api` service.
+   De huidige head is `003_notifications`; deze bevat ook de eerdere outcome-migratie.
 
 ## Stap 5 — Verificatie
 
@@ -84,6 +100,7 @@ Bezoek je dashboard domein. De pagina moet laden en tonen:
 - System status kaart
 - Alpaca: "niet geconfigureerd" (totdat je keys invult)
 - Anthropic: "niet geconfigureerd" (totdat je key invult)
+- Telegram: "geconfigureerd" nadat de botwaarden zijn ingesteld; testbaar via **Alerts**
 
 ## Persistent volumes
 

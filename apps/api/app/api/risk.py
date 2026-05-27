@@ -7,6 +7,7 @@ from app.schemas.risk import RiskCheckRequest
 from app.config import get_settings
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.settings_store import persist_runtime_setting
+from app.services.notifications import NotificationService
 
 router = APIRouter(prefix="/api/risk")
 risk_engine = RiskEngine()
@@ -38,6 +39,13 @@ async def enable_kill_switch(db: AsyncSession = Depends(get_db)):
     object.__setattr__(get_settings(), "kill_switch_enabled", True)
     await persist_runtime_setting(db, "kill_switch_enabled", True)
     await audit.log("kill_switch_enabled", actor="user", details={"shared": stored})
+    await NotificationService(db).send(
+        "kill_switch_enabled",
+        "Trading OS - KILL SWITCH ACTIEF",
+        "Nieuwe orders zijn geblokkeerd. Controleer open posities en de reden voor activatie.",
+        severity="critical",
+        entity_type="risk",
+    )
     if not stored:
         raise HTTPException(
             status_code=503,
@@ -58,4 +66,11 @@ async def disable_kill_switch(db: AsyncSession = Depends(get_db)):
     object.__setattr__(get_settings(), "kill_switch_enabled", False)
     await persist_runtime_setting(db, "kill_switch_enabled", False)
     await audit.log("kill_switch_disabled", actor="user", details={"shared": stored})
+    await NotificationService(db).send(
+        "kill_switch_disabled",
+        "Trading OS - Kill switch uitgeschakeld",
+        "Nieuwe orders kunnen weer langs de ingestelde risk checks worden verwerkt.",
+        severity="warning",
+        entity_type="risk",
+    )
     return {"status": "disabled", "shared": stored, "message": "Kill switch uitgeschakeld."}

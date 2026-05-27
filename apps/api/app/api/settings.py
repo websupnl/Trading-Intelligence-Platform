@@ -36,6 +36,7 @@ async def get_settings_endpoint():
         "openai_configured": s.openai_configured,
         "reddit_configured": s.reddit_configured,
         "x_configured": s.x_configured,
+        "telegram_configured": s.telegram_configured,
         "news_feed_count": len(s.news_feed_list),
         "crypto_feed_count": len(s.crypto_feed_list),
         "runtime_overrides": list(_runtime_overrides.keys()),

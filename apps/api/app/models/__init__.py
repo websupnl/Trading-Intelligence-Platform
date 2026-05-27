@@ -18,11 +18,12 @@ from app.models.strategies import StrategyPerformance
 from app.models.settings import Setting
 from app.models.rules import PendingRule, ActiveRule
 from app.models.outcomes import SignalOutcome
+from app.models.notifications import Notification
 
 __all__ = [
     "TimestampMixin", "Asset", "Candle", "NewsItem", "SocialPost",
     "Rumour", "Narrative", "Signal", "Trade", "Order", "Position",
     "RiskEvent", "AuditLog", "AIAgentRun", "MemoryEntry",
     "SourceCredibility", "StrategyPerformance", "Setting",
-    "PendingRule", "ActiveRule", "SignalOutcome",
+    "PendingRule", "ActiveRule", "SignalOutcome", "Notification",
 ]

@@ -20,6 +20,7 @@ class ConfigStatus(BaseModel):
     ollama: IntegrationStatus
     reddit: IntegrationStatus
     x_twitter: IntegrationStatus
+    telegram: IntegrationStatus
     news_feeds: IntegrationStatus
     crypto_feeds: IntegrationStatus
     trading_mode: str

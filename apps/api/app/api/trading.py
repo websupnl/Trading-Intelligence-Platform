@@ -8,6 +8,7 @@ from app.services.risk_engine import RiskEngine
 from app.services.audit import AuditLogService
 from app.services.trade_tracker import TradeTrackerService
 from app.services.order_recorder import record_submitted_order
+from app.services.notifications import NotificationService
 from app.schemas.orders import PaperOrderRequest, CancelOrderRequest
 from app.schemas.risk import RiskCheckRequest
 
@@ -168,6 +169,14 @@ async def submit_paper_order(req: PaperOrderRequest, db: AsyncSession = Depends(
             "side": req.side,
             "actor": "user_manual",
         }, message=f"Handmatige order: {req.symbol} {req.side}")
+        await NotificationService(db).send(
+            "order_submitted",
+            f"Trading OS - Paper order {req.side.upper()} {req.symbol.upper()}",
+            f"Handmatige paper-order ingediend. Lokale order-ID: {local_order.id}",
+            severity="warning",
+            entity_type="order",
+            entity_id=local_order.id,
+        )
         return {"status": "submitted", "order": result, "local_order_id": local_order.id, "risk_result": risk_result.model_dump()}
     except AlpacaNotConfiguredError as e:
         raise HTTPException(status_code=503, detail={"status": "not_configured", "message": str(e)})
@@ -228,6 +237,14 @@ async def close_position(symbol: str, db: AsyncSession = Depends(get_db)):
             details={"symbol": symbol.upper(), "qty": qty},
             message=f"Positie gesloten: {symbol.upper()} qty={qty}",
         )
+        await NotificationService(db).send(
+            "position_closed",
+            f"Trading OS - Positie sluiten: {symbol.upper()}",
+            f"Exit-only liquidatie ingediend voor {qty} stuks.",
+            severity="warning",
+            entity_type="position",
+            entity_id=symbol.upper(),
+        )
         return {"status": "submitted", "order": result, "qty": qty}
     except AlpacaNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -272,6 +289,13 @@ async def close_all_positions(db: AsyncSession = Depends(get_db)):
             actor="user",
             details={"count": len(results), "results": results},
             message=f"Noodsluiting: {len(results)} posities gesloten",
+        )
+        await NotificationService(db).send(
+            "all_positions_closed",
+            "Trading OS - Alle posities sluiten",
+            f"Exit-only noodliquidatie ingediend voor {len(results)} posities.",
+            severity="critical",
+            entity_type="position",
         )
         return {"status": "done", "closed": len(results), "results": results}
     except AlpacaNotConfiguredError as e:

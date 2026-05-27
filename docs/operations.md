@@ -19,6 +19,7 @@ Na `start-local.bat` draait het systeem volledig automatisch.
 - Signal outcomes handmatig evalueren (/performance)
 - Pending rule goedkeuren of afwijzen (/memory)
 - Kill switch aan/uitzetten (/settings)
+- Telegram-koppeling testen en afleverhistorie bekijken (/notifications)
 
 ## Logs bekijken
 
@@ -74,6 +75,7 @@ docker compose exec api python -m alembic -c app/migrations/alembic.ini current
 
 # Upgrade naar laatste versie
 docker compose exec api python -m alembic -c app/migrations/alembic.ini upgrade head
+# Verwachte huidige head na Telegram/outcome-update: 003_notifications
 
 # Nieuwe migration aanmaken (na model wijziging)
 docker compose exec api python -m alembic -c app/migrations/alembic.ini revision --autogenerate -m "beschrijving"

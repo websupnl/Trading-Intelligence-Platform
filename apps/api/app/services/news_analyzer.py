@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models.news import NewsItem
 from app.models.social import SocialPost
+from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,20 @@ class NewsAnalyzerService:
                         if analysis.get("is_noise"):
                             db_item.status = "noise"
                         await db.commit()
+                        if (
+                            not analysis.get("is_noise")
+                            and float(analysis.get("impact_score", 0)) >= 8
+                            and analysis.get("urgency") == "high"
+                        ):
+                            tickers = ", ".join(db_item.tickers or []) or "geen ticker"
+                            await NotificationService(db).send(
+                                "high_impact_news",
+                                f"Trading OS - Hoog-impact nieuws: {tickers}",
+                                f"{db_item.source}: {db_item.title[:300]}",
+                                severity="warning",
+                                entity_type="news",
+                                entity_id=db_item.id,
+                            )
 
                 analyzed += 1
                 # Rate limit: ~40 req/min for claude-haiku is fine, but be conservative

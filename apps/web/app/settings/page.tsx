@@ -121,8 +121,8 @@ export default function SettingsPage() {
 
               {settings.runtime_overrides?.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  ⚡ Runtime overrides actief: {settings.runtime_overrides.join(', ')}
-                  <br />Worden gereset bij herstart. Update .env voor permanente wijziging.
+                  Safety-instellingen actief: {settings.runtime_overrides.join(', ')}
+                  <br />Opgeslagen in de database en gedeeld met workers via Redis.
                 </p>
               )}
             </CardContent>
@@ -138,6 +138,7 @@ export default function SettingsPage() {
                 { label: 'OpenAI', ok: settings.openai_configured },
                 { label: 'Reddit', ok: settings.reddit_configured },
                 { label: 'X/Twitter', ok: settings.x_configured },
+                { label: 'Telegram Alerts', ok: settings.telegram_configured },
               ].map(({ label, ok }) => (
                 <div key={label} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                   <span className="text-sm text-muted-foreground">{label}</span>

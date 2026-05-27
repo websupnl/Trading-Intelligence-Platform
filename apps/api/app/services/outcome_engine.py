@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.candles import Candle
 from app.models.outcomes import SignalOutcome
 from app.models.signals import Signal
+from app.services.notifications import NotificationService
 
 
 def price_return_pct(entry: float | None, exit_price: float | None) -> float | None:
@@ -45,9 +46,10 @@ class OutcomeEngine:
         )
         signals = result.scalars().all()
         updated = complete = partial = pending = 0
+        newly_complete: list[SignalOutcome] = []
 
         for signal in signals:
-            outcome = await self._evaluate_signal(signal)
+            outcome, just_completed = await self._evaluate_signal(signal)
             if outcome is None:
                 continue
             updated += 1
@@ -57,8 +59,25 @@ class OutcomeEngine:
                 partial += 1
             else:
                 pending += 1
+            if just_completed:
+                newly_complete.append(outcome)
 
         await self.db.commit()
+        for outcome in newly_complete:
+            await NotificationService(self.db).send(
+                "signal_outcome_complete",
+                f"Trading OS - Outcome compleet: {outcome.symbol} {outcome.direction.upper()}",
+                (
+                    f"5-daags shadow-resultaat: {outcome.pnl_5d_pct:+.2f}%."
+                    + (
+                        f" Versus SPY: {outcome.excess_return_5d:+.2f}%."
+                        if outcome.excess_return_5d is not None else ""
+                    )
+                ),
+                severity="info",
+                entity_type="signal",
+                entity_id=outcome.signal_id,
+            )
         return {
             "signals_considered": len(signals),
             "outcomes_updated": updated,
@@ -67,9 +86,9 @@ class OutcomeEngine:
             "pending": pending,
         }
 
-    async def _evaluate_signal(self, signal: Signal) -> SignalOutcome | None:
+    async def _evaluate_signal(self, signal: Signal) -> tuple[SignalOutcome | None, bool]:
         if signal.created_at is None:
-            return None
+            return None, False
 
         result = await self.db.execute(
             select(Candle).where(
@@ -82,6 +101,7 @@ class OutcomeEngine:
 
         existing = await self.db.execute(select(SignalOutcome).where(SignalOutcome.signal_id == signal.id))
         outcome = existing.scalar_one_or_none()
+        previously_complete = outcome is not None and outcome.outcome_status == "complete"
         if outcome is None:
             outcome = SignalOutcome(
                 signal_id=signal.id,
@@ -106,7 +126,7 @@ class OutcomeEngine:
 
         if entry_price is None or not future_bars:
             outcome.outcome_status = "pending"
-            return outcome
+            return outcome, False
 
         one_day = future_bars[0]
         five_day = future_bars[4] if len(future_bars) >= 5 else None
@@ -122,7 +142,7 @@ class OutcomeEngine:
             outcome.benchmark_return_5d = benchmark_return
             if benchmark_return is not None and outcome.pnl_5d_pct is not None:
                 outcome.excess_return_5d = outcome.pnl_5d_pct - benchmark_return
-        return outcome
+        return outcome, outcome.outcome_status == "complete" and not previously_complete
 
     async def _benchmark_return(self, signal_time: datetime, end_time: datetime) -> float | None:
         result = await self.db.execute(

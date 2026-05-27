@@ -49,6 +49,16 @@ REDDIT_CLIENT_SECRET=...
 X_BEARER_TOKEN=...
 ```
 
+### Met Telegram alerts:
+```env
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+```
+
+Maak de bot via Telegram `@BotFather`, stuur hem eerst een bericht en haal daarna je
+`chat.id` op via `https://api.telegram.org/bot<token>/getUpdates`. In de app kun je
+de verbinding testen via **Alerts**.
+
 ## Dashboard openen
 
 Na succesvol starten: http://localhost:3000
@@ -91,6 +101,7 @@ lsof -i :8000
 ```bash
 docker compose logs api
 docker compose exec api python -m alembic -c app/migrations/alembic.ini upgrade head
+# Verwachte huidige head: 003_notifications
 ```
 
 ### Frontend niet bereikbaar

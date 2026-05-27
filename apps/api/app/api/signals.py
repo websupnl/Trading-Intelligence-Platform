@@ -7,6 +7,7 @@ from app.services.risk_engine import RiskEngine
 from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
 from app.schemas.risk import RiskCheckRequest
 from app.services.order_recorder import record_submitted_order
+from app.services.notifications import NotificationService
 
 router = APIRouter(prefix="/api/signals")
 risk_engine = RiskEngine()
@@ -81,6 +82,14 @@ async def paper_trade_signal(signal_id: str, confirmed: bool = False, db: AsyncS
         signal.status = "paper_traded"
         signal.risk_check_result = risk_result.model_dump()
         await db.commit()
+        await NotificationService(db).send(
+            "signal_paper_traded",
+            f"Trading OS - Signal paper trade: {signal.asset} {signal.direction.upper()}",
+            f"Bevestigd signaal uitgevoerd in paper mode. Confidence: {signal.confidence:.0%}.",
+            severity="warning",
+            entity_type="signal",
+            entity_id=signal.id,
+        )
         return {"status": "paper_traded", "order": order}
     except AlpacaNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e))

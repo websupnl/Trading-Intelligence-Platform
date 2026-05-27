@@ -17,6 +17,7 @@ export function StatusGrid() {
     { name: 'OpenAI', data: config.openai },
     { name: 'Reddit', data: config.reddit },
     { name: 'X/Twitter', data: config.x_twitter },
+    { name: 'Telegram', data: config.telegram },
     { name: 'Nieuwsfeeds', data: config.news_feeds },
     { name: 'Crypto feeds', data: config.crypto_feeds },
   ];

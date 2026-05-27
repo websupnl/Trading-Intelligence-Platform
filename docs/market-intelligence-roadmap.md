@@ -64,6 +64,7 @@ Geleverd:
 - Performance-scherm met sample size, hit rate en outcome-overzicht per asset.
 - Performance-scherm scheidt gerealiseerde trade-P&L van niet-uitgevoerde shadow-signaalresultaten.
 - Dashboardfeed met recente AI-beslissingen, trade-lessen en gemeten outcomes; zichtbaar ververst iedere 30 seconden.
+- Telegram alertkanaal met afleverlog voor safety-events, nieuwe signalen, orders, hoog-impact nieuws, AI trade-lessen en voltooide outcomes.
 - Shadow scoring geldt voor gegenereerde signalen, onafhankelijk van uitvoering.
 
 Nog te bouwen:
@@ -130,7 +131,7 @@ Te bouwen:
 - Eventkalenders: earnings, macro releases, filings en corporate actions.
 - Backtesting en replay met point-in-time datasets zonder look-ahead bias.
 - Opportunity radar voor mention acceleration, abnormal volume en cross-source emergence.
-- Alerting via dashboard en optioneel Telegram.
+- Uitbreiding van bestaande Telegram-alerts met Opportunity Radar-watchlistmeldingen.
 
 Exitcriterium:
 

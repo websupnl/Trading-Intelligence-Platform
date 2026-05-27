@@ -32,6 +32,12 @@
 - Memory API levert de opgeslagen lesinhoud terug, zodat AI-reflecties daadwerkelijk uitklapbaar zijn.
 - Celery en pipeline voeren outcome-evaluatie ieder uur uit; marktdata verzamelt hiervoor recente signaalassets en SPY.
 
+### Telegram Alerts
+- Nieuwe migratie `003_notifications.py`, notificatieservice en API `/api/notifications/*`.
+- Telegram is optioneel configureerbaar via `TELEGRAM_BOT_TOKEN` en `TELEGRAM_CHAT_ID`; afleverfouten blokkeren trading niet.
+- Alerts worden aangemaakt voor kill switch, signalen, order/liquidatie, hoog-impact nieuws, AI trade-lessen en eerste complete 5d-outcome.
+- Nieuwe pagina `/notifications` met afleverhistorie en testberichtknop; status is zichtbaar in Settings en Systeemstatus.
+
 ## [2026-05-27] Sessie 3 — Live Session, Build Fix, Mobile
 
 ### Nieuw
@@ -148,15 +154,17 @@ ALPACA_BASE_URL=https://paper-api.alpaca.markets
 ANTHROPIC_ENABLE_WEB_SEARCH=true
 DASHBOARD_PIN=<jouw PIN>
 MEMORY_DIR=/app/memory
-REQUIRE_MANUAL_CONFIRMATION=false
-LIVE_TRADING_ENABLED=true
+REQUIRE_MANUAL_CONFIRMATION=true
+LIVE_TRADING_ENABLED=false
+TELEGRAM_BOT_TOKEN=<optioneel>
+TELEGRAM_CHAT_ID=<optioneel>
 ```
 
 ## Bekende beperkingen / TODO
 
-- SystemSettings DB tabel — runtime overrides zijn in-memory (verloren bij restart)
+- Runtime safety settings zijn inmiddels persistent in `settings` en gedeeld via Redis
 - Watchlist beheer UI nog niet gebouwd
-- Telegram notificaties nog niet gebouwd
+- Telegram notificaties zijn inmiddels gebouwd; credentials moeten nog per deployment ingesteld worden
 - Backtesting module nog niet gebouwd
-- Alembic migratie nodig voor nieuwe tabellen (SystemSettings, Watchlist)
+- Alembic migratie voor Watchlist is nodig zodra die module wordt gebouwd
 - Reddit scraper kan rate-limited worden — retry logica ontbreekt

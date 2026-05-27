@@ -13,7 +13,7 @@
 - [x] Cloudflare DNS wildcard `*.onlinewerkplek.cloud → 82.180.155.249`
 - [x] TimescaleDB (PostgreSQL), Redis, Qdrant volumes
 - [x] Celery worker + beat scheduler
-- [x] Alembic migraties (`001_initial`, `002_signal_outcomes`)
+- [x] Alembic migraties (`001_initial`, `002_signal_outcomes`, `003_notifications`)
 - [x] CORS via env var `CORS_ORIGINS` (geen hardcode meer)
 - [x] `NEXT_PUBLIC_API_URL` als build-arg in web Dockerfile
 
@@ -29,7 +29,7 @@
 - [x] Rumour detector (cross-source, 72h expiry)
 - [x] Auto paper trader (confidence ≥ 0.78, paper mode only)
 
-### Celery Taken (7 scheduled jobs)
+### Celery Taken (9 scheduled jobs)
 - [x] ingest-news: elke 15 min
 - [x] fetch-reddit: elke 30 min
 - [x] analyze-content (Claude): elke 5 min
@@ -51,6 +51,7 @@
 - [x] Floating chat panel (SSE streaming, Claude tool use)
 - [x] Kill switch knop in UI
 - [x] Performance pagina met signal-outcomes en SPY-vergelijking
+- [x] Alerts pagina met Telegram testknop en notificatielog
 
 ### Veiligheid
 - [x] Kill switch (runtime + UI)
@@ -134,10 +135,10 @@
 - [ ] Backend: `GET/POST/DELETE /api/watchlist`
 
 ### 6. Notificaties
-- [ ] Telegram bot integratie (optioneel, via `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`)
-- [ ] Triggers: nieuw signaal gegenereerd, order uitgevoerd, kill switch geactiveerd, hoge-impact nieuws
-- [ ] Notificatie service in backend
-- [ ] Notificatie log in UI (bell icon in TopBar)
+- [x] Telegram bot integratie (optioneel, via `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`)
+- [x] Triggers: nieuw signaal, order/liquidatie, kill switch, hoge-impact nieuws en complete outcome
+- [x] Notificatie service in backend met afleverstatus en niet-blockerende fouten
+- [x] Notificatie log in UI, bell link en testberichtknop
 
 ### 7. Performance tracking
 - [ ] `StrategyPerformance` tabel vullen na elke gesloten positie
@@ -146,9 +147,9 @@
 - [ ] Vergelijk auto-trader prestaties per tijdsperiode
 
 ### 8. Positie management vanuit UI
-- [ ] "Sluit positie" knop per open positie (market sell)
-- [ ] "Sluit alles" noodknop naast kill switch
-- [ ] Backend: `POST /api/trading/close-position/{symbol}`
+- [x] "Sluit positie" knop per open positie via exit-only liquidatie
+- [x] "Sluit alles" noodknop
+- [x] Backend: `POST /api/trading/close-position/{symbol}` en `/close-all`
 
 ---
 
@@ -204,4 +205,6 @@ CORS_ORIGINS=https://n08w4cgkko4kcwwsockckkg0.onlinewerkplek.cloud
 ANTHROPIC_ENABLE_WEB_SEARCH=true
 ALPACA_BASE_URL=https://paper-api.alpaca.markets
 NEXT_PUBLIC_API_URL=https://wo0kc480k480gosww0s8wgw8.onlinewerkplek.cloud
+TELEGRAM_BOT_TOKEN=<token-van-BotFather>
+TELEGRAM_CHAT_ID=<jouw-chat-id>
 ```

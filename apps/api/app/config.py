@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # X / Twitter
     x_bearer_token: str = ""
 
+    # Alerts
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     # Feeds
     news_feeds: str = ""
     crypto_news_feeds: str = ""
@@ -96,6 +100,10 @@ class Settings(BaseSettings):
     @property
     def x_configured(self) -> bool:
         return bool(self.x_bearer_token)
+
+    @property
+    def telegram_configured(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_chat_id)
 
     @property
     def news_feed_list(self) -> list[str]:

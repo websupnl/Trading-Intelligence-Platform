@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, Shield, TrendingUp, Brain, Wifi, Menu, X } from 'lucide-react';
+import { Shield, TrendingUp, Brain, Wifi, Menu, X, Bell } from 'lucide-react';
 import {
   LayoutDashboard, Zap, ShoppingCart, Cpu, Settings, Database, Activity,
   Radio, Newspaper, MessageSquare, BarChart3
@@ -28,6 +28,7 @@ const mobileMenuItems = [
   { href: '/signals', label: 'Signals', icon: Zap },
   { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
   { href: '/performance', label: 'Performance', icon: BarChart3 },
+  { href: '/notifications', label: 'Alerts', icon: Bell },
   { href: '/orders', label: 'Orders', icon: ShoppingCart },
   { href: '/pipeline', label: 'Pipeline', icon: Cpu },
   { href: '/ai-war-room', label: 'AI War Room', icon: Brain },
@@ -42,12 +43,14 @@ const mobileMenuItems = [
 export function TopBar() {
   const { data: status } = useApi(() => api.apiStatus(), []);
   const { data: risk } = useApi(() => api.getRiskStatus(), []);
+  const { data: notifications } = useApi(() => api.getNotifications(10), []);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const killSwitch = risk?.kill_switch_enabled;
   const liveEnabled = risk?.live_trading_enabled;
   const alpacaOk = status?.configured_integrations?.alpaca;
   const aiOk = status?.configured_integrations?.anthropic;
+  const recentAlerts = notifications?.filter((item: any) => item.status === 'sent').length ?? 0;
 
   return (
     <>
@@ -77,6 +80,11 @@ export function TopBar() {
         {killSwitch && <StatusPill label="🛑 KILL SWITCH" ok={false} />}
 
         <div className="hidden md:block h-4 border-l border-border mx-1" />
+
+        <Link href="/notifications" className="hidden md:flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Bell size={12} />
+          <span>{recentAlerts}</span>
+        </Link>
 
         <span className="hidden md:flex items-center gap-1 text-xs">
           <Shield size={12} className="text-muted-foreground" />

@@ -101,6 +101,11 @@ export const api = {
   // ── Audit ────────────────────────────────────────────────────────────────
   getAuditLogs: (limit = 100) => apiFetch(`/api/audit?limit=${limit}`),
 
+  // ── Alerts ──────────────────────────────────────────────────────────────
+  getNotifications: (limit = 100) => apiFetch(`/api/notifications?limit=${limit}`),
+  getNotificationStatus: () => apiFetch('/api/notifications/status'),
+  testTelegram: () => apiFetch('/api/notifications/test', { method: 'POST' }),
+
   // ── Settings ────────────────────────────────────────────────────────────
   getSettings: () => apiFetch('/api/settings'),
   updateRuntimeSettings: (data: Record<string, any>) =>

@@ -66,6 +66,8 @@ services:
       - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
       - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-trading-os/1.0}
       - X_BEARER_TOKEN=${X_BEARER_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - NEWS_FEEDS=${NEWS_FEEDS:-}
       - CRYPTO_NEWS_FEEDS=${CRYPTO_NEWS_FEEDS:-}
     volumes:
@@ -101,6 +103,8 @@ services:
       - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY:-}
       - ALPACA_BASE_URL=${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - NEWS_FEEDS=${NEWS_FEEDS:-}
       - CRYPTO_NEWS_FEEDS=${CRYPTO_NEWS_FEEDS:-}
     volumes:
@@ -124,6 +128,8 @@ services:
       - TRADING_MODE=${TRADING_MODE:-paper}
       - LIVE_TRADING_ENABLED=${LIVE_TRADING_ENABLED:-false}
       - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - NEWS_FEEDS=${NEWS_FEEDS:-}
     volumes:
       - memory_data:/app/memory

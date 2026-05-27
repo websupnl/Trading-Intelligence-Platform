@@ -13,6 +13,7 @@ from app.models.candles import Candle
 from app.models.memory import MemoryEntry
 from app.models.audit import AuditLog
 from app.services.technical_analysis import analyze as ta_analyze
+from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -384,5 +385,17 @@ class SignalGeneratorService:
 
             await db.commit()
             await db.refresh(signal)
+            await NotificationService(db).send(
+                "signal_generated",
+                f"Trading OS - Nieuw signaal: {asset} {signal.direction.upper()}",
+                (
+                    f"Confidence: {signal.confidence:.0%}\n"
+                    f"Timeframe: {signal.timeframe}\n"
+                    f"Reden: {(signal.reason or 'Geen toelichting')[:300]}"
+                ),
+                severity="info",
+                entity_type="signal",
+                entity_id=signal.id,
+            )
 
         return signal

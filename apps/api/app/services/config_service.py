@@ -21,6 +21,7 @@ def get_config_status() -> ConfigStatus:
         ollama=IntegrationStatus(configured=True, status="optional", message="Ollama: verbinding wordt getest bij gebruik"),
         reddit=status(s.reddit_configured, "Reddit"),
         x_twitter=status(s.x_configured, "X/Twitter"),
+        telegram=status(s.telegram_configured, "Telegram"),
         news_feeds=IntegrationStatus(
             configured=news_ok,
             status="configured" if news_ok else "not_configured",
