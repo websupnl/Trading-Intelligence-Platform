@@ -1,7 +1,6 @@
 # Production / VPS deployment via Coolify
-# Use this file for Coolify or any VPS Docker Compose deployment.
+# Coolify's Traefik proxy handles all routing — no direct port exposure needed.
 # Set all environment variables via Coolify's "Environment Variables" dashboard.
-# Never commit secrets to this file.
 
 services:
   postgres:
@@ -9,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-trading_os}
       POSTGRES_USER: ${POSTGRES_USER:-trading_os}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +17,6 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    # No external ports exposed on VPS — only internal Docker network
 
   redis:
     image: redis:7-alpine
@@ -45,8 +43,8 @@ services:
       - APP_ENV=production
       - USE_MOCK_DATA=false
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - SECRET_KEY=${SECRET_KEY}
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trading_os}
+      - SECRET_KEY=${SECRET_KEY:-change_me}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-trading_os}
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
       - TRADING_MODE=${TRADING_MODE:-paper}
@@ -70,11 +68,10 @@ services:
       - X_BEARER_TOKEN=${X_BEARER_TOKEN:-}
       - NEWS_FEEDS=${NEWS_FEEDS:-}
       - CRYPTO_NEWS_FEEDS=${CRYPTO_NEWS_FEEDS:-}
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     volumes:
       - memory_data:/app/memory
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,7 +92,7 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
     environment:
       - APP_ENV=production
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trading_os}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-trading_os}
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=http://qdrant:6333
       - TRADING_MODE=${TRADING_MODE:-paper}
@@ -122,7 +119,7 @@ services:
     command: celery -A app.workers.celery_app beat --loglevel=info
     environment:
       - APP_ENV=production
-      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trading_os}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-trading_os}
       - REDIS_URL=redis://redis:6379/0
       - TRADING_MODE=${TRADING_MODE:-paper}
       - LIVE_TRADING_ENABLED=${LIVE_TRADING_ENABLED:-false}
@@ -142,12 +139,12 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       - INTERNAL_API_URL=http://api:8000
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     depends_on:
       - api
     restart: unless-stopped
