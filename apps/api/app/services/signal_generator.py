@@ -10,6 +10,8 @@ from app.models.news import NewsItem
 from app.models.social import SocialPost
 from app.models.signals import Signal
 from app.models.candles import Candle
+from app.models.memory import MemoryEntry
+from app.models.audit import AuditLog
 from app.services.technical_analysis import analyze as ta_analyze
 
 logger = logging.getLogger(__name__)
@@ -18,35 +20,63 @@ MIN_CONFIDENCE_GENERATE = 0.55
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
-SIGNAL_PROMPT = """Je bent een trading analyst. Genereer een concreet trading signaal op basis van onderstaande data.
+BULL_PROMPT = """Je bent een bullish trading analyst. Zoek naar de STERKSTE argumenten VOOR een buy op {asset}.
 
-Asset: {asset}
+Prijs: ${price}
+Nieuws: {news_summary}
+Social: {social_summary}
+TA: {ta_summary}
+
+Geef ALLEEN JSON:
+{{
+  "bull_score": <0.0 tot 1.0, hoe sterk de bullish case is>,
+  "key_catalyst": "<de sterkste reden om te kopen, max 80 woorden>",
+  "price_target": <target prijs of null>,
+  "bull_arguments": ["<argument 1>", "<argument 2>", "<argument 3>"]
+}}"""
+
+BEAR_PROMPT = """Je bent een bearish trading analyst. Zoek naar de STERKSTE risico's en redenen TEGEN een buy op {asset}.
+
+Prijs: ${price}
+Nieuws: {news_summary}
+Social: {social_summary}
+TA: {ta_summary}
+
+Geef ALLEEN JSON:
+{{
+  "bear_score": <0.0 tot 1.0, hoe sterk de bearish case is>,
+  "key_risk": "<het grootste risico, max 80 woorden>",
+  "downside_target": <worst-case prijs of null>,
+  "bear_arguments": ["<argument 1>", "<argument 2>", "<argument 3>"]
+}}"""
+
+FINAL_PROMPT = """Je bent een onafhankelijke trading beslisser. Bull en Bear hebben gedebatteerd over {asset}.
+
+Bull case (score {bull_score:.2f}):
+{bull_reasoning}
+
+Bear case (score {bear_score:.2f}):
+{bear_reasoning}
+
+Technische analyse: {ta_summary}
 Huidige prijs: ${price}
 
-Nieuws sentiment (laatste 24u):
-{news_summary}
-
-Social media momentum:
-{social_summary}
-
-Technische analyse:
-{ta_summary}
-
-Geef ALLEEN JSON terug:
+Maak de finale beslissing. Geef ALLEEN JSON:
 {{
   "direction": "buy" | "sell" | "skip",
-  "confidence": <getal 0.0 tot 1.0>,
+  "confidence": <0.0 tot 1.0>,
   "timeframe": "intraday" | "swing" | "positional",
-  "reason": "<max 150 woorden over WHY dit signaal>",
+  "reason": "<finale synthese max 150 woorden>",
   "suggested_entry": <prijs of null>,
   "suggested_stop": <stop loss prijs of null>,
   "suggested_take_profit": <target prijs of null>,
   "risk_reward": <getal of null>,
   "key_risks": "<max 50 woorden>",
-  "invalidation": "<wanneer is dit signaal ongeldig>"
+  "invalidation": "<wanneer is signaal ongeldig>",
+  "bull_won": <true als bull-argumenten zwaarder wogen>
 }}
 
-Geef "skip" als er onvoldoende bewijs is. Wees conservatief — liever geen signaal dan een slecht signaal."""
+Geef "skip" als er onvoldoende bewijs is. Wees conservatief."""
 
 
 class SignalGeneratorService:
@@ -54,10 +84,9 @@ class SignalGeneratorService:
         self.settings = get_settings()
 
     async def generate_signals(self, lookback_hours: int = 24) -> int:
-        """Generate signals based on analyzed news + social + TA. Returns count generated."""
+        """Generate signals via Bull/Bear debate. Returns count generated."""
         since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
 
-        # Collect analyzed news
         async with AsyncSessionLocal() as db:
             news_result = await db.execute(
                 select(NewsItem)
@@ -84,7 +113,6 @@ class SignalGeneratorService:
             )
             social_posts = social_result.scalars().all()
 
-        # Collect unique tickers with enough mentions
         ticker_data = self._aggregate_by_ticker(news_items, social_posts)
         if not ticker_data:
             logger.info("Geen tickers met voldoende data voor signaal generatie")
@@ -97,19 +125,65 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        for asset, data in list(ticker_data.items())[:10]:  # max 10 per run
+        for asset, data in list(ticker_data.items())[:10]:
             try:
-                # Skip if recent signal already exists
                 if await self._recent_signal_exists(asset):
                     continue
 
-                # Get market data
                 candles = await self._get_candles(asset)
                 ta_result = ta_analyze(candles) if candles else None
                 price = candles[-1].close if candles else None
 
-                # Generate signal via Claude
-                signal_data = self._call_claude(client, asset, price, data, ta_result)
+                # Fetch memory lessons for this asset
+                lessons = await self._get_memory_lessons(asset)
+
+                # Build context strings
+                news_items_asset = data["news_items"][:5]
+                social_posts_asset = data["social_posts"][:5]
+
+                news_summary = "\n".join([
+                    f"- [{n.source}] {n.title[:80]} (sentiment: {n.sentiment}, impact: {n.impact_score:.0f}/10)"
+                    for n in news_items_asset
+                ]) or "Geen recent nieuws"
+
+                social_summary = "\n".join([
+                    f"- r/{p.subreddit}: score={p.score}, hype={p.hype_score:.2f} — {p.content[:80]}"
+                    for p in social_posts_asset
+                ]) or "Geen social media data"
+
+                ta_summary = "Geen technische data"
+                if ta_result:
+                    rsi_str = f"{ta_result.rsi:.0f}" if ta_result.rsi is not None else "N/A"
+                    ta_summary = (
+                        f"Score: {ta_result.score:.2f} | RSI: {rsi_str} | "
+                        f"MACD: {ta_result.macd_signal} | Trend: {ta_result.trend} | {ta_result.summary}"
+                    )
+
+                if lessons:
+                    ta_summary += f"\n\nEerdere lessen voor {asset}:\n" + "\n".join(f"- {l}" for l in lessons)
+
+                price_str = f"{price:.2f}" if price else "onbekend"
+
+                # 3-step debate
+                bull_data = self._call_agent(client, BULL_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
+                bear_data = self._call_agent(client, BEAR_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
+
+                bull_score = float(bull_data.get("bull_score", 0.5))
+                bear_score = float(bear_data.get("bear_score", 0.5))
+
+                bull_reasoning = (
+                    f"Score: {bull_score:.2f} | Katalysator: {bull_data.get('key_catalyst', 'N/A')} | "
+                    f"Argumenten: {'; '.join(bull_data.get('bull_arguments', []))}"
+                )
+                bear_reasoning = (
+                    f"Score: {bear_score:.2f} | Risico: {bear_data.get('key_risk', 'N/A')} | "
+                    f"Argumenten: {'; '.join(bear_data.get('bear_arguments', []))}"
+                )
+
+                signal_data = self._call_final_agent(
+                    client, asset, price_str, bull_score, bear_score,
+                    bull_reasoning, bear_reasoning, ta_summary
+                )
 
                 if signal_data.get("direction") == "skip":
                     continue
@@ -118,87 +192,24 @@ class SignalGeneratorService:
                 if confidence < MIN_CONFIDENCE_GENERATE:
                     continue
 
-                # Save signal
-                await self._save_signal(asset, signal_data, data, ta_result)
+                await self._save_signal(asset, signal_data, data, ta_result, bull_data, bear_data)
                 generated += 1
-                logger.info(f"Signaal gegenereerd: {asset} {signal_data['direction']} confidence={confidence:.2f}")
+                logger.info(f"Signaal gegenereerd: {asset} {signal_data['direction']} confidence={confidence:.2f} (bull={bull_score:.2f} bear={bear_score:.2f})")
 
             except Exception as e:
                 logger.error(f"Signal generatie fout voor {asset}: {e}")
 
         return generated
 
-    def _aggregate_by_ticker(self, news_items, social_posts) -> dict:
-        """Aggregate mentions, sentiment, and hype per ticker."""
-        data = {}
-
-        for item in news_items:
-            for ticker in (item.tickers or []):
-                if len(ticker) < 2 or len(ticker) > 5:
-                    continue
-                if ticker not in data:
-                    data[ticker] = {
-                        "news_items": [], "social_posts": [],
-                        "news_sentiment_sum": 0, "social_hype_sum": 0,
-                    }
-                data[ticker]["news_items"].append(item)
-                data[ticker]["news_sentiment_sum"] += float(item.sentiment_score or 0) * float(item.impact_score or 5) / 10
-
-        for post in social_posts:
-            for ticker in (post.tickers or []):
-                if len(ticker) < 2 or len(ticker) > 5:
-                    continue
-                if ticker not in data:
-                    data[ticker] = {
-                        "news_items": [], "social_posts": [],
-                        "news_sentiment_sum": 0, "social_hype_sum": 0,
-                    }
-                data[ticker]["social_posts"].append(post)
-                data[ticker]["social_hype_sum"] += float(post.hype_score or 0.3)
-
-        # Filter: need minimum evidence
-        filtered = {}
-        for ticker, d in data.items():
-            news_count = len(d["news_items"])
-            social_count = len(d["social_posts"])
-            if news_count >= MIN_MENTIONS_NEWS or social_count >= MIN_MENTIONS_SOCIAL:
-                filtered[ticker] = d
-
-        # Sort by combined evidence strength
-        return dict(sorted(filtered.items(),
-                           key=lambda x: len(x[1]["news_items"]) * 2 + len(x[1]["social_posts"]),
-                           reverse=True))
-
-    def _call_claude(self, client, asset: str, price: Optional[float], data: dict, ta_result) -> dict:
-        news_items = data["news_items"][:5]
-        social_posts = data["social_posts"][:5]
-
-        news_summary = "\n".join([
-            f"- [{n.source}] {n.title[:80]} (sentiment: {n.sentiment}, impact: {n.impact_score:.0f}/10)"
-            for n in news_items
-        ]) or "Geen recent nieuws"
-
-        social_summary = "\n".join([
-            f"- r/{p.subreddit}: score={p.score}, hype={p.hype_score:.2f} — {p.content[:80]}"
-            for p in social_posts
-        ]) or "Geen social media data"
-
-        ta_summary = ta_result.summary if ta_result else "Geen technische data beschikbaar"
-        if ta_result:
-            rsi_str = f"{ta_result.rsi:.0f}" if ta_result.rsi is not None else "N/A"
-            ta_summary = (
-                f"Score: {ta_result.score:.2f} | RSI: {rsi_str} | "
-                f"MACD: {ta_result.macd_signal} | Trend: {ta_result.trend} | {ta_result.summary}"
-            )
-
-        prompt = SIGNAL_PROMPT.format(
+    def _call_agent(self, client, prompt_template: str, asset: str, price: str,
+                    news_summary: str, social_summary: str, ta_summary: str) -> dict:
+        prompt = prompt_template.format(
             asset=asset,
-            price=f"{price:.2f}" if price else "onbekend",
+            price=price,
             news_summary=news_summary,
             social_summary=social_summary,
             ta_summary=ta_summary,
         )
-
         response = client.messages.create(
             model=self.settings.anthropic_model,
             max_tokens=512,
@@ -209,10 +220,63 @@ class SignalGeneratorService:
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
             return json.loads(text[start:end])
+        return {}
+
+    def _call_final_agent(self, client, asset: str, price: str,
+                           bull_score: float, bear_score: float,
+                           bull_reasoning: str, bear_reasoning: str,
+                           ta_summary: str) -> dict:
+        prompt = FINAL_PROMPT.format(
+            asset=asset,
+            price=price,
+            bull_score=bull_score,
+            bear_score=bear_score,
+            bull_reasoning=bull_reasoning,
+            bear_reasoning=bear_reasoning,
+            ta_summary=ta_summary,
+        )
+        response = client.messages.create(
+            model=self.settings.anthropic_model,
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start >= 0 and end > start:
+            return json.loads(text[start:end])
         return {"direction": "skip"}
 
+    def _aggregate_by_ticker(self, news_items, social_posts) -> dict:
+        data = {}
+        for item in news_items:
+            for ticker in (item.tickers or []):
+                if len(ticker) < 2 or len(ticker) > 5:
+                    continue
+                if ticker not in data:
+                    data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0}
+                data[ticker]["news_items"].append(item)
+                data[ticker]["news_sentiment_sum"] += float(item.sentiment_score or 0) * float(item.impact_score or 5) / 10
+
+        for post in social_posts:
+            for ticker in (post.tickers or []):
+                if len(ticker) < 2 or len(ticker) > 5:
+                    continue
+                if ticker not in data:
+                    data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0}
+                data[ticker]["social_posts"].append(post)
+                data[ticker]["social_hype_sum"] += float(post.hype_score or 0.3)
+
+        filtered = {}
+        for ticker, d in data.items():
+            if len(d["news_items"]) >= MIN_MENTIONS_NEWS or len(d["social_posts"]) >= MIN_MENTIONS_SOCIAL:
+                filtered[ticker] = d
+
+        return dict(sorted(filtered.items(),
+                           key=lambda x: len(x[1]["news_items"]) * 2 + len(x[1]["social_posts"]),
+                           reverse=True))
+
     async def _recent_signal_exists(self, asset: str, hours: int = 6) -> bool:
-        """Check if a recent signal already exists for this asset."""
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -229,17 +293,57 @@ class SignalGeneratorService:
         svc = MarketDataService()
         return await svc.get_candles(symbol, "1Day", 50)
 
-    async def _save_signal(self, asset: str, signal_data: dict, agg_data: dict, ta_result) -> Signal:
+    async def _get_memory_lessons(self, asset: str, limit: int = 3) -> list[str]:
+        """Fetch recent memory lessons for this asset."""
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(MemoryEntry).where(
+                        MemoryEntry.memory_type == "trade_lesson",
+                        MemoryEntry.related_symbols.contains([asset]),
+                        MemoryEntry.status == "active",
+                    ).order_by(MemoryEntry.created_at.desc()).limit(limit)
+                )
+                entries = result.scalars().all()
+                lessons = []
+                for e in entries:
+                    try:
+                        content = json.loads(e.content) if e.content else {}
+                        lesson = content.get("lesson", "")
+                        if lesson:
+                            lessons.append(f"{e.title}: {lesson}")
+                    except Exception:
+                        lessons.append(e.title)
+                return lessons
+        except Exception:
+            return []
+
+    async def _save_signal(self, asset: str, signal_data: dict, agg_data: dict,
+                            ta_result, bull_data: dict, bear_data: dict) -> Signal:
         expires = datetime.now(timezone.utc) + timedelta(hours=48)
 
         ai_analysis = {
             "direction": signal_data.get("direction"),
             "key_risks": signal_data.get("key_risks"),
             "invalidation": signal_data.get("invalidation"),
+            "bull_won": signal_data.get("bull_won", False),
+            # Bull agent
+            "bull_score": bull_data.get("bull_score"),
+            "bull_catalyst": bull_data.get("key_catalyst"),
+            "bull_arguments": bull_data.get("bull_arguments", []),
+            "bull_price_target": bull_data.get("price_target"),
+            # Bear agent
+            "bear_score": bear_data.get("bear_score"),
+            "bear_risk": bear_data.get("key_risk"),
+            "bear_arguments": bear_data.get("bear_arguments", []),
+            "bear_downside": bear_data.get("downside_target"),
+            # Data context
             "news_count": len(agg_data["news_items"]),
             "social_count": len(agg_data["social_posts"]),
             "ta_score": ta_result.score if ta_result else None,
             "ta_rsi": ta_result.rsi if ta_result else None,
+            "ta_macd": ta_result.macd_signal if ta_result else None,
+            "ta_trend": ta_result.trend if ta_result else None,
         }
 
         signal = Signal(
@@ -259,6 +363,25 @@ class SignalGeneratorService:
 
         async with AsyncSessionLocal() as db:
             db.add(signal)
+
+            # Audit log
+            db.add(AuditLog(
+                action="signal_generated",
+                actor="signal_generator",
+                entity_type="signal",
+                details={
+                    "asset": asset,
+                    "direction": signal_data.get("direction"),
+                    "confidence": float(signal_data.get("confidence", 0)),
+                    "bull_score": bull_data.get("bull_score"),
+                    "bear_score": bear_data.get("bear_score"),
+                },
+                status="success",
+                message=f"{asset} {signal_data.get('direction')} confidence={signal_data.get('confidence', 0):.2f}",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ))
+
             await db.commit()
             await db.refresh(signal)
 

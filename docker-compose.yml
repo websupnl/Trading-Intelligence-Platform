@@ -76,6 +76,10 @@ services:
       - X_BEARER_TOKEN=${X_BEARER_TOKEN:-}
       - NEWS_FEEDS=${NEWS_FEEDS:-}
       - CRYPTO_NEWS_FEEDS=${CRYPTO_NEWS_FEEDS:-}
+      - DASHBOARD_PIN=${DASHBOARD_PIN:-}
+      - MEMORY_DIR=/app/memory
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - ANTHROPIC_ENABLE_WEB_SEARCH=${ANTHROPIC_ENABLE_WEB_SEARCH:-false}
     volumes:
       - ./memory:/app/memory
       - ./apps/api/app:/app/app
@@ -109,9 +113,12 @@ services:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - TRADING_MODE=${TRADING_MODE:-paper}
       - LIVE_TRADING_ENABLED=${LIVE_TRADING_ENABLED:-false}
+      - REQUIRE_MANUAL_CONFIRMATION=${REQUIRE_MANUAL_CONFIRMATION:-true}
+      - KILL_SWITCH_ENABLED=${KILL_SWITCH_ENABLED:-false}
       - ALPACA_API_KEY=${ALPACA_API_KEY:-}
       - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY:-}
       - ALPACA_BASE_URL=${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      - ALPACA_DATA_URL=${ALPACA_DATA_URL:-https://data.alpaca.markets}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-5}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -120,6 +127,7 @@ services:
       - X_BEARER_TOKEN=${X_BEARER_TOKEN:-}
       - NEWS_FEEDS=${NEWS_FEEDS:-}
       - CRYPTO_NEWS_FEEDS=${CRYPTO_NEWS_FEEDS:-}
+      - MEMORY_DIR=/app/memory
     volumes:
       - ./memory:/app/memory
       - ./apps/api/app:/app/app

@@ -21,8 +21,10 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # Keep results for 1 hour so pipeline status can read them
+    result_expires=3600,
     beat_schedule={
-        # Data collection
+        # === DATA COLLECTION ===
         "ingest-news-every-15min": {
             "task": "app.tasks.news_tasks.ingest_news",
             "schedule": 900.0,
@@ -31,27 +33,38 @@ celery_app.conf.update(
             "task": "app.tasks.social_tasks.fetch_reddit",
             "schedule": 1800.0,
         },
-        # Analysis (Claude)
-        "analyze-content-every-5min": {
+
+        # === AI ANALYSIS (Claude) ===
+        # Faster: every 2 min so fresh news gets analyzed quickly
+        "analyze-content-every-2min": {
             "task": "app.tasks.analysis_tasks.analyze_news",
-            "schedule": 300.0,
+            "schedule": 120.0,
         },
         "detect-rumours-every-30min": {
             "task": "app.tasks.analysis_tasks.detect_rumours",
             "schedule": 1800.0,
         },
-        # Market data
+
+        # === MARKET DATA ===
         "fetch-market-data-hourly": {
             "task": "app.tasks.analysis_tasks.fetch_market_data",
             "schedule": 3600.0,
         },
-        # Signal generation & execution
-        "generate-signals-every-15min": {
+
+        # === SIGNAL GENERATION & EXECUTION ===
+        # Faster: every 10 min for signals
+        "generate-signals-every-10min": {
             "task": "app.tasks.signal_tasks.generate_signals",
-            "schedule": 900.0,
+            "schedule": 600.0,
         },
         "auto-trade-every-5min": {
             "task": "app.tasks.analysis_tasks.auto_trade",
+            "schedule": 300.0,
+        },
+
+        # === TRADE SYNC & LEARNING ===
+        "sync-closed-trades-every-5min": {
+            "task": "app.tasks.analysis_tasks.sync_closed_trades",
             "schedule": 300.0,
         },
     },

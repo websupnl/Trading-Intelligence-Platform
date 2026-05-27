@@ -57,35 +57,67 @@
 
 ---
 
-## 🔴 Prioriteit 1 — Controle & Beheer (volgende sessie)
+## ✅ Prioriteit 1 — Controle & Beheer (GEDAAN in sessie 2)
 
-### 1. Levende instellingen in database
-- [ ] `SystemSettings` tabel in DB (key/value, typed)
-- [ ] Risk limieten opslaan: `max_position_size_usd`, `max_trades_per_day`, `max_open_positions`, `auto_trader_confidence_threshold`
-- [ ] Module toggles opslaan: `auto_trader_enabled`, `news_ingestion_enabled`, `reddit_enabled`, `signal_generation_enabled`
-- [ ] Settings API: `GET /api/settings/runtime` + `PATCH /api/settings/runtime`
-- [ ] Settings pagina: bewerkbare velden + opslaan knop (geen redeploy nodig)
+### 1. Runtime Settings ✅
+- [x] `PATCH /api/settings/runtime` — live toggles voor `require_manual_confirmation`, `live_trading_enabled`
+- [x] Settings pagina: toggle switches voor kill switch, live trading, handmatige bevestiging
+- [x] lru_cache bug gefixed via runtime overrides
+- [ ] SystemSettings DB tabel (permanent opslaan) — nog te doen
 
-### 2. Signal review panel
-- [ ] Tabel van pending signalen met: ticker, richting, confidence, reden, TA samenvatting
-- [ ] Approve / Reject knoppen per signaal
-- [ ] Status: `pending → approved/rejected → executed`
-- [ ] Toggle: "volledig automatisch" vs "handmatige goedkeuring vereist"
-- [ ] Backend: `PATCH /api/signals/{id}/approve` + `/reject`
+### 2. Signal review panel ✅
+- [x] Bull/Bear debate per signaal (3-stap Claude debat)
+- [x] Filter tabs: pending / getraded / afgewezen
+- [x] Approve / Reject knoppen per signaal
+- [x] AI reasoning zichtbaar per signaal (uitklappen)
 
-### 3. Handmatige trade UI
-- [ ] Buy/Sell form: symbol, qty, order type (market/limit), price
-- [ ] Realtime prijs ophalen bij invullen symbol
-- [ ] Order bevestiging modal
-- [ ] Backend: `POST /api/trading/manual-order`
-- [ ] Koppeling aan Alpaca broker service
+### 3. Pipeline control panel ✅
+- [x] `GET /api/pipeline/status` — alle 8 taken met schedule info
+- [x] `POST /api/pipeline/trigger/{key}` — handmatig triggeren
+- [x] Nieuwe Pipeline pagina in frontend met snelstart knoppen
+- [x] Pipeline link in sidebar
 
-### 4. Pipeline control panel
-- [ ] Overzicht van alle 7 Celery taken: naam, laatste run, volgende run, status
-- [ ] Per taak: "Nu triggeren" knop
-- [ ] Per taak: pauzeren / hervatten toggle
-- [ ] Backend: `GET /api/pipeline/status` + `POST /api/pipeline/{task}/trigger` + `POST /api/pipeline/{task}/toggle`
-- [ ] Celery task status via Redis/result backend
+### 4. Trade tracker & P&L ✅
+- [x] `TradeTrackerService` — sync Alpaca orders naar Trade tabel
+- [x] P&L berekening per gesloten trade
+- [x] AI reflectie na elke gesloten trade
+- [x] MemoryEntry aanmaken met trade les
+- [x] Performance stats: win rate, avg P&L, profit factor, P&L grafiek
+
+### 5. Close position knoppen ✅
+- [x] "Sluit" knop per open positie
+- [x] "Sluit Alles" noodknop
+- [x] `POST /api/trading/close-position/{symbol}`
+- [x] `POST /api/trading/close-all`
+
+### 6. PIN beveiliging ✅
+- [x] `DASHBOARD_PIN` env var
+- [x] Middleware in FastAPI (X-Dashboard-Pin header)
+- [x] PinGate component in frontend
+- [x] Uitloggen knop in sidebar
+
+### 7. Mobile friendly ✅
+- [x] Mobile bottom navigation bar
+- [x] Hamburger menu in TopBar
+- [x] Responsive grid layouts (md: breakpoints)
+- [x] Touch-friendly tap targets
+
+### 8. AI War Room ✅
+- [x] Bull/Bear debate zichtbaar per signaal
+- [x] Score bars voor bull vs bear
+- [x] TA indicators, prijsniveaus, risico's
+- [x] Genereer Signalen knop
+
+### 9. Audit logging uitgebreid ✅
+- [x] Auto-trader logt elke beslissing
+- [x] Signal generator logt elk gegenereerd signaal
+- [x] Trade tracker logt sync + reflecties
+- [x] Audit pagina met filter tabs + detail uitklap
+
+### 10. Memory pagina ✅
+- [x] Trade lessen tab (uit MemoryEntry)
+- [x] Uitklap met les, confidence assessment, regelvoorstel
+- [x] Zoekfunctie
 
 ---
 

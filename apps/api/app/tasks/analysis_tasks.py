@@ -48,7 +48,6 @@ def fetch_market_data():
         tickers = set()
 
         async with AsyncSessionLocal() as db:
-            # From recent news
             result = await db.execute(
                 select(NewsItem.tickers).where(
                     NewsItem.ai_analyzed == True,
@@ -58,7 +57,6 @@ def fetch_market_data():
             for row in result.scalars():
                 tickers.update(row or [])
 
-            # From pending signals
             result = await db.execute(
                 select(Signal.asset).where(Signal.status == "pending")
             )
@@ -66,7 +64,6 @@ def fetch_market_data():
                 if row:
                     tickers.add(row)
 
-        # Filter valid tickers (2-5 chars)
         valid = [t for t in tickers if 2 <= len(t) <= 5][:30]
         if not valid:
             return 0
@@ -85,7 +82,7 @@ def fetch_market_data():
 
 @celery_app.task(name="app.tasks.analysis_tasks.auto_trade")
 def auto_trade():
-    """Auto-execute high-confidence signals in paper mode."""
+    """Auto-execute high-confidence signals in paper/live mode."""
     from app.services.auto_trader import AutoTraderService
     try:
         svc = AutoTraderService()
@@ -93,4 +90,21 @@ def auto_trade():
         return {"status": "ok", "executed": count}
     except Exception as e:
         logger.error(f"Auto trade fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.sync_closed_trades")
+def sync_closed_trades():
+    """Sync closed trades from Alpaca, compute P&L, write AI reflections."""
+    from app.services.trade_tracker import TradeTrackerService
+    try:
+        svc = TradeTrackerService()
+        # First ensure all orders are in DB
+        created = asyncio.run(svc.sync_open_trades_from_orders())
+        # Then close any that are now closed
+        closed = asyncio.run(svc.sync_closed_trades())
+        logger.info(f"Trade sync: {created} nieuw aangemaakt, {closed} gesloten met P&L")
+        return {"status": "ok", "created": created, "closed": closed}
+    except Exception as e:
+        logger.error(f"Trade sync fout: {e}")
         return {"status": "error", "message": str(e)}
