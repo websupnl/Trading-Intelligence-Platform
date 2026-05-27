@@ -1,9 +1,12 @@
-# Environment files
+# ─── Secrets / Environment ────────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
+*.crt
 
-# Python
+# ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -22,31 +25,27 @@ build/
 htmlcov/
 .coverage
 
-# Node.js
+# ─── Node.js ─────────────────────────────────────────────────────────────────
 node_modules/
 .next/
 out/
 .turbo/
+# NOTE: package-lock.json is intentionally committed for reproducible builds
 
-# Docker
+# ─── Docker ──────────────────────────────────────────────────────────────────
 *.log
 
-# IDE
+# ─── IDE ─────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
+# ─── OS ──────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# Secrets
-*.pem
-*.key
-*.crt
-
-# Memory (keep structure, not content for sensitive data)
+# ─── Memory files (runtime-generated, potentially sensitive) ─────────────────
 memory/trades/*.md
 memory/reflections/*.md
 memory/daily/*.md
@@ -59,9 +58,9 @@ memory/lessons/*.md
 memory/strategies/*.md
 memory/raw/*.md
 
-# Celery beat schedule
+# ─── Celery ──────────────────────────────────────────────────────────────────
 celerybeat-schedule
 celerybeat.pid
 
-# Alembic
+# ─── Alembic compiled ────────────────────────────────────────────────────────
 apps/api/app/migrations/versions/*.pyc

@@ -25,7 +25,7 @@ export function Button({
   size?: Size;
   className?: string;
   disabled?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   type?: 'button' | 'submit';
 }) {
   return (

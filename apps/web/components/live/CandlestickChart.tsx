@@ -7,9 +7,6 @@ import {
   CandlestickData,
   Time,
   SeriesMarker,
-  CandlestickSeries,
-  LineSeries,
-  HistogramSeries,
 } from 'lightweight-charts';
 
 interface OHLCVCandle {
@@ -37,9 +34,12 @@ interface CandlestickChartProps {
 export function CandlestickChart({ candles, signals, height }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const candleSeriesRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const emaSeriesRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const volumeSeriesRef = useRef<any>(null);
 
   // Create chart once
   useEffect(() => {
@@ -73,8 +73,8 @@ export function CandlestickChart({ candles, signals, height }: CandlestickChartP
 
     chartRef.current = chart;
 
-    // Candlestick series
-    const candleSeries = chart.addSeries(CandlestickSeries, {
+    // Candlestick series (v4 API)
+    const candleSeries = chart.addCandlestickSeries({
       upColor: '#22c55e',
       downColor: '#ef4444',
       borderVisible: false,
@@ -84,7 +84,7 @@ export function CandlestickChart({ candles, signals, height }: CandlestickChartP
     candleSeriesRef.current = candleSeries;
 
     // EMA-20 line
-    const emaSeries = chart.addSeries(LineSeries, {
+    const emaSeries = chart.addLineSeries({
       color: '#f59e0b',
       lineWidth: 1,
       priceLineVisible: false,
@@ -93,7 +93,7 @@ export function CandlestickChart({ candles, signals, height }: CandlestickChartP
     emaSeriesRef.current = emaSeries;
 
     // Volume histogram (lower pane via price scale)
-    const volSeries = chart.addSeries(HistogramSeries, {
+    const volSeries = chart.addHistogramSeries({
       color: 'rgba(100, 116, 139, 0.4)',
       priceScaleId: 'volume',
       priceFormat: { type: 'volume' },
