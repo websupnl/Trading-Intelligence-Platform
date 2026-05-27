@@ -1,0 +1,159 @@
+# Production / VPS deployment via Coolify
+# Use this file for Coolify or any VPS Docker Compose deployment.
+# Set all environment variables via Coolify's "Environment Variables" dashboard.
+# Never commit secrets to this file.
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trading_os}
+      POSTGRES_USER: ${POSTGRES_USER:-trading_os}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trading_os} -d ${POSTGRES_DB:-trading_os}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # No external ports exposed on VPS — only internal Docker network
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    environment:
+      - APP_ENV=production
+      - USE_MOCK_DATA=false
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trading_os}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - LIVE_TRADING_ENABLED=${LIVE_TRADING_ENABLED:-false}
+      - REQUIRE_MANUAL_CONFIRMATION=${REQUIRE_MANUAL_CONFIRMATION:-true}
+      - KILL_SWITCH_ENABLED=${KILL_SWITCH_ENABLED:-false}
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY:-}
+      - ALPACA_BASE_URL=${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      - ALPACA_DATA_URL=${ALPACA_DATA_URL:-https://data.alpaca.markets}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-5}
+      - ANTHROPIC_ENABLE_PROMPT_CACHING=${ANTHROPIC_ENABLE_PROMPT_CACHING:-true}
+      - ANTHROPIC_MAX_TOKENS=${ANTHROPIC_MAX_TOKENS:-4096}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - DEFAULT_AI_PROVIDER=${DEFAULT_AI_PROVIDER:-anthropic}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
+      - REDDIT_USER_AGENT=${REDDIT_USER_AGENT:-trading-os/1.0}
+      - X_BEARER_TOKEN=${X_BEARER_TOKEN:-}
+      - NEWS_FEEDS=${NEWS_FEEDS:-}
+      - CRYPTO_NEWS_FEEDS=${CRYPTO_NEWS_FEEDS:-}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    volumes:
+      - memory_data:/app/memory
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trading_os}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - LIVE_TRADING_ENABLED=${LIVE_TRADING_ENABLED:-false}
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY:-}
+      - ALPACA_BASE_URL=${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - NEWS_FEEDS=${NEWS_FEEDS:-}
+      - CRYPTO_NEWS_FEEDS=${CRYPTO_NEWS_FEEDS:-}
+    volumes:
+      - memory_data:/app/memory
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-trading_os}
+      - REDIS_URL=redis://redis:6379/0
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - LIVE_TRADING_ENABLED=${LIVE_TRADING_ENABLED:-false}
+      - ALPACA_API_KEY=${ALPACA_API_KEY:-}
+      - NEWS_FEEDS=${NEWS_FEEDS:-}
+    volumes:
+      - memory_data:/app/memory
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - INTERNAL_API_URL=http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  memory_data:
