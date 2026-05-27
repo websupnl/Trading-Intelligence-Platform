@@ -71,6 +71,11 @@ class Settings(BaseSettings):
 
     # Frontend
     next_public_api_url: str = "http://localhost:8000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def alpaca_configured(self) -> bool:
