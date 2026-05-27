@@ -5,12 +5,13 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, ShoppingCart, Zap, Radio,
   Newspaper, MessageSquare, Brain, Database, Settings, Activity,
-  Cpu, LogOut
+  Cpu, LogOut, MonitorPlay
 } from 'lucide-react';
 import { clearPin } from '@/lib/api';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/live', label: 'Live Session', icon: MonitorPlay },
   { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
   { href: '/orders', label: 'Orders', icon: ShoppingCart },
   { href: '/signals', label: 'Signals', icon: Zap },
@@ -27,10 +28,10 @@ const nav = [
 // Mobile: show only most important pages
 const mobileNav = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
+  { href: '/live', label: 'Live', icon: MonitorPlay },
   { href: '/signals', label: 'Signals', icon: Zap },
   { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
   { href: '/orders', label: 'Orders', icon: ShoppingCart },
-  { href: '/pipeline', label: 'Pipeline', icon: Cpu },
 ];
 
 export function Sidebar() {
