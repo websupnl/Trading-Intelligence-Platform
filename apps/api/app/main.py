@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.logging_config import setup_logging
 from app.api import health, config, trading, risk, news, social, rumours, signals, memory, audit
-from app.api import settings as settings_router, chat, pipeline
+from app.api import settings as settings_router, chat, pipeline, stream
 from app.services.audit import AuditLogService
 from app.database import AsyncSessionLocal
 from app.config import get_settings
@@ -89,3 +89,4 @@ app.include_router(audit.router)
 app.include_router(settings_router.router)
 app.include_router(chat.router)
 app.include_router(pipeline.router)
+app.include_router(stream.router)
