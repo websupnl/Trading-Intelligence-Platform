@@ -85,8 +85,14 @@ export const api = {
   paperTradeSignal: (id: string, confirmed = false) => apiFetch(`/api/signals/${id}/paper-trade?confirmed=${confirmed}`, { method: 'POST' }),
   rejectSignal: (id: string) => apiFetch(`/api/signals/${id}/reject`, { method: 'POST' }),
 
+  // ── Outcomes & Signal Performance ──────────────────────────────────────
+  getOutcomeSummary: () => apiFetch('/api/outcomes/summary'),
+  getSignalOutcomes: (limit = 100) => apiFetch(`/api/outcomes/signals?limit=${limit}`),
+  evaluateOutcomes: () => apiFetch('/api/outcomes/evaluate', { method: 'POST' }),
+
   // ── Memory ──────────────────────────────────────────────────────────────
   searchMemory: (q: string) => apiFetch(`/api/memory/search?q=${encodeURIComponent(q)}`),
+  getAiFeedback: () => apiFetch('/api/memory/feedback'),
   getPendingRules: () => apiFetch('/api/memory/pending-rules'),
   getActiveRules: () => apiFetch('/api/memory/active-rules'),
   approveRule: (id: string) => apiFetch(`/api/memory/pending-rules/${id}/approve`, { method: 'POST' }),

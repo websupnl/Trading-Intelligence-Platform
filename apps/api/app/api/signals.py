@@ -6,6 +6,7 @@ from app.models.signals import Signal
 from app.services.risk_engine import RiskEngine
 from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
 from app.schemas.risk import RiskCheckRequest
+from app.services.order_recorder import record_submitted_order
 
 router = APIRouter(prefix="/api/signals")
 risk_engine = RiskEngine()
@@ -63,6 +64,19 @@ async def paper_trade_signal(signal_id: str, confirmed: bool = False, db: AsyncS
             notional=None,
             side=signal.direction,
             stop_price=signal.suggested_stop,
+        )
+        record_submitted_order(
+            db,
+            symbol=signal.asset,
+            side=signal.direction,
+            quantity=1,
+            notional=None,
+            order_type="market",
+            mode="paper",
+            broker_response=order,
+            signal_id=signal.id,
+            stop_price=signal.suggested_stop,
+            risk_check_result=risk_result.model_dump(),
         )
         signal.status = "paper_traded"
         signal.risk_check_result = risk_result.model_dump()

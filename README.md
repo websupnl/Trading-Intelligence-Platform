@@ -107,6 +107,7 @@ trading-os/
 - **Portfolio** — Alpaca posities en account info
 - **Orders** — Paper orders plaatsen en annuleren, risk check resultaat
 - **Signals** — AI-gegenereerde trading signals met paper trade knop
+- **Performance** — Objectieve shadow-outcomes van signalen na 1 en 5 handelsdagen
 - **Rumour Radar** — Geruchten uit nieuws en social media
 - **Nieuws** — RSS feed ingestie en analyse
 - **Social** — Reddit en X monitoring

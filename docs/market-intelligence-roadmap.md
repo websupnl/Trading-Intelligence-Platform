@@ -29,15 +29,17 @@ Geleverd:
 - Signal API levert AI debate-data en take-profitniveau terug aan de UI.
 - Chat signal lookup gebruikt het werkelijke `Signal.asset`-contract.
 - Kill switch wordt via Redis zichtbaar voor API en workerprocessen.
+- Runtime safety-instellingen worden duurzaam in de database opgeslagen en bij startup naar Redis hersteld.
+- Uitschakelen van de kill switch faalt gesloten wanneer workerbevestiging via Redis ontbreekt.
 - Expliciete bevestiging voor paper-orders wanneer risk rules dit vereisen.
 - Auto-trader voert geen signaal uit waarvoor handmatige bevestiging vereist is.
+- Orders uit handmatige, signal-, auto- en noodflows worden lokaal geregistreerd voor auditability.
+- Exit-only noodflows gebruiken Alpaca position liquidation en ondersteunen long- en shortposities.
 
 Nog vereist om fase 0 af te ronden:
 
 - Integratie- en endpointtests voor kill switch, bevestiging en order lifecycle.
-- Eén centrale order service voor handmatige orders, signal-orders en auto-orders.
-- Exit-only noodflow expliciet vastleggen en testen voor `close-position` en `close-all`.
-- Runtime settings permanent en auditbaar opslaan in database.
+- Endpointtests voor de exit-only noodflow en lokale orderregistratie.
 - Documentatie opschonen zodat gedrag en claims gelijklopen.
 
 Exitcriterium:
@@ -50,18 +52,55 @@ Exitcriterium:
 
 Doel: bewijs opbouwen welke signalen werkelijk waarde toevoegen.
 
-Te bouwen:
+Status: eerste dagelijkse shadow-outcome lus geleverd op 2026-05-27.
 
-- `signal_outcomes` met forward returns op 1 uur, 1 dag en 5 dagen.
-- MFE/MAE, slippage, fees, benchmarkrendement en drawdown per signaal/trade.
+Geleverd:
+
+- `signal_outcomes` migratie en model voor dagelijkse signaaluitkomsten.
+- Automatische worker-evaluatie en handmatige API-trigger.
+- Signed returns na 1 en 5 handelsdagen voor long- en shortsignalen.
+- MFE/MAE over de eerste vijf volgende dagelijkse bars.
+- SPY-benchmark en excess return wanneer benchmarkbars beschikbaar zijn.
+- Performance-scherm met sample size, hit rate en outcome-overzicht per asset.
+- Performance-scherm scheidt gerealiseerde trade-P&L van niet-uitgevoerde shadow-signaalresultaten.
+- Dashboardfeed met recente AI-beslissingen, trade-lessen en gemeten outcomes; zichtbaar ververst iedere 30 seconden.
+- Shadow scoring geldt voor gegenereerde signalen, onafhankelijk van uitvoering.
+
+Nog te bouwen:
+
+- Intraday bars en forward return op 1 uur.
+- Slippage, fees en drawdown per signaal/trade.
 - Strategy registry en performance per strategie, timeframe, asset en marktregime.
 - Performance dashboard met expectancy, profit factor, Sharpe/Sortino en sample size.
-- Shadow portfolio: alle signalen evalueren, ook signalen die niet uitgevoerd zijn.
 
 Exitcriterium:
 
 - Elk gegenereerd signaal krijgt automatisch een objectieve outcome.
 - Dashboard kan aantonen welke strategieën na kosten positieve expectancy hebben.
+
+## Fase 1B - Intraday / Micro Trading Candidate
+
+Status: gepland, niet geactiveerd. Deze module blijft `shadow` of `paper` totdat de
+resultaten na kosten aantoonbaar positief zijn.
+
+Te bouwen:
+
+- 1m/5m/15m bars, quotes, spread en volume/liquidity snapshots met point-in-time opslag.
+- Micro-signal outcomes op 5m, 15m, 1u en einde-dag, inclusief fees en conservatieve slippage.
+- Hard maximum op notional, orders per uur, dagverlies, open exposure en gelijktijdige posities.
+- Spread-, liquiditeits-, news-event-, stale-data- en markturenfilters voor iedere order.
+- Micro Strategy Lab met minimum sample size, walk-forward evaluatie en paper-only scoreboard.
+- Separaat dashboard voor bruto P&L, kosten, netto P&L, drawdown en reject-redenen.
+
+Gate voor automatische paper-uitvoering:
+
+- Minimaal 250 shadow outcomes per strategie en marktregime.
+- Positieve netto expectancy na fees en slippage, met benchmarkvergelijking.
+- Max drawdown en verlieslimieten zijn geconfigureerd en getest.
+- Kill switch, data-staleness stop en auditregistratie zijn end-to-end getest.
+
+Live uitvoering blijft buiten scope totdat de gebruiker deze na aantoonbaar paper-bewijs
+expliciet activeert.
 
 ## Fase 2 - Evidence, Sources En Narratives
 
@@ -151,4 +190,3 @@ Het systeem is geslaagd wanneer het niet alleen kansen toont, maar per beslissin
 - In welk regime werkt deze strategie?
 - Wat was de verwachte en gerealiseerde opbrengst na kosten?
 - Welk risico werd genomen en welke regel beschermde tegen een slechte trade?
-

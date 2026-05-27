@@ -34,6 +34,18 @@ export function StatusGrid() {
         </div>
       </CardHeader>
       <CardContent>
+        <div className="mb-3 rounded-md border border-border bg-accent/40 p-2 text-xs">
+          <p className="font-medium text-foreground">Automation status</p>
+          <p className="mt-0.5 text-muted-foreground">
+            {config.kill_switch_enabled
+              ? 'Geblokkeerd: kill switch staat aan.'
+              : config.require_manual_confirmation
+                ? 'AI analyseert automatisch; orders vereisen bevestiging.'
+                : config.trading_mode === 'paper'
+                  ? 'AI kan goedgekeurde signalen automatisch paper-traden.'
+                  : 'Live modus actief: controleer risico en approvals.'}
+          </p>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           {integrations.map(({ name, data }) => (
             <div key={name} className="flex items-center justify-between py-1.5 px-2 rounded bg-muted/30">

@@ -10,6 +10,7 @@ from app.services.risk_engine import RiskEngine
 from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
 from app.schemas.risk import RiskCheckRequest
 from app.services.runtime_state import get_runtime_value
+from app.services.order_recorder import record_submitted_order
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +131,20 @@ class AutoTraderService:
                     entry_reason=signal.reason[:500] if signal.reason else "Auto-trader signaal",
                     opened_at=datetime.now(timezone.utc),
                 )
+                local_order = record_submitted_order(
+                    db,
+                    symbol=signal.asset,
+                    side=signal.direction,
+                    quantity=1,
+                    notional=None,
+                    order_type="market",
+                    mode=mode,
+                    broker_response=order,
+                    signal_id=signal.id,
+                    stop_price=signal.suggested_stop,
+                    risk_check_result=risk_result.model_dump(),
+                )
+                trade.order_id = local_order.id
                 db.add(trade)
 
                 db.add(AuditLog(

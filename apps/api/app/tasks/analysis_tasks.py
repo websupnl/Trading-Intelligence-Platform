@@ -45,7 +45,7 @@ def fetch_market_data():
 
     async def _run():
         since = datetime.now(timezone.utc) - timedelta(hours=48)
-        tickers = set()
+        tickers = {"SPY"}
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -58,7 +58,7 @@ def fetch_market_data():
                 tickers.update(row or [])
 
             result = await db.execute(
-                select(Signal.asset).where(Signal.status == "pending")
+                select(Signal.asset).where(Signal.created_at >= since - timedelta(days=30))
             )
             for row in result.scalars():
                 if row:
@@ -77,6 +77,25 @@ def fetch_market_data():
         return {"status": "ok", "candles": count}
     except Exception as e:
         logger.error(f"Market data fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.evaluate_signal_outcomes")
+def evaluate_signal_outcomes():
+    """Evaluate generated signals against subsequent daily market bars."""
+    from app.database import AsyncSessionLocal
+    from app.services.outcome_engine import OutcomeEngine
+
+    async def _run():
+        async with AsyncSessionLocal() as db:
+            return await OutcomeEngine(db).evaluate_signals()
+
+    try:
+        result = asyncio.run(_run())
+        logger.info("Signal outcomes bijgewerkt: %s", result)
+        return {"status": "ok", **result}
+    except Exception as e:
+        logger.error(f"Outcome evaluatie fout: {e}")
         return {"status": "error", "message": str(e)}
 
 

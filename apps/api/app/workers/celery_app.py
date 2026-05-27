@@ -50,6 +50,10 @@ celery_app.conf.update(
             "task": "app.tasks.analysis_tasks.fetch_market_data",
             "schedule": 3600.0,
         },
+        "evaluate-outcomes-hourly": {
+            "task": "app.tasks.analysis_tasks.evaluate_signal_outcomes",
+            "schedule": 3600.0,
+        },
 
         # === SIGNAL GENERATION & EXECUTION ===
         # Faster: every 10 min for signals

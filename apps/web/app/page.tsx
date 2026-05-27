@@ -1,4 +1,6 @@
 'use client';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
 import { StatusGrid } from '@/components/dashboard/StatusGrid';
@@ -146,16 +148,117 @@ function AuditCard() {
   );
 }
 
+function PerformanceSnapshot() {
+  const { data, loading } = useApi(() => api.getOutcomeSummary(), []);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Signal Performance</CardTitle>
+        <Link href="/performance" className="text-xs text-primary hover:underline">Details</Link>
+      </CardHeader>
+      <CardContent>
+        {loading && <LoadingSpinner />}
+        {!loading && (
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Gemeten 5d</p>
+              <p className="text-lg font-semibold">{data?.evaluated_5d ?? 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Hit rate</p>
+              <p className={cn('text-lg font-semibold', data?.hit_rate_5d >= 50 ? 'text-green-400' : 'text-muted-foreground')}>
+                {data?.hit_rate_5d == null ? '-' : `${data.hit_rate_5d.toFixed(1)}%`}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Gem. 5d</p>
+              <p className={cn('text-lg font-semibold', data?.avg_pnl_5d_pct >= 0 ? 'text-green-400' : 'text-red-400')}>
+                {data?.avg_pnl_5d_pct == null ? '-' : `${data.avg_pnl_5d_pct >= 0 ? '+' : ''}${data.avg_pnl_5d_pct.toFixed(2)}%`}
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AiFeedbackCard() {
+  const [feedback, setFeedback] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const result = await api.getAiFeedback();
+        if (active) setFeedback(result.items || []);
+      } catch {
+        if (active) setFeedback([]);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    const timer = window.setInterval(load, 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  function message(item: any) {
+    if (item.kind !== 'lesson') return item.message;
+    try {
+      const parsed = JSON.parse(item.message);
+      return parsed.lesson || parsed.next_time || item.message;
+    } catch {
+      return item.message;
+    }
+  }
+
+  return (
+    <Card className="md:col-span-2">
+      <CardHeader>
+        <CardTitle>AI Feedback Feed</CardTitle>
+        <span className="text-xs text-muted-foreground">ververst elke 30 sec</span>
+      </CardHeader>
+      <CardContent className="p-0">
+        {loading && <LoadingSpinner />}
+        {!loading && feedback.length === 0 && <EmptyState message="Nog geen AI feedback of gemeten outcomes." />}
+        {feedback.map(item => (
+          <div key={`${item.kind}-${item.id}`} className="border-b border-border px-4 py-2.5 last:border-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Badge variant={item.kind === 'outcome' ? 'success' : item.kind === 'lesson' ? 'default' : 'muted'}>
+                  {item.kind}
+                </Badge>
+                {item.symbol && <AssetLabel symbol={item.symbol} compact className="text-xs" />}
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">{fmtDate(item.created_at)}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{message(item)}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-base font-semibold text-foreground">Dashboard</h1>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatusGrid />
         <AccountCard />
         <SignalsCard />
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <PerformanceSnapshot />
+        <AiFeedbackCard />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <RumoursCard />
         <NewsCard />
         <AuditCard />

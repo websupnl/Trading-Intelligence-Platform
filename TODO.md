@@ -13,7 +13,7 @@
 - [x] Cloudflare DNS wildcard `*.onlinewerkplek.cloud → 82.180.155.249`
 - [x] TimescaleDB (PostgreSQL), Redis, Qdrant volumes
 - [x] Celery worker + beat scheduler
-- [x] Alembic migraties (`001_initial`)
+- [x] Alembic migraties (`001_initial`, `002_signal_outcomes`)
 - [x] CORS via env var `CORS_ORIGINS` (geen hardcode meer)
 - [x] `NEXT_PUBLIC_API_URL` als build-arg in web Dockerfile
 
@@ -37,6 +37,7 @@
 - [x] fetch-market-data: elk uur
 - [x] generate-signals: elke 15 min
 - [x] auto-trade: elke 5 min
+- [x] evaluate-signal-outcomes: elk uur
 
 ### UI
 - [x] Dashboard (portfolio overzicht, status grid)
@@ -49,6 +50,7 @@
 - [x] Settings pagina (read-only weergave)
 - [x] Floating chat panel (SSE streaming, Claude tool use)
 - [x] Kill switch knop in UI
+- [x] Performance pagina met signal-outcomes en SPY-vergelijking
 
 ### Veiligheid
 - [x] Kill switch (runtime + UI)
@@ -64,7 +66,7 @@
 - [x] `PATCH /api/settings/runtime` — live toggles voor `require_manual_confirmation`, `live_trading_enabled`
 - [x] Settings pagina: toggle switches voor kill switch, live trading, handmatige bevestiging
 - [x] lru_cache bug gefixed via runtime overrides
-- [ ] SystemSettings DB tabel (permanent opslaan) — nog te doen
+- [x] Runtime safety settings permanent opslaan in bestaande `settings`-tabel en herstellen naar Redis
 
 ### 2. Signal review panel ✅
 - [x] Bull/Bear debate per signaal (3-stap Claude debat)
@@ -140,7 +142,7 @@
 ### 7. Performance tracking
 - [ ] `StrategyPerformance` tabel vullen na elke gesloten positie
 - [ ] Win rate, avg P&L, avg R:R per strategie berekenen
-- [ ] Performance pagina in UI met statistieken en grafiek
+- [x] Signal Performance pagina met 1d/5d shadow-outcomes, MFE/MAE en SPY-benchmark
 - [ ] Vergelijk auto-trader prestaties per tijdsperiode
 
 ### 8. Positie management vanuit UI
@@ -177,12 +179,12 @@
 
 ## 🔧 Bekende issues / technische schuld
 
-- [ ] Kill switch runtime change werkt niet (lru_cache probleem) — settings moeten uit DB komen (opgelost door punt 1)
+- [x] Kill switch runtime state gedeeld via Redis en duurzaam opgeslagen in database
 - [ ] `ALPACA_BASE_URL` moet zonder `/v2` zijn in Coolify env vars
 - [ ] `CORS_ORIGINS` instellen in Coolify: `https://n08w4cgkko4kcwwsockckkg0.onlinewerkplek.cloud`
 - [ ] `ANTHROPIC_ENABLE_WEB_SEARCH=true` instellen in Coolify voor web search in chat
 - [ ] Na eerste deploy: `POST /api/news/trigger-pipeline` uitvoeren om data te seeden
-- [ ] Alembic migratie toevoegen voor nieuwe tabellen (SystemSettings, Watchlist) na punt 1+5
+- [ ] Alembic migratie toevoegen voor Watchlist na implementatie
 - [ ] Reddit JSON scraper kan rate-limited worden — fallback of retry logica toevoegen
 - [ ] `social_tasks.py` mist nog Celery task registratie check
 

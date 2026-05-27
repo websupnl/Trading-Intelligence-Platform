@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { AlertTriangle, Shield, TrendingUp, Brain, Wifi, Menu, X } from 'lucide-react';
 import {
   LayoutDashboard, Zap, ShoppingCart, Cpu, Settings, Database, Activity,
-  Radio, Newspaper, MessageSquare
+  Radio, Newspaper, MessageSquare, BarChart3
 } from 'lucide-react';
 
 function StatusPill({ label, ok, warn }: { label: string; ok: boolean; warn?: boolean }) {
@@ -27,6 +27,7 @@ const mobileMenuItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/signals', label: 'Signals', icon: Zap },
   { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
+  { href: '/performance', label: 'Performance', icon: BarChart3 },
   { href: '/orders', label: 'Orders', icon: ShoppingCart },
   { href: '/pipeline', label: 'Pipeline', icon: Cpu },
   { href: '/ai-war-room', label: 'AI War Room', icon: Brain },

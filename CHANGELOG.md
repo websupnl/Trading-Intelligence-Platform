@@ -16,10 +16,21 @@
 ### Veiligheid en fixes
 - Kill switch en runtime safety controls via Redis gedeeld tussen API en Celery worker.
 - Kill switch meldt een fout wanneer bevestiging door de worker niet kan worden gegarandeerd.
+- Runtime safety controls worden permanent opgeslagen in `settings` en bij API-start naar Redis hersteld.
 - Handmatige confirmation wordt nu afgedwongen voor paper-orders en signal-orders.
 - Auto trader voert signalen met vereiste handmatige goedkeuring niet automatisch uit.
+- Handmatige, signal-, auto- en noodorders worden centraal als lokale `Order` vastgelegd.
+- Posities sluiten gebruikt een exit-only Alpaca liquidatieflow, inclusief shortposities.
 - Signal API retourneert War Room analysevelden; chat signaltool gebruikt het juiste datamodel.
 - Live Session behandelt `buy` correct als long en gebruikt de bestaande quote response.
+
+### Outcome Engine
+- Nieuwe migratie `002_signal_outcomes.py` en API `/api/outcomes/*` voor meetbare signaaluitkomsten.
+- Dagelijkse shadow-evaluatie op 1 en 5 handelsdagen met MFE/MAE en optionele SPY-overperformance.
+- Nieuwe pagina `/performance` met gerealiseerde trade-P&L naast hit rate, gemiddelde shadow-outcome en per-asset resultaten.
+- Dashboard toont automation-status, performance-snapshot en een iedere 30 seconden ververste AI-feedbackfeed.
+- Memory API levert de opgeslagen lesinhoud terug, zodat AI-reflecties daadwerkelijk uitklapbaar zijn.
+- Celery en pipeline voeren outcome-evaluatie ieder uur uit; marktdata verzamelt hiervoor recente signaalassets en SPY.
 
 ## [2026-05-27] Sessie 3 — Live Session, Build Fix, Mobile
 

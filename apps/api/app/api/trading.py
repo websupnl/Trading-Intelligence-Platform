@@ -7,6 +7,7 @@ from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, A
 from app.services.risk_engine import RiskEngine
 from app.services.audit import AuditLogService
 from app.services.trade_tracker import TradeTrackerService
+from app.services.order_recorder import record_submitted_order
 from app.schemas.orders import PaperOrderRequest, CancelOrderRequest
 from app.schemas.risk import RiskCheckRequest
 
@@ -147,12 +148,27 @@ async def submit_paper_order(req: PaperOrderRequest, db: AsyncSession = Depends(
             limit_price=req.limit_price,
             stop_price=req.stop_loss or req.stop_price,
         )
+        local_order = record_submitted_order(
+            db,
+            symbol=req.symbol,
+            side=req.side,
+            quantity=req.quantity,
+            notional=req.notional,
+            order_type=req.order_type,
+            mode="paper",
+            broker_response=result,
+            signal_id=req.signal_id,
+            stop_price=req.stop_loss or req.stop_price,
+            limit_price=req.limit_price,
+            risk_check_result=risk_result.model_dump(),
+        )
+        await db.commit()
         await audit.log("order_submitted", entity_type="order", details={
             "symbol": req.symbol,
             "side": req.side,
             "actor": "user_manual",
         }, message=f"Handmatige order: {req.symbol} {req.side}")
-        return {"status": "submitted", "order": result, "risk_result": risk_result.model_dump()}
+        return {"status": "submitted", "order": result, "local_order_id": local_order.id, "risk_result": risk_result.model_dump()}
     except AlpacaNotConfiguredError as e:
         raise HTTPException(status_code=503, detail={"status": "not_configured", "message": str(e)})
     except AlpacaAPIError as e:
@@ -186,17 +202,24 @@ async def close_position(symbol: str, db: AsyncSession = Depends(get_db)):
         if not pos:
             raise HTTPException(status_code=404, detail=f"Geen open positie voor {symbol}")
 
-        qty = float(pos.get("qty", 0))
-        if qty <= 0:
-            raise HTTPException(status_code=400, detail="Qty is 0 of negatief")
+        signed_qty = float(pos.get("qty", 0))
+        if signed_qty == 0:
+            raise HTTPException(status_code=400, detail="Qty is 0")
+        qty = abs(signed_qty)
+        close_side = "sell" if signed_qty > 0 else "buy"
 
-        result = await broker.submit_order(
-            symbol=symbol.upper(),
-            qty=qty,
+        result = await broker.close_position(symbol.upper())
+        record_submitted_order(
+            db,
+            symbol=symbol,
+            side=close_side,
+            quantity=qty,
             notional=None,
-            side="sell",
             order_type="market",
+            mode="exit_only",
+            broker_response=result,
         )
+        await db.commit()
         await audit.log(
             "position_closed_manually",
             actor="user",
@@ -219,17 +242,30 @@ async def close_all_positions(db: AsyncSession = Depends(get_db)):
     audit = AuditLogService(db)
     try:
         positions = await broker.get_positions()
+        submitted = await broker.close_all_positions()
         results = []
+        by_symbol = {item.get("symbol"): item for item in submitted if isinstance(item, dict)}
         for pos in positions:
             symbol = pos.get("symbol")
-            qty = float(pos.get("qty", 0))
-            if not symbol or qty <= 0:
+            signed_qty = float(pos.get("qty", 0))
+            if not symbol or signed_qty == 0:
                 continue
-            try:
-                order = await broker.submit_order(symbol=symbol, qty=qty, notional=None, side="sell")
-                results.append({"symbol": symbol, "qty": qty, "status": "submitted"})
-            except Exception as e:
-                results.append({"symbol": symbol, "status": "failed", "error": str(e)})
+            qty = abs(signed_qty)
+            close_side = "sell" if signed_qty > 0 else "buy"
+            response = by_symbol.get(symbol, {"symbol": symbol, "status": "accepted"})
+            record_submitted_order(
+                db,
+                symbol=symbol,
+                side=close_side,
+                quantity=qty,
+                notional=None,
+                order_type="market",
+                mode="exit_only",
+                broker_response=response,
+            )
+            results.append({"symbol": symbol, "qty": qty, "status": response.get("status", "submitted")})
+
+        await db.commit()
 
         await audit.log(
             "all_positions_closed",
@@ -240,6 +276,9 @@ async def close_all_positions(db: AsyncSession = Depends(get_db)):
         return {"status": "done", "closed": len(results), "results": results}
     except AlpacaNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except AlpacaAPIError as e:
+        await audit.log("all_positions_close_failed", status="error", message=str(e))
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # ─── Trade history & performance ──────────────────────────────────────────────

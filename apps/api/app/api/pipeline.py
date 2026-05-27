@@ -53,6 +53,14 @@ TASK_REGISTRY = {
         "schedule_label": "Elk uur",
         "category": "data",
     },
+    "evaluate_signal_outcomes": {
+        "name": "app.tasks.analysis_tasks.evaluate_signal_outcomes",
+        "label": "Outcome Evaluatie",
+        "description": "Meet signaalprestaties na 1 en 5 handelsdagen tegenover SPY",
+        "schedule_sec": 3600,
+        "schedule_label": "Elk uur",
+        "category": "trading",
+    },
     "generate_signals": {
         "name": "app.tasks.signal_tasks.generate_signals",
         "label": "Signaal Generator",

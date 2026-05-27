@@ -8,12 +8,15 @@ Na `start-local.bat` draait het systeem volledig automatisch.
 | Taak | Frequentie |
 |------|-----------|
 | Nieuws ingestie (RSS) | Elke 15 minuten |
+| Marktdata ophalen (dagbars) | Elk uur |
+| Signal outcomes evalueren | Elk uur |
 
 ### Handmatige acties via dashboard
 - Nieuws handmatig inlezen (knop op /news pagina)
 - Reddit ophalen (knop op /social, vereist keys)
 - X/Twitter ophalen (knop op /social, vereist keys)
 - Signal paper traden of afwijzen (/signals)
+- Signal outcomes handmatig evalueren (/performance)
 - Pending rule goedkeuren of afwijzen (/memory)
 - Kill switch aan/uitzetten (/settings)
 

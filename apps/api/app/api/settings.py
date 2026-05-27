@@ -1,20 +1,16 @@
-"""
-Settings API — read + runtime toggles.
-Uses _runtime_overrides dict for in-memory overrides (cleared on restart).
-For permanent changes: update .env and redeploy.
-"""
+"""Settings API - durable safety toggles with Redis propagation."""
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.services.audit import AuditLogService
 from app.services.runtime_state import get_runtime_value, set_runtime_value
+from app.services.settings_store import persist_runtime_setting
 import app.config as cfg_module
 
 router = APIRouter(prefix="/api/settings")
 logger = logging.getLogger(__name__)
 
-# In-memory runtime overrides (reset on restart)
 _runtime_overrides: dict = {}
 
 
@@ -57,11 +53,27 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
     allowed_keys = {"require_manual_confirmation", "live_trading_enabled", "trading_mode"}
     changed = {}
 
+    invalid = {
+        key: value for key, value in body.items()
+        if (
+            key in {"require_manual_confirmation", "live_trading_enabled"} and not isinstance(value, bool)
+        ) or (
+            key == "trading_mode" and value not in {"paper", "live"}
+        )
+    }
+    if invalid:
+        raise HTTPException(status_code=422, detail={"invalid_runtime_settings": invalid})
+
     for key, value in body.items():
         if key not in allowed_keys:
             continue
+        if not set_runtime_value(key, value):
+            raise HTTPException(
+                status_code=503,
+                detail="Instelling niet gewijzigd: workerbevestiging via Redis is mislukt.",
+            )
         _runtime_overrides[key] = value
-        set_runtime_value(key, value)
+        await persist_runtime_setting(db, key, value)
         changed[key] = value
 
     if changed:
@@ -85,5 +97,5 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
     return {
         "status": "updated",
         "changed": changed,
-        "note": "Tijdelijke wijziging — update .env voor permanente instelling",
+        "note": "Opgeslagen en gedeeld met workers via Redis.",
     }

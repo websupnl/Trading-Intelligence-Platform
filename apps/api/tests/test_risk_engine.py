@@ -8,6 +8,12 @@ def engine():
     return RiskEngine()
 
 
+@pytest.fixture(autouse=True)
+def use_config_fallback_for_runtime_state(monkeypatch):
+    import app.services.risk_engine as re_module
+    monkeypatch.setattr(re_module, "get_runtime_value", lambda _key, default: default)
+
+
 def test_kill_switch_blocks_all(engine, monkeypatch):
     import app.services.risk_engine as re_module
     monkeypatch.setattr(re_module.settings, "kill_switch_enabled", True)

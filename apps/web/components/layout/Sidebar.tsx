@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, ShoppingCart, Zap, Radio,
   Newspaper, MessageSquare, Brain, Database, Settings, Activity,
-  Cpu, LogOut, MonitorPlay
+  Cpu, LogOut, MonitorPlay, BarChart3
 } from 'lucide-react';
 import { clearPin } from '@/lib/api';
 
@@ -15,6 +15,7 @@ const nav = [
   { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
   { href: '/orders', label: 'Orders', icon: ShoppingCart },
   { href: '/signals', label: 'Signals', icon: Zap },
+  { href: '/performance', label: 'Performance', icon: BarChart3 },
   { href: '/rumour-radar', label: 'Rumour Radar', icon: Radio },
   { href: '/news', label: 'Nieuws', icon: Newspaper },
   { href: '/social', label: 'Social', icon: MessageSquare },
@@ -30,8 +31,8 @@ const mobileNav = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/live', label: 'Live', icon: MonitorPlay },
   { href: '/signals', label: 'Signals', icon: Zap },
+  { href: '/performance', label: 'Scores', icon: BarChart3 },
   { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
-  { href: '/orders', label: 'Orders', icon: ShoppingCart },
 ];
 
 export function Sidebar() {

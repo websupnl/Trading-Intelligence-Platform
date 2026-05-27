@@ -4,9 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.logging_config import setup_logging
-from app.api import health, config, trading, risk, news, social, rumours, signals, memory, audit
+from app.api import health, config, trading, risk, news, social, rumours, signals, memory, audit, outcomes
 from app.api import settings as settings_router, chat, pipeline, stream
 from app.services.audit import AuditLogService
+from app.services.settings_store import hydrate_runtime_settings
 from app.database import AsyncSessionLocal
 from app.config import get_settings
 
@@ -25,6 +26,7 @@ _PIN_BYPASS_PATHS = {"/health", "/api/health", "/"}
 async def lifespan(app: FastAPI):
     logger.info("Trading OS API gestart")
     async with AsyncSessionLocal() as db:
+        await hydrate_runtime_settings(db)
         audit_svc = AuditLogService(db)
         await audit_svc.log("app_startup", message="Trading OS API gestart")
     yield
@@ -84,6 +86,7 @@ app.include_router(news.router)
 app.include_router(social.router)
 app.include_router(rumours.router)
 app.include_router(signals.router)
+app.include_router(outcomes.router)
 app.include_router(memory.router)
 app.include_router(audit.router)
 app.include_router(settings_router.router)

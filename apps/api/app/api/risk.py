@@ -6,6 +6,7 @@ from app.services.audit import AuditLogService
 from app.schemas.risk import RiskCheckRequest
 from app.config import get_settings
 from app.services.runtime_state import get_runtime_value, set_runtime_value
+from app.services.settings_store import persist_runtime_setting
 
 router = APIRouter(prefix="/api/risk")
 risk_engine = RiskEngine()
@@ -33,9 +34,10 @@ async def check_risk(req: RiskCheckRequest):
 @router.post("/kill-switch/enable")
 async def enable_kill_switch(db: AsyncSession = Depends(get_db)):
     audit = AuditLogService(db)
-    await audit.log("kill_switch_enabled", actor="user")
     stored = set_runtime_value("kill_switch_enabled", True)
     object.__setattr__(get_settings(), "kill_switch_enabled", True)
+    await persist_runtime_setting(db, "kill_switch_enabled", True)
+    await audit.log("kill_switch_enabled", actor="user", details={"shared": stored})
     if not stored:
         raise HTTPException(
             status_code=503,
@@ -46,8 +48,14 @@ async def enable_kill_switch(db: AsyncSession = Depends(get_db)):
 
 @router.post("/kill-switch/disable")
 async def disable_kill_switch(db: AsyncSession = Depends(get_db)):
-    audit = AuditLogService(db)
-    await audit.log("kill_switch_disabled", actor="user")
     stored = set_runtime_value("kill_switch_enabled", False)
+    if not stored:
+        raise HTTPException(
+            status_code=503,
+            detail="Kill switch niet uitgeschakeld: workerbevestiging via Redis is mislukt.",
+        )
+    audit = AuditLogService(db)
     object.__setattr__(get_settings(), "kill_switch_enabled", False)
+    await persist_runtime_setting(db, "kill_switch_enabled", False)
+    await audit.log("kill_switch_disabled", actor="user", details={"shared": stored})
     return {"status": "disabled", "shared": stored, "message": "Kill switch uitgeschakeld."}

@@ -97,6 +97,33 @@ class AlpacaBroker:
             resp = await client.delete(f"{settings.alpaca_base_url}/v2/orders/{alpaca_order_id}", headers=self._headers, timeout=10)
             return resp.status_code in (200, 204)
 
+    async def close_position(self, symbol: str) -> dict:
+        """Liquidate only the existing position; this must remain available as an emergency exit."""
+        self._require_configured()
+        async with httpx.AsyncClient() as client:
+            resp = await client.delete(
+                f"{settings.alpaca_base_url}/v2/positions/{symbol}",
+                headers=self._headers,
+                timeout=15,
+            )
+            if resp.status_code not in (200, 201, 202, 204):
+                raise AlpacaAPIError(f"Positie sluiten mislukt: {resp.status_code} {resp.text}")
+            return resp.json() if resp.content else {"symbol": symbol, "status": "accepted"}
+
+    async def close_all_positions(self) -> list[dict]:
+        """Liquidate all positions through Alpaca's close-all route."""
+        self._require_configured()
+        async with httpx.AsyncClient() as client:
+            resp = await client.delete(
+                f"{settings.alpaca_base_url}/v2/positions",
+                headers=self._headers,
+                params={"cancel_orders": "true"},
+                timeout=20,
+            )
+            if resp.status_code not in (200, 202, 204, 207):
+                raise AlpacaAPIError(f"Alle posities sluiten mislukt: {resp.status_code} {resp.text}")
+            return resp.json() if resp.content else []
+
     async def get_portfolio_history(self, period: str = "1M", timeframe: str = "1D") -> dict:
         self._require_configured()
         async with httpx.AsyncClient() as client:

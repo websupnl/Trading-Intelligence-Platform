@@ -17,11 +17,12 @@ from app.models.sources import SourceCredibility
 from app.models.strategies import StrategyPerformance
 from app.models.settings import Setting
 from app.models.rules import PendingRule, ActiveRule
+from app.models.outcomes import SignalOutcome
 
 __all__ = [
     "TimestampMixin", "Asset", "Candle", "NewsItem", "SocialPost",
     "Rumour", "Narrative", "Signal", "Trade", "Order", "Position",
     "RiskEvent", "AuditLog", "AIAgentRun", "MemoryEntry",
     "SourceCredibility", "StrategyPerformance", "Setting",
-    "PendingRule", "ActiveRule",
+    "PendingRule", "ActiveRule", "SignalOutcome",
 ]
