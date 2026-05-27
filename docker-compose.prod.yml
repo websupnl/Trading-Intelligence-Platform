@@ -145,6 +145,9 @@ services:
       - INTERNAL_API_URL=http://api:8000
     expose:
       - "3000"
+    networks:
+      - default
+      - coolify
     depends_on:
       - api
     restart: unless-stopped
@@ -156,6 +159,7 @@ volumes:
   memory_data:
 
 networks:
-  default:
-    name: coolify
+  default: {}
+  coolify:
     external: true
+    name: coolify
