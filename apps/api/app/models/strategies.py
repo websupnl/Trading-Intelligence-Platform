@@ -18,4 +18,4 @@ class StrategyPerformance(Base, TimestampMixin):
     total_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     avg_rr: Mapped[float] = mapped_column(Float, nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
+    strategy_metadata: Mapped[dict] = mapped_column(JSON, nullable=True)
