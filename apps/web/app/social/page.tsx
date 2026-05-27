@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtDate } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
 
 export default function SocialPage() {
   const { data: posts, loading, reload } = useApi(() => api.getPosts(100), []);
@@ -58,7 +59,7 @@ export default function SocialPage() {
                   </div>
                   <p className="text-sm line-clamp-2">{p.content}</p>
                   <div className="flex items-center gap-2 mt-0.5">
-                    {p.tickers?.map((t: string) => <Badge key={t} variant="muted">{t}</Badge>)}
+                    {p.tickers?.map((t: string) => <Badge key={t} variant="muted"><AssetLabel symbol={t} compact /></Badge>)}
                     {p.score && <span className="text-xs text-muted-foreground">Score: {p.score}</span>}
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 from app.config import get_settings
 from app.schemas.common import ConfigStatus, IntegrationStatus
+from app.services.runtime_state import get_runtime_value
 
 
 def get_config_status() -> ConfigStatus:
@@ -30,9 +31,9 @@ def get_config_status() -> ConfigStatus:
             status="configured" if crypto_ok else "not_configured",
             message=f"{len(s.crypto_feed_list)} crypto feeds geconfigureerd" if crypto_ok else "Geen crypto feeds ingesteld"
         ),
-        trading_mode=s.trading_mode,
-        live_trading_enabled=s.live_trading_enabled,
-        kill_switch_enabled=s.kill_switch_enabled,
-        require_manual_confirmation=s.require_manual_confirmation,
+        trading_mode=get_runtime_value("trading_mode", s.trading_mode),
+        live_trading_enabled=get_runtime_value("live_trading_enabled", s.live_trading_enabled),
+        kill_switch_enabled=get_runtime_value("kill_switch_enabled", s.kill_switch_enabled),
+        require_manual_confirmation=get_runtime_value("require_manual_confirmation", s.require_manual_confirmation),
         use_mock_data=s.use_mock_data,
     )

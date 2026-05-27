@@ -14,9 +14,9 @@ function StatusPill({ label, ok, warn }: { label: string; ok: boolean; warn?: bo
   return (
     <span className={cn(
       'hidden md:inline-flex px-2 py-0.5 rounded text-xs font-medium',
-      ok ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-      warn ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
-             'bg-red-500/10 text-red-400 border border-red-500/20'
+      ok ? 'bg-green-50 text-green-700 border border-green-200' :
+      warn ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+             'bg-red-50 text-red-700 border border-red-200'
     )}>
       {label}
     </span>
@@ -50,7 +50,7 @@ export function TopBar() {
 
   return (
     <>
-      <header className="h-11 border-b border-border bg-card flex items-center px-3 md:px-4 gap-2 md:gap-3 shrink-0 z-40">
+      <header className="h-11 border-b border-border bg-card flex items-center px-3 md:px-4 gap-2 md:gap-3 shrink-0 z-40 shadow-sm">
         {/* Mobile menu button */}
         <button
           className="md:hidden p-1.5 rounded hover:bg-accent transition-colors"
@@ -111,7 +111,7 @@ export function TopBar() {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
           <div
-            className="flex-1 bg-black/60"
+            className="flex-1 bg-slate-900/25"
             onClick={() => setMobileOpen(false)}
           />
           <div className="w-64 bg-card border-l border-border flex flex-col overflow-y-auto">

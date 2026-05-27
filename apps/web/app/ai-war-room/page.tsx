@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtDate, confidenceColor, cn } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
 
 function ScoreBar({ score, color }: { score: number; color: string }) {
   return (
@@ -37,7 +38,7 @@ function SignalDebate({ signal }: { signal: any }) {
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="font-semibold">{signal.asset}</span>
+            <AssetLabel symbol={signal.asset} />
             <Badge variant={signal.direction === 'buy' ? 'success' : 'danger'}>
               {signal.direction?.toUpperCase()}
             </Badge>
@@ -270,7 +271,7 @@ export default function AIWarRoomPage() {
             {signalsWithoutDebate.slice(0, 5).map((s: any) => (
               <div key={s.id} className="border-b border-border last:border-0 px-4 py-3">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="font-semibold">{s.asset}</span>
+                  <AssetLabel symbol={s.asset} />
                   <Badge variant={s.direction === 'buy' ? 'success' : 'danger'}>{s.direction?.toUpperCase()}</Badge>
                   <span className={cn('text-sm', confidenceColor(s.confidence))}>
                     {(s.confidence * 100).toFixed(0)}%

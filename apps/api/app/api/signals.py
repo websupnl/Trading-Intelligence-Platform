@@ -19,12 +19,13 @@ async def get_signals(limit: int = Query(50, le=200), db: AsyncSession = Depends
     return [{"id": i.id, "asset": i.asset, "direction": i.direction, "confidence": i.confidence,
              "reason": i.reason, "status": i.status, "risk_reward": i.risk_reward,
              "suggested_entry": i.suggested_entry, "suggested_stop": i.suggested_stop,
+             "suggested_take_profit": i.suggested_take_profit, "ai_analysis": i.ai_analysis,
              "risk_check_result": i.risk_check_result, "created_at": i.created_at}
             for i in items]
 
 
 @router.post("/{signal_id}/paper-trade")
-async def paper_trade_signal(signal_id: str, db: AsyncSession = Depends(get_db)):
+async def paper_trade_signal(signal_id: str, confirmed: bool = False, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Signal).where(Signal.id == signal_id))
     signal = result.scalar_one_or_none()
     if not signal:
@@ -37,6 +38,7 @@ async def paper_trade_signal(signal_id: str, db: AsyncSession = Depends(get_db))
         confidence=signal.confidence,
         stop_loss=signal.suggested_stop,
         mode="paper",
+        estimated_notional=signal.suggested_entry,
     )
     risk_result = risk_engine.check(risk_req)
 
@@ -45,8 +47,23 @@ async def paper_trade_signal(signal_id: str, db: AsyncSession = Depends(get_db))
         await db.commit()
         raise HTTPException(status_code=422, detail={"status": "risk_rejected", "reasons": risk_result.reasons})
 
+    if risk_result.required_manual_approval and not confirmed:
+        signal.risk_check_result = risk_result.model_dump()
+        await db.commit()
+        return {
+            "status": "requires_manual_approval",
+            "risk_result": risk_result.model_dump(),
+            "message": "Bevestig de paper trade expliciet.",
+        }
+
     try:
-        order = await broker.submit_order(symbol=signal.asset, qty=1, notional=None, side=signal.direction)
+        order = await broker.submit_order(
+            symbol=signal.asset,
+            qty=1,
+            notional=None,
+            side=signal.direction,
+            stop_price=signal.suggested_stop,
+        )
         signal.status = "paper_traded"
         signal.risk_check_result = risk_result.model_dump()
         await db.commit()

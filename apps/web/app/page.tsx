@@ -9,6 +9,7 @@ import { ErrorState } from '@/components/ui/error-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtUSD, fmtDate, confidenceColor } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
 
 function AccountCard() {
   const { data, loading, error } = useApi(() => api.getAccount(), []);
@@ -55,7 +56,7 @@ function SignalsCard() {
         {data?.map((s: any) => (
           <div key={s.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0">
             <div>
-              <span className="text-sm font-medium">{s.asset}</span>
+              <AssetLabel symbol={s.asset} className="text-sm" />
               <span className={cn('ml-2 text-xs', s.direction === 'buy' ? 'text-green-400' : 'text-red-400')}>
                 {s.direction?.toUpperCase()}
               </span>
@@ -81,7 +82,12 @@ function RumoursCard() {
         {data?.length === 0 && <EmptyState message="Geen actieve geruchten" />}
         {data?.map((r: any) => (
           <div key={r.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0">
-            <span className="text-sm truncate mr-2">{r.title}</span>
+            <div className="min-w-0 mr-2">
+              <span className="text-sm truncate block">{r.title}</span>
+              {r.related_assets?.slice(0, 2).map((asset: string) => (
+                <AssetLabel key={asset} symbol={asset} compact className="text-xs mr-2" />
+              ))}
+            </div>
             <Badge variant={
               r.recommendation === 'ignore' ? 'muted' :
               r.recommendation === 'watch' ? 'warning' :
@@ -108,7 +114,7 @@ function NewsCard() {
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs text-muted-foreground">{n.source}</span>
               {n.tickers?.slice(0, 3).map((t: string) => (
-                <Badge key={t} variant="muted" className="text-xs px-1">{t}</Badge>
+                <Badge key={t} variant="muted" className="text-xs px-1"><AssetLabel symbol={t} compact /></Badge>
               ))}
             </div>
           </div>

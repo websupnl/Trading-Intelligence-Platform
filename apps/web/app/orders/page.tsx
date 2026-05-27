@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtDate, fmtUSD } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
 
 export default function OrdersPage() {
   const { data: orders, loading, error, reload } = useApi(() => api.getOrders('all'), []);
@@ -21,12 +22,20 @@ export default function OrdersPage() {
     setSubmitting(true);
     setResult(null);
     try {
-      const r = await api.submitPaperOrder({
+      const request = {
         symbol: form.symbol.toUpperCase(),
         side: form.side,
         notional: form.notional ? parseFloat(form.notional) : undefined,
         order_type: form.order_type,
-      });
+      };
+      let r = await api.submitPaperOrder(request);
+      if (r.status === 'requires_manual_approval') {
+        if (!confirm('Risk check vereist bevestiging. Deze paper order uitvoeren?')) {
+          setResult({ type: 'success', data: r });
+          return;
+        }
+        r = await api.submitPaperOrder({ ...request, confirmed: true });
+      }
       setResult({ type: 'success', data: r });
       reload();
     } catch (e: any) {
@@ -58,6 +67,7 @@ export default function OrdersPage() {
                     value={form.symbol} onChange={e => setForm(f => ({ ...f, symbol: e.target.value }))}
                     placeholder="AAPL" required
                   />
+                  {form.symbol && <AssetLabel symbol={form.symbol} compact className="mt-1 text-xs" />}
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">Richting</label>
@@ -120,7 +130,7 @@ export default function OrdersPage() {
               <tbody>
                 {orders.map((o: any) => (
                   <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/20">
-                    <td className="px-4 py-2 font-medium">{o.symbol}</td>
+                    <td className="px-4 py-2"><AssetLabel symbol={o.symbol} /></td>
                     <td className={`px-4 py-2 font-medium ${o.side === 'buy' ? 'text-green-400' : 'text-red-400'}`}>{o.side?.toUpperCase()}</td>
                     <td className="px-4 py-2 text-right">{o.qty ?? o.notional}</td>
                     <td className="px-4 py-2">

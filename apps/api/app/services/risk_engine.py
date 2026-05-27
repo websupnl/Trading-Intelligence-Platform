@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 from app.config import get_settings
 from app.schemas.risk import RiskCheckRequest, RiskCheckResult
+from app.services.runtime_state import get_runtime_value
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +26,17 @@ class RiskEngine:
         blocked_by = None
 
         # Kill switch
-        if settings.kill_switch_enabled:
+        if get_runtime_value("kill_switch_enabled", settings.kill_switch_enabled):
             reasons.append("Kill switch is actief - alle orders geblokkeerd")
             return RiskCheckResult(approved=False, required_manual_approval=False, reasons=reasons, warnings=warnings, blocked_by_rule="kill_switch")
 
         # Live trading lock
-        if req.mode == "live" and not settings.live_trading_enabled:
+        if req.mode == "live" and not get_runtime_value("live_trading_enabled", settings.live_trading_enabled):
             reasons.append("Live trading is uitgeschakeld (LIVE_TRADING_ENABLED=false)")
             return RiskCheckResult(approved=False, required_manual_approval=False, reasons=reasons, warnings=warnings, blocked_by_rule="live_trading_disabled")
 
         # Trading mode mismatch
-        if settings.trading_mode == "paper" and req.mode == "live":
+        if get_runtime_value("trading_mode", settings.trading_mode) == "paper" and req.mode == "live":
             reasons.append("Systeem staat in paper mode - live orders niet toegestaan")
             return RiskCheckResult(approved=False, required_manual_approval=False, reasons=reasons, warnings=warnings, blocked_by_rule="paper_mode_only")
 
@@ -56,7 +57,7 @@ class RiskEngine:
                 required_manual = True
 
         # Manual confirmation requirement
-        if settings.require_manual_confirmation and approved and not required_manual:
+        if get_runtime_value("require_manual_confirmation", settings.require_manual_confirmation) and approved and not required_manual:
             required_manual = True
             warnings.append("Handmatige bevestiging vereist (REQUIRE_MANUAL_CONFIRMATION=true)")
 
@@ -75,10 +76,10 @@ class RiskEngine:
 
     async def get_status(self) -> dict:
         return {
-            "trading_mode": settings.trading_mode,
-            "live_trading_enabled": settings.live_trading_enabled,
-            "kill_switch_enabled": settings.kill_switch_enabled,
-            "require_manual_confirmation": settings.require_manual_confirmation,
+            "trading_mode": get_runtime_value("trading_mode", settings.trading_mode),
+            "live_trading_enabled": get_runtime_value("live_trading_enabled", settings.live_trading_enabled),
+            "kill_switch_enabled": get_runtime_value("kill_switch_enabled", settings.kill_switch_enabled),
+            "require_manual_confirmation": get_runtime_value("require_manual_confirmation", settings.require_manual_confirmation),
             "max_position_size_usd": MAX_POSITION_SIZE_USD,
             "max_daily_loss_pct": MAX_DAILY_LOSS_PCT,
             "max_open_positions": MAX_OPEN_POSITIONS,

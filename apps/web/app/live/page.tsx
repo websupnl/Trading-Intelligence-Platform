@@ -9,11 +9,13 @@ import {
 import { cn } from '@/lib/utils';
 import { useSSE } from '@/hooks/useSSE';
 import { api } from '@/lib/api';
+import { AssetLabel } from '@/components/market/AssetLabel';
+import { knownAssetName } from '@/lib/assets';
 
 // Browser-only chart
 const CandlestickChart = dynamic(
   () => import('@/components/live/CandlestickChart').then((m) => m.CandlestickChart),
-  { ssr: false, loading: () => <div className="w-full h-full flex items-center justify-center text-zinc-600 text-sm font-mono">LOADING CHART…</div> }
+  { ssr: false, loading: () => <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm font-mono">LOADING CHART...</div> }
 );
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,11 +36,11 @@ interface ChartSignal { time: number; direction: 'long' | 'short'; symbol: strin
 function Stat({ label, value, sub, green, red }: { label: string; value: string; sub?: string; green?: boolean; red?: boolean }) {
   return (
     <div className="flex flex-col">
-      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{label}</span>
-      <span className={cn('font-mono text-sm font-semibold', green && 'text-green-400', red && 'text-red-400', !green && !red && 'text-zinc-100')}>
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</span>
+      <span className={cn('font-mono text-sm font-semibold', green && 'text-green-400', red && 'text-red-400', !green && !red && 'text-foreground')}>
         {value}
       </span>
-      {sub && <span className="text-[10px] text-zinc-600">{sub}</span>}
+      {sub && <span className="text-[10px] text-muted-foreground">{sub}</span>}
     </div>
   );
 }
@@ -50,40 +52,40 @@ function ActivityItem({ event, idx }: { event: ActivityEvent; idx: number }) {
 
   return (
     <div
-      className={cn('flex gap-2 py-1.5 border-b border-zinc-800/50 text-xs transition-all', idx === 0 && 'animate-pulse-once')}
+      className={cn('flex gap-2 py-1.5 border-b border-border text-xs transition-all', idx === 0 && 'animate-pulse-once')}
     >
       <span className={cn('mt-1.5 w-1.5 h-1.5 rounded-full shrink-0', dot)} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className={cn('font-mono text-[10px] uppercase tracking-wide', color)}>{event.action.replace(/_/g, ' ')}</span>
-          <span className="text-[10px] text-zinc-600 font-mono shrink-0">{time}</span>
+          <span className="text-[10px] text-muted-foreground font-mono shrink-0">{time}</span>
         </div>
-        <p className="text-zinc-400 text-[11px] leading-tight mt-0.5 truncate">{event.message}</p>
+        <p className="text-muted-foreground text-[11px] leading-tight mt-0.5 truncate">{event.message}</p>
       </div>
     </div>
   );
 }
 
 function SignalCard({ signal, onApprove, onReject }: { signal: SignalData; onApprove: () => void; onReject: () => void }) {
-  const isLong = signal.direction === 'long';
+  const isLong = signal.direction === 'long' || signal.direction === 'buy';
   const bull = signal.ai_analysis?.bull_score as number | undefined;
   const bear = signal.ai_analysis?.bear_score as number | undefined;
 
   return (
     <div className={cn(
       'border rounded p-3 mb-2 space-y-2',
-      isLong ? 'border-green-900/60 bg-green-950/20' : 'border-red-900/60 bg-red-950/20'
+      isLong ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'
     )}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className={cn('text-xs font-mono font-bold', isLong ? 'text-green-400' : 'text-red-400')}>
             {isLong ? '▲ LONG' : '▼ SHORT'}
           </span>
-          <span className="text-xs font-mono text-zinc-200">{signal.asset}</span>
+          <AssetLabel symbol={signal.asset} compact className="text-xs font-mono" />
         </div>
         <span className={cn(
           'text-[10px] font-mono px-1.5 py-0.5 rounded',
-          signal.confidence >= 0.85 ? 'bg-green-900 text-green-300' : signal.confidence >= 0.75 ? 'bg-amber-900 text-amber-300' : 'bg-zinc-800 text-zinc-400'
+          signal.confidence >= 0.85 ? 'bg-green-100 text-green-700' : signal.confidence >= 0.75 ? 'bg-amber-100 text-amber-700' : 'bg-muted text-muted-foreground'
         )}>
           {(signal.confidence * 100).toFixed(0)}%
         </span>
@@ -93,7 +95,7 @@ function SignalCard({ signal, onApprove, onReject }: { signal: SignalData; onApp
       {bull !== undefined && bear !== undefined && (
         <div className="flex gap-1 items-center">
           <span className="text-[9px] text-green-500 w-6 text-right">{bull}</span>
-          <div className="flex-1 flex h-1.5 rounded overflow-hidden bg-zinc-800">
+          <div className="flex-1 flex h-1.5 rounded overflow-hidden bg-muted">
             <div className="bg-green-500" style={{ width: `${(bull / (bull + bear)) * 100}%` }} />
             <div className="bg-red-500 flex-1" />
           </div>
@@ -101,11 +103,11 @@ function SignalCard({ signal, onApprove, onReject }: { signal: SignalData; onApp
         </div>
       )}
 
-      <div className="text-[11px] text-zinc-400 line-clamp-2">{signal.reason}</div>
+      <div className="text-[11px] text-muted-foreground line-clamp-2">{signal.reason}</div>
 
       {signal.suggested_entry && (
         <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
-          <div><span className="text-zinc-600">Entry </span><span className="text-zinc-300">{signal.suggested_entry.toFixed(2)}</span></div>
+          <div><span className="text-muted-foreground">Entry </span><span className="text-foreground">{signal.suggested_entry.toFixed(2)}</span></div>
           {signal.suggested_stop && <div><span className="text-red-600">Stop </span><span className="text-red-400">{signal.suggested_stop.toFixed(2)}</span></div>}
           {signal.suggested_take_profit && <div><span className="text-green-600">TP </span><span className="text-green-400">{signal.suggested_take_profit.toFixed(2)}</span></div>}
         </div>
@@ -114,13 +116,13 @@ function SignalCard({ signal, onApprove, onReject }: { signal: SignalData; onApp
       <div className="flex gap-2">
         <button
           onClick={onApprove}
-          className="flex-1 flex items-center justify-center gap-1 text-[11px] bg-green-900/40 hover:bg-green-800/60 text-green-300 border border-green-900/60 rounded py-1 transition-colors"
+          className="flex-1 flex items-center justify-center gap-1 text-[11px] bg-green-100 hover:bg-green-200 text-green-700 border border-green-200 rounded py-1 transition-colors"
         >
           <CheckCircle size={11} /> Approve
         </button>
         <button
           onClick={onReject}
-          className="flex-1 flex items-center justify-center gap-1 text-[11px] bg-red-900/40 hover:bg-red-800/60 text-red-300 border border-red-900/60 rounded py-1 transition-colors"
+          className="flex-1 flex items-center justify-center gap-1 text-[11px] bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 rounded py-1 transition-colors"
         >
           <XCircle size={11} /> Reject
         </button>
@@ -186,7 +188,7 @@ export default function LiveSessionPage() {
       if (existing) return prev;
       return [...prev, {
         time: Math.floor(Date.now() / 86400) * 86400, // today's date in seconds
-        direction: sig.direction === 'long' ? 'long' : 'short',
+        direction: sig.direction === 'long' || sig.direction === 'buy' ? 'long' : 'short',
         symbol: sig.asset,
       }];
     });
@@ -239,7 +241,7 @@ export default function LiveSessionPage() {
     quoteTimer.current = setTimeout(async () => {
       try {
         const q = await api.getQuote(tradeSymbol);
-        setQuotePrice(q.ask_price || q.last_price || null);
+        setQuotePrice(q.price || null);
       } catch {
         setQuotePrice(null);
       }
@@ -251,12 +253,16 @@ export default function LiveSessionPage() {
 
   async function handleApprove(signal: SignalData) {
     try {
-      await api.paperTradeSignal(signal.id);
+      let result = await api.paperTradeSignal(signal.id);
+      if (result.status === 'requires_manual_approval') {
+        if (!confirm('Risk check vereist bevestiging. Deze paper trade uitvoeren?')) return;
+        result = await api.paperTradeSignal(signal.id, true);
+      }
       setPendingSignals((p) => p.filter((s) => s.id !== signal.id));
       setActivityFeed((prev) => [{
         action: 'signal_approved',
         actor: 'user',
-        message: `Signaal goedgekeurd: ${signal.direction.toUpperCase()} ${signal.asset}`,
+        message: `Signaal goedgekeurd: ${signal.direction.toUpperCase()} ${signal.asset} - ${knownAssetName(signal.asset) || signal.asset}`,
         status: 'success',
         created_at: new Date().toISOString(),
       }, ...prev]);
@@ -279,13 +285,20 @@ export default function LiveSessionPage() {
     e.preventDefault();
     setTradeStatus('Bezig…');
     try {
-      await api.submitPaperOrder({
+      const request = {
         symbol: tradeSymbol.toUpperCase(),
-        qty: parseFloat(tradeQty),
+        quantity: parseFloat(tradeQty),
         side: tradeSide,
-        type: 'market',
-        time_in_force: 'day',
-      });
+        order_type: 'market',
+      };
+      let result = await api.submitPaperOrder(request);
+      if (result.status === 'requires_manual_approval') {
+        if (!confirm('Risk check vereist bevestiging. Deze paper order uitvoeren?')) {
+          setTradeStatus('Bevestiging geannuleerd');
+          return;
+        }
+        result = await api.submitPaperOrder({ ...request, confirmed: true });
+      }
       setTradeStatus(`✓ ${tradeSide.toUpperCase()} ${tradeQty}x ${tradeSymbol} ingediend`);
       setTradeQty('');
       setTimeout(() => setTradeStatus(null), 4000);
@@ -321,9 +334,9 @@ export default function LiveSessionPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <Activity size={14} className="text-amber-400" />
-            <span className="text-xs font-mono font-bold tracking-widest text-zinc-100 uppercase">Live Session</span>
+            <span className="text-xs font-mono font-bold tracking-widest text-foreground uppercase">Live Session</span>
           </div>
-          <div className={cn('flex items-center gap-1 text-[10px] font-mono', connected ? 'text-green-400' : 'text-zinc-600')}>
+          <div className={cn('flex items-center gap-1 text-[10px] font-mono', connected ? 'text-green-400' : 'text-muted-foreground')}>
             {connected ? <Wifi size={10} /> : <WifiOff size={10} />}
             {connected ? `LIVE · tick ${tick}` : 'OFFLINE'}
           </div>
@@ -341,11 +354,11 @@ export default function LiveSessionPage() {
                 className={cn(
                   'px-3 py-1 rounded text-xs font-mono transition-all',
                   selectedSymbol === sym
-                    ? 'bg-amber-500/20 border border-amber-500/40 text-amber-300'
-                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                    ? 'bg-accent border border-green-200 text-primary'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 )}
               >
-                {sym}
+                <AssetLabel symbol={sym} compact />
                 {chg !== null && (
                   <span className={cn('ml-1 text-[10px]', chg >= 0 ? 'text-green-400' : 'text-red-400')}>
                     {chg >= 0 ? '+' : ''}{chg.toFixed(2)}%
@@ -376,7 +389,7 @@ export default function LiveSessionPage() {
             {currentPrice ? (
               <>
                 <div className="flex items-baseline gap-2">
-                  <span className="font-mono text-xl font-bold text-zinc-100">
+                  <span className="font-mono text-xl font-bold text-foreground">
                     ${currentPrice.price.toFixed(2)}
                   </span>
                   {priceChange !== null && (
@@ -395,7 +408,7 @@ export default function LiveSessionPage() {
                 {trend && <Stat label="Trend" value={trend.toUpperCase()} green={trend === 'bullish'} red={trend === 'bearish'} />}
               </>
             ) : (
-              <span className="text-xs text-zinc-600 font-mono">Wachten op prijsdata voor {selectedSymbol}…</span>
+              <span className="text-xs text-muted-foreground font-mono">Wachten op prijsdata voor <AssetLabel symbol={selectedSymbol} compact /></span>
             )}
           </div>
 
@@ -407,10 +420,10 @@ export default function LiveSessionPage() {
                 signals={visibleSignals}
               />
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-zinc-600">
+              <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
                 <BarChart2 size={32} className="opacity-40" />
-                <span className="text-sm font-mono">Grafiekdata laden voor {selectedSymbol}…</span>
-                <span className="text-xs text-zinc-700">Verbinden met SSE stream…</span>
+                <span className="text-sm font-mono">Grafiekdata laden voor <AssetLabel symbol={selectedSymbol} compact /></span>
+                <span className="text-xs text-muted-foreground">Verbinden met SSE stream...</span>
               </div>
             )}
           </div>
@@ -419,18 +432,18 @@ export default function LiveSessionPage() {
           {latestSignal && (
             <div className={cn(
               'flex items-center gap-3 px-4 py-2 border-t border-border shrink-0 text-xs font-mono',
-              latestSignal.direction === 'long' ? 'bg-green-950/20' : 'bg-red-950/20'
+              latestSignal.direction === 'long' || latestSignal.direction === 'buy' ? 'bg-green-50' : 'bg-red-50'
             )}>
               <Brain size={12} className="text-amber-400 shrink-0" />
               <span className="text-amber-400 font-bold">AI SIGNAAL:</span>
               <span className={latestSignal.direction === 'long' ? 'text-green-400' : 'text-red-400'}>
-                {latestSignal.direction.toUpperCase()} {latestSignal.asset}
+                {latestSignal.direction.toUpperCase()} <AssetLabel symbol={latestSignal.asset} compact />
               </span>
-              <span className="text-zinc-500">·</span>
-              <span className="text-zinc-400 truncate">{latestSignal.reason}</span>
+              <span className="text-muted-foreground">/</span>
+              <span className="text-muted-foreground truncate">{latestSignal.reason}</span>
               <span className={cn(
                 'ml-auto px-2 py-0.5 rounded text-[10px] shrink-0',
-                latestSignal.confidence >= 0.85 ? 'bg-green-900/60 text-green-300' : 'bg-amber-900/60 text-amber-300'
+                latestSignal.confidence >= 0.85 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
               )}>
                 {(latestSignal.confidence * 100).toFixed(0)}% conf
               </span>
@@ -457,7 +470,7 @@ export default function LiveSessionPage() {
             </div>
             <div className="flex-1 overflow-y-auto px-3 py-1 min-h-0">
               {activityFeed.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full gap-2 text-zinc-700">
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
                   <Clock size={20} className="opacity-40" />
                   <span className="text-xs font-mono">Wachten op AI activiteit…</span>
                 </div>
@@ -484,7 +497,7 @@ export default function LiveSessionPage() {
             </div>
             <div className="overflow-y-auto p-2" style={{ maxHeight: 'calc(40% - 32px)' }}>
               {pendingSignals.length === 0 ? (
-                <div className="text-center py-4 text-zinc-700 text-xs font-mono">Geen pending signalen</div>
+                <div className="text-center py-4 text-muted-foreground text-xs font-mono">Geen pending signalen</div>
               ) : (
                 pendingSignals.slice(0, 3).map((sig) => (
                   <SignalCard
@@ -512,7 +525,7 @@ export default function LiveSessionPage() {
                   onClick={() => setTradeSide('buy')}
                   className={cn(
                     'flex-1 py-1.5 text-xs font-mono font-bold transition-colors',
-                    tradeSide === 'buy' ? 'bg-green-700 text-green-100' : 'text-zinc-500 hover:text-zinc-300'
+                    tradeSide === 'buy' ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
                   BUY
@@ -522,7 +535,7 @@ export default function LiveSessionPage() {
                   onClick={() => setTradeSide('sell')}
                   className={cn(
                     'flex-1 py-1.5 text-xs font-mono font-bold transition-colors',
-                    tradeSide === 'sell' ? 'bg-red-700 text-red-100' : 'text-zinc-500 hover:text-zinc-300'
+                    tradeSide === 'sell' ? 'bg-red-600 text-white' : 'text-muted-foreground hover:text-foreground'
                   )}
                 >
                   SELL
@@ -534,7 +547,7 @@ export default function LiveSessionPage() {
                   value={tradeSymbol}
                   onChange={(e) => setTradeSymbol(e.target.value.toUpperCase())}
                   placeholder="TICKER"
-                  className="w-24 px-2 py-1.5 text-xs font-mono bg-card border border-border rounded text-zinc-100 placeholder-zinc-600 uppercase"
+                  className="w-24 px-2 py-1.5 text-xs font-mono bg-card border border-border rounded text-foreground placeholder:text-muted-foreground uppercase"
                 />
                 <input
                   type="number"
@@ -543,16 +556,17 @@ export default function LiveSessionPage() {
                   placeholder="Qty"
                   min="1"
                   step="1"
-                  className="flex-1 px-2 py-1.5 text-xs font-mono bg-card border border-border rounded text-zinc-100 placeholder-zinc-600"
+                  className="flex-1 px-2 py-1.5 text-xs font-mono bg-card border border-border rounded text-foreground placeholder:text-muted-foreground"
                 />
               </div>
+              {tradeSymbol && <AssetLabel symbol={tradeSymbol} compact className="text-[11px] font-mono" />}
 
               {/* Live quote */}
               {quotePrice && (
-                <div className="text-[11px] font-mono text-zinc-400 flex justify-between">
-                  <span>Prijs: <span className="text-zinc-200">${quotePrice.toFixed(2)}</span></span>
+                <div className="text-[11px] font-mono text-muted-foreground flex justify-between">
+                  <span>Prijs: <span className="text-foreground">${quotePrice.toFixed(2)}</span></span>
                   {tradeQty && !isNaN(parseFloat(tradeQty)) && (
-                    <span>Totaal: <span className="text-zinc-200">${(quotePrice * parseFloat(tradeQty)).toFixed(2)}</span></span>
+                    <span>Totaal: <span className="text-foreground">${(quotePrice * parseFloat(tradeQty)).toFixed(2)}</span></span>
                   )}
                 </div>
               )}
@@ -563,8 +577,8 @@ export default function LiveSessionPage() {
                 className={cn(
                   'w-full flex items-center justify-center gap-1.5 py-2 rounded text-xs font-mono font-bold transition-colors',
                   tradeSide === 'buy'
-                    ? 'bg-green-700 hover:bg-green-600 text-green-100 disabled:bg-zinc-800 disabled:text-zinc-600'
-                    : 'bg-red-700 hover:bg-red-600 text-red-100 disabled:bg-zinc-800 disabled:text-zinc-600'
+                    ? 'bg-primary hover:bg-primary/90 text-white disabled:bg-muted disabled:text-muted-foreground'
+                    : 'bg-red-600 hover:bg-red-700 text-white disabled:bg-muted disabled:text-muted-foreground'
                 )}
               >
                 <Send size={11} />
@@ -574,7 +588,7 @@ export default function LiveSessionPage() {
               {tradeStatus && (
                 <div className={cn(
                   'text-[11px] font-mono text-center py-1 rounded',
-                  tradeStatus.startsWith('✓') ? 'text-green-400 bg-green-950/30' : tradeStatus.startsWith('✗') ? 'text-red-400 bg-red-950/30' : 'text-amber-400'
+                  tradeStatus.startsWith('✓') ? 'text-green-700 bg-green-50' : tradeStatus.startsWith('✗') ? 'text-red-700 bg-red-50' : 'text-amber-700'
                 )}>
                   {tradeStatus}
                 </div>

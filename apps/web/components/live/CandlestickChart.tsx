@@ -47,23 +47,23 @@ export function CandlestickChart({ candles, signals, height }: CandlestickChartP
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { color: 'hsl(224 71% 4%)' },
-        textColor: 'hsl(215.4 16.3% 56.9%)',
+        background: { color: 'hsl(0 0% 100%)' },
+        textColor: 'hsl(150 12% 42%)',
         fontSize: 11,
         fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       },
       grid: {
-        vertLines: { color: 'hsl(216 34% 10%)' },
-        horzLines: { color: 'hsl(216 34% 10%)' },
+        vertLines: { color: 'hsl(141 22% 93%)' },
+        horzLines: { color: 'hsl(141 22% 93%)' },
       },
       crosshair: { mode: 1 },
       rightPriceScale: {
-        borderColor: 'hsl(216 34% 17%)',
-        textColor: 'hsl(215.4 16.3% 56.9%)',
+        borderColor: 'hsl(141 22% 87%)',
+        textColor: 'hsl(150 12% 42%)',
         scaleMargins: { top: 0.1, bottom: 0.3 },
       },
       timeScale: {
-        borderColor: 'hsl(216 34% 17%)',
+        borderColor: 'hsl(141 22% 87%)',
         timeVisible: true,
         secondsVisible: false,
       },
@@ -75,17 +75,17 @@ export function CandlestickChart({ candles, signals, height }: CandlestickChartP
 
     // Candlestick series (v4 API)
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e',
+      upColor: '#16a34a',
       downColor: '#ef4444',
       borderVisible: false,
-      wickUpColor: '#22c55e',
+      wickUpColor: '#16a34a',
       wickDownColor: '#ef4444',
     });
     candleSeriesRef.current = candleSeries;
 
     // EMA-20 line
     const emaSeries = chart.addLineSeries({
-      color: '#f59e0b',
+      color: '#15803d',
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: true,

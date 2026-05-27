@@ -47,6 +47,14 @@ class AlpacaBroker:
                 raise AlpacaAPIError(f"Alpaca positions error: {resp.status_code}")
             return resp.json()
 
+    async def get_asset(self, symbol: str) -> dict:
+        self._require_configured()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{settings.alpaca_base_url}/v2/assets/{symbol}", headers=self._headers, timeout=10)
+            if resp.status_code != 200:
+                raise AlpacaAPIError(f"Alpaca asset error: {resp.status_code}")
+            return resp.json()
+
     async def get_orders(self, status: str = "open") -> list[dict]:
         self._require_configured()
         async with httpx.AsyncClient() as client:

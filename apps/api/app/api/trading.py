@@ -57,6 +57,25 @@ async def get_portfolio_history(period: str = "1M"):
         raise HTTPException(status_code=502, detail={"status": "api_error", "message": str(e)})
 
 
+# ─── Asset reference data ────────────────────────────────────────────────────
+
+@router.get("/asset/{symbol}")
+async def get_asset(symbol: str):
+    """Resolve the full tradable asset name for UI labels."""
+    try:
+        asset = await broker.get_asset(symbol.upper())
+        return {
+            "symbol": asset.get("symbol", symbol.upper()),
+            "name": asset.get("name") or asset.get("symbol", symbol.upper()),
+            "asset_class": asset.get("class"),
+            "exchange": asset.get("exchange"),
+        }
+    except AlpacaNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail={"status": "not_configured", "message": str(e)})
+    except AlpacaAPIError as e:
+        raise HTTPException(status_code=404, detail={"status": "not_found", "message": str(e)})
+
+
 # ─── Quote (live price) ───────────────────────────────────────────────────────
 
 @router.get("/quote/{symbol}")
@@ -75,12 +94,18 @@ async def get_quote(symbol: str):
 @router.post("/orders/paper")
 async def submit_paper_order(req: PaperOrderRequest, db: AsyncSession = Depends(get_db)):
     audit = AuditLogService(db)
+    estimated_notional = req.notional
+    if estimated_notional is None and req.quantity:
+        from app.services.market_data_service import MarketDataService
+        latest_price = await MarketDataService().get_latest_price(req.symbol.upper())
+        if latest_price is not None:
+            estimated_notional = latest_price * req.quantity
 
     risk_req = RiskCheckRequest(
         symbol=req.symbol,
         side=req.side,
         quantity=req.quantity or 0,
-        estimated_notional=req.notional,
+        estimated_notional=estimated_notional,
         signal_id=req.signal_id,
         stop_loss=req.stop_loss,
         mode="paper",
@@ -105,7 +130,7 @@ async def submit_paper_order(req: PaperOrderRequest, db: AsyncSession = Depends(
             "warnings": risk_result.warnings,
         })
 
-    if risk_result.required_manual_approval:
+    if risk_result.required_manual_approval and not req.confirmed:
         return {
             "status": "requires_manual_approval",
             "risk_result": risk_result.model_dump(),
@@ -120,6 +145,7 @@ async def submit_paper_order(req: PaperOrderRequest, db: AsyncSession = Depends(
             side=req.side,
             order_type=req.order_type,
             limit_price=req.limit_price,
+            stop_price=req.stop_loss or req.stop_price,
         )
         await audit.log("order_submitted", entity_type="order", details={
             "symbol": req.symbol,

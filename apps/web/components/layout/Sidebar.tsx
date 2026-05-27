@@ -45,7 +45,7 @@ export function Sidebar() {
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
-      <aside className="w-56 shrink-0 bg-card border-r border-border flex flex-col min-h-screen">
+      <aside className="w-56 shrink-0 bg-card border-r border-border flex flex-col min-h-screen shadow-sm">
         <div className="px-4 py-5 border-b border-border">
           <span className="text-sm font-bold tracking-widest text-foreground/80 uppercase">Trading OS</span>
         </div>
@@ -57,7 +57,7 @@ export function Sidebar() {
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
                 pathname === href
-                  ? 'bg-accent text-foreground font-medium'
+                  ? 'bg-accent text-primary font-medium'
                   : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
               )}
             >
@@ -87,7 +87,7 @@ export function Sidebar() {
             className={cn(
               'flex-1 flex flex-col items-center justify-center py-2 gap-1 text-xs transition-colors',
               pathname === href
-                ? 'text-foreground'
+                ? 'text-primary'
                 : 'text-muted-foreground'
             )}
           >

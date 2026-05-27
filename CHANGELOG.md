@@ -5,6 +5,22 @@
 
 ---
 
+## [2026-05-27] Sessie 4 - Light Theme, Asset Labels, Safety Foundation
+
+### Nieuw
+- Licht "research desk" thema met groene accenten voor dashboard en Live Session.
+- Centrale `AssetLabel` UI-component met volledige namen voor veelgebruikte instrumenten.
+- `GET /api/trading/asset/{symbol}` voor dynamische Alpaca-assetnamen.
+- Volledige Market Intelligence OS roadmap in `docs/market-intelligence-roadmap.md`.
+
+### Veiligheid en fixes
+- Kill switch en runtime safety controls via Redis gedeeld tussen API en Celery worker.
+- Kill switch meldt een fout wanneer bevestiging door de worker niet kan worden gegarandeerd.
+- Handmatige confirmation wordt nu afgedwongen voor paper-orders en signal-orders.
+- Auto trader voert signalen met vereiste handmatige goedkeuring niet automatisch uit.
+- Signal API retourneert War Room analysevelden; chat signaltool gebruikt het juiste datamodel.
+- Live Session behandelt `buy` correct als long en gebruikt de bestaande quote response.
+
 ## [2026-05-27] Sessie 3 — Live Session, Build Fix, Mobile
 
 ### Nieuw

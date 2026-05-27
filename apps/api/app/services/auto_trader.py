@@ -9,6 +9,7 @@ from app.models.audit import AuditLog
 from app.services.risk_engine import RiskEngine
 from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
 from app.schemas.risk import RiskCheckRequest
+from app.services.runtime_state import get_runtime_value
 
 logger = logging.getLogger(__name__)
 
@@ -24,13 +25,14 @@ class AutoTraderService:
 
     async def process_pending_signals(self) -> int:
         """Auto-trade high-confidence signals. Returns count traded."""
-        if self.settings.kill_switch_enabled:
+        if get_runtime_value("kill_switch_enabled", self.settings.kill_switch_enabled):
             logger.info("Kill switch actief - auto trader gestopt")
             return 0
-        if self.settings.trading_mode not in ("paper", "live"):
+        mode = get_runtime_value("trading_mode", self.settings.trading_mode)
+        if mode not in ("paper", "live"):
             logger.info("Ongeldig trading_mode - auto trader gestopt")
             return 0
-        if self.settings.require_manual_confirmation:
+        if get_runtime_value("require_manual_confirmation", self.settings.require_manual_confirmation):
             logger.info("Handmatige bevestiging vereist - auto trader gestopt")
             return 0
 
@@ -58,7 +60,7 @@ class AutoTraderService:
         return executed
 
     async def _execute_signal(self, signal: Signal) -> bool:
-        mode = self.settings.trading_mode  # "paper" or "live"
+        mode = get_runtime_value("trading_mode", self.settings.trading_mode)  # "paper" or "live"
 
         risk_req = RiskCheckRequest(
             symbol=signal.asset,
@@ -77,18 +79,18 @@ class AutoTraderService:
             if not db_signal:
                 return False
 
-            if not risk_result.approved:
-                db_signal.status = "risk_rejected"
+            if not risk_result.approved or risk_result.required_manual_approval:
+                db_signal.status = "risk_rejected" if not risk_result.approved else "pending"
                 db_signal.risk_check_result = risk_result.model_dump()
 
                 db.add(AuditLog(
-                    action="auto_trade_risk_rejected",
+                    action="auto_trade_risk_rejected" if not risk_result.approved else "auto_trade_manual_required",
                     actor="auto_trader",
                     entity_type="signal",
                     entity_id=signal.id,
-                    details={"asset": signal.asset, "reasons": risk_result.reasons, "confidence": signal.confidence},
-                    status="rejected",
-                    message=f"{signal.asset} geweigerd: {'; '.join(risk_result.reasons[:2])}",
+                    details={"asset": signal.asset, "reasons": risk_result.reasons, "warnings": risk_result.warnings, "confidence": signal.confidence},
+                    status="rejected" if not risk_result.approved else "pending",
+                    message=f"{signal.asset}: {'; '.join((risk_result.reasons or risk_result.warnings)[:2])}",
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
                 ))

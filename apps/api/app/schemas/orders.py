@@ -13,6 +13,7 @@ class PaperOrderRequest(BaseModel):
     signal_id: Optional[str] = None
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
+    confirmed: bool = False
 
 
 class CancelOrderRequest(BaseModel):

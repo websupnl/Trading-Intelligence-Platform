@@ -9,6 +9,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtUSD, fmtDate, cn } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
+import { knownAssetName } from '@/lib/assets';
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
@@ -146,14 +148,14 @@ export default function PortfolioPage() {
                 {perf.best_trade && (
                   <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3">
                     <p className="text-xs text-muted-foreground">🏆 Beste Trade</p>
-                    <p className="font-semibold text-green-400">{perf.best_trade.symbol}</p>
+                    <AssetLabel symbol={perf.best_trade.symbol} className="text-green-400" />
                     <p className="text-sm text-green-400">{fmtUSD(perf.best_trade.pnl)}</p>
                   </div>
                 )}
                 {perf.worst_trade && (
                   <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
                     <p className="text-xs text-muted-foreground">📉 Slechtste Trade</p>
-                    <p className="font-semibold text-red-400">{perf.worst_trade.symbol}</p>
+                    <AssetLabel symbol={perf.worst_trade.symbol} className="text-red-400" />
                     <p className="text-sm text-red-400">{fmtUSD(perf.worst_trade.pnl)}</p>
                   </div>
                 )}
@@ -173,7 +175,7 @@ export default function PortfolioPage() {
                         key={i}
                         className={cn('flex-1 rounded-sm min-w-[2px]', p.cumulative >= 0 ? 'bg-green-500/70' : 'bg-red-500/70')}
                         style={{ height: `${height}%` }}
-                        title={`${p.symbol}: ${fmtUSD(p.pnl)} (cum: ${fmtUSD(p.cumulative)})`}
+                        title={`${p.symbol} - ${knownAssetName(p.symbol) || p.symbol}: ${fmtUSD(p.pnl)} (cum: ${fmtUSD(p.cumulative)})`}
                       />
                     );
                   })}
@@ -213,7 +215,7 @@ export default function PortfolioPage() {
                     const pnl = parseFloat(p.unrealized_pl ?? 0);
                     return (
                       <tr key={p.asset_id ?? p.symbol} className="border-b border-border last:border-0 hover:bg-muted/20">
-                        <td className="px-4 py-2 font-medium">{p.symbol}</td>
+                        <td className="px-4 py-2"><AssetLabel symbol={p.symbol} /></td>
                         <td className="px-4 py-2 text-right">{p.qty}</td>
                         <td className="px-4 py-2 text-right">{fmtUSD(parseFloat(p.avg_entry_price))}</td>
                         <td className="px-4 py-2 text-right">{fmtUSD(parseFloat(p.current_price))}</td>
@@ -255,7 +257,7 @@ export default function PortfolioPage() {
             <div key={t.id} className="border-b border-border last:border-0 px-4 py-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium">{t.symbol}</span>
+                  <AssetLabel symbol={t.symbol} />
                   <Badge variant={t.side === 'buy' ? 'success' : 'danger'}>{t.side?.toUpperCase()}</Badge>
                   <Badge variant={t.status === 'closed' ? 'muted' : 'warning'}>{t.status}</Badge>
                   {t.mode === 'paper' && <Badge variant="muted">paper</Badge>}

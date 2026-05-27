@@ -82,7 +82,7 @@ export const api = {
 
   // ── Signals ─────────────────────────────────────────────────────────────
   getSignals: (limit = 50) => apiFetch(`/api/signals?limit=${limit}`),
-  paperTradeSignal: (id: string) => apiFetch(`/api/signals/${id}/paper-trade`, { method: 'POST' }),
+  paperTradeSignal: (id: string, confirmed = false) => apiFetch(`/api/signals/${id}/paper-trade?confirmed=${confirmed}`, { method: 'POST' }),
   rejectSignal: (id: string) => apiFetch(`/api/signals/${id}/reject`, { method: 'POST' }),
 
   // ── Memory ──────────────────────────────────────────────────────────────

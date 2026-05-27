@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtDate } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
 
 export default function NewsPage() {
   const { data: news, loading, reload } = useApi(() => api.getNews(100), []);
@@ -60,7 +61,7 @@ export default function NewsPage() {
                     <span className="text-xs text-muted-foreground">{n.source}</span>
                     <span className="text-xs text-muted-foreground">{fmtDate(n.published_at)}</span>
                     {n.tickers?.slice(0, 4).map((t: string) => (
-                      <Badge key={t} variant="muted">{t}</Badge>
+                      <Badge key={t} variant="muted"><AssetLabel symbol={t} compact /></Badge>
                     ))}
                   </div>
                 </div>

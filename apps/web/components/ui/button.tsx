@@ -8,7 +8,7 @@ const variants: Record<Variant, string> = {
   destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
   outline: 'border border-border bg-transparent hover:bg-accent text-foreground',
   ghost: 'hover:bg-accent text-muted-foreground hover:text-foreground',
-  success: 'bg-green-600 text-white hover:bg-green-700',
+  success: 'bg-primary text-primary-foreground hover:bg-primary/90',
 };
 
 const sizes: Record<Size, string> = {

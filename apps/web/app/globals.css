@@ -4,22 +4,22 @@
 
 @layer base {
   :root {
-    --background: 224 71% 4%;
-    --foreground: 213 31% 91%;
-    --card: 224 71% 6%;
-    --card-foreground: 213 31% 91%;
-    --border: 216 34% 17%;
-    --input: 216 34% 17%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 1.2%;
-    --secondary: 222.2 47.4% 11.2%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 223 47% 11%;
-    --muted-foreground: 215.4 16.3% 56.9%;
-    --accent: 216 34% 17%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
+    --background: 140 33% 98%;
+    --foreground: 153 30% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 153 30% 12%;
+    --border: 141 22% 87%;
+    --input: 141 22% 87%;
+    --primary: 151 62% 34%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 142 25% 95%;
+    --secondary-foreground: 153 30% 16%;
+    --muted: 142 23% 95%;
+    --muted-foreground: 150 12% 42%;
+    --accent: 143 36% 91%;
+    --accent-foreground: 151 54% 24%;
+    --destructive: 0 69% 47%;
+    --destructive-foreground: 0 0% 100%;
     --radius: 0.5rem;
   }
 }
@@ -31,6 +31,15 @@
   ::-webkit-scrollbar-track { background: hsl(var(--background)); }
   ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
 }
+
+/* Readable status tones for the light research-desk theme. */
+.text-green-400 { color: #15803d; }
+.text-green-300 { color: #15803d; }
+.text-red-400 { color: #b91c1c; }
+.text-red-300 { color: #b91c1c; }
+.text-yellow-400, .text-amber-400, .text-orange-400 { color: #a16207; }
+.text-purple-400 { color: #6d28d9; }
+.text-blue-400 { color: #1d4ed8; }
 
 /* Mobile safe area for bottom nav */
 .safe-area-pb {

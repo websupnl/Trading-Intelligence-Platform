@@ -3,13 +3,16 @@ Settings API — read + runtime toggles.
 Uses _runtime_overrides dict for in-memory overrides (cleared on restart).
 For permanent changes: update .env and redeploy.
 """
+import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.services.audit import AuditLogService
+from app.services.runtime_state import get_runtime_value, set_runtime_value
 import app.config as cfg_module
 
 router = APIRouter(prefix="/api/settings")
+logger = logging.getLogger(__name__)
 
 # In-memory runtime overrides (reset on restart)
 _runtime_overrides: dict = {}
@@ -25,10 +28,10 @@ def _effective_settings():
 async def get_settings_endpoint():
     s = _effective_settings()
     return {
-        "trading_mode": _runtime_overrides.get("trading_mode", s.trading_mode),
-        "live_trading_enabled": _runtime_overrides.get("live_trading_enabled", s.live_trading_enabled),
-        "kill_switch_enabled": _runtime_overrides.get("kill_switch_enabled", s.kill_switch_enabled),
-        "require_manual_confirmation": _runtime_overrides.get("require_manual_confirmation", s.require_manual_confirmation),
+        "trading_mode": get_runtime_value("trading_mode", s.trading_mode),
+        "live_trading_enabled": get_runtime_value("live_trading_enabled", s.live_trading_enabled),
+        "kill_switch_enabled": get_runtime_value("kill_switch_enabled", s.kill_switch_enabled),
+        "require_manual_confirmation": get_runtime_value("require_manual_confirmation", s.require_manual_confirmation),
         "use_mock_data": s.use_mock_data,
         "default_ai_provider": s.default_ai_provider,
         "anthropic_model": s.anthropic_model,
@@ -58,6 +61,7 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
         if key not in allowed_keys:
             continue
         _runtime_overrides[key] = value
+        set_runtime_value(key, value)
         changed[key] = value
 
     if changed:

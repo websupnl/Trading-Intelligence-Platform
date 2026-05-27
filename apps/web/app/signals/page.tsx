@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtDate, fmtUSD, confidenceColor, cn } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
 
 const STATUS_VARIANT: Record<string, any> = {
   pending: 'warning',
@@ -28,7 +29,11 @@ export default function SignalsPage() {
   async function handlePaperTrade(id: string) {
     setActing(id);
     try {
-      await api.paperTradeSignal(id);
+      let result = await api.paperTradeSignal(id);
+      if (result.status === 'requires_manual_approval') {
+        if (!confirm('Risk check vereist bevestiging. Deze paper trade uitvoeren?')) return;
+        result = await api.paperTradeSignal(id, true);
+      }
       reload();
     } catch (e: any) {
       alert(e?.detail?.reasons?.join(', ') || e?.detail || 'Risk check mislukt');
@@ -120,7 +125,7 @@ export default function SignalsPage() {
                 >
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-3 flex-wrap">
-                      <span className="font-semibold">{s.asset}</span>
+                      <AssetLabel symbol={s.asset} />
                       <Badge variant={s.direction === 'buy' ? 'success' : 'danger'}>
                         {s.direction?.toUpperCase()}
                       </Badge>

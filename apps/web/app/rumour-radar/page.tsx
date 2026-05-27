@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingSpinner } from '@/components/ui/loading';
-import { fmtDate } from '@/lib/utils';
+import { AssetLabel } from '@/components/market/AssetLabel';
 
 const recoBadge = (r: string) => r === 'ignore' ? 'muted' : r === 'watch' ? 'warning' : r === 'blocked' ? 'danger' : r === 'paper_trade_only' ? 'success' : 'default' as any;
 
@@ -40,7 +40,7 @@ export default function RumourRadarPage() {
                   {r.related_assets?.length > 0 && (
                     <div className="flex gap-1 mt-1">
                       {r.related_assets.map((a: string) => (
-                        <Badge key={a} variant="muted">{a}</Badge>
+                        <Badge key={a} variant="muted"><AssetLabel symbol={a} compact /></Badge>
                       ))}
                     </div>
                   )}

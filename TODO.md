@@ -1,6 +1,7 @@
 # Trading Intelligence Platform — TODO
 
 > Bijgehouden voor Claude-sessies. Werk van boven naar beneden af.
+> Volledige doorontwikkeling naar het Market Intelligence OS staat in `docs/market-intelligence-roadmap.md`.
 
 ---
 

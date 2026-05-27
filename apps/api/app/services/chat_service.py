@@ -105,11 +105,11 @@ async def execute_tool(name: str, inputs: dict) -> str:
                 signals = result.scalars().all()
                 return json.dumps([{
                     "id": str(s.id),
-                    "symbol": s.symbol,
+                    "symbol": s.asset,
                     "direction": s.direction,
                     "confidence": s.confidence,
                     "status": s.status,
-                    "source": s.source,
+                    "reason": s.reason,
                     "created_at": str(s.created_at),
                 } for s in signals])
 
