@@ -76,7 +76,14 @@ async def get_asset(symbol: str):
     except AlpacaNotConfiguredError as e:
         raise HTTPException(status_code=503, detail={"status": "not_configured", "message": str(e)})
     except AlpacaAPIError as e:
-        raise HTTPException(status_code=404, detail={"status": "not_found", "message": str(e)})
+        return {
+            "symbol": symbol.upper(),
+            "name": symbol.upper(),
+            "asset_class": "unknown",
+            "exchange": None,
+            "status": "not_found",
+            "message": str(e),
+        }
 
 
 # ─── Quote (live price) ───────────────────────────────────────────────────────

@@ -47,23 +47,23 @@ export function CandlestickChart({ candles, signals, height }: CandlestickChartP
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { color: 'hsl(0 0% 100%)' },
-        textColor: 'hsl(150 12% 42%)',
+        background: { color: '#ffffff' },
+        textColor: '#5e786b',
         fontSize: 11,
         fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       },
       grid: {
-        vertLines: { color: 'hsl(141 22% 93%)' },
-        horzLines: { color: 'hsl(141 22% 93%)' },
+        vertLines: { color: '#eaf1ec' },
+        horzLines: { color: '#eaf1ec' },
       },
       crosshair: { mode: 1 },
       rightPriceScale: {
-        borderColor: 'hsl(141 22% 87%)',
-        textColor: 'hsl(150 12% 42%)',
+        borderColor: '#d4e3d8',
+        textColor: '#5e786b',
         scaleMargins: { top: 0.1, bottom: 0.3 },
       },
       timeScale: {
-        borderColor: 'hsl(141 22% 87%)',
+        borderColor: '#d4e3d8',
         timeVisible: true,
         secondsVisible: false,
       },

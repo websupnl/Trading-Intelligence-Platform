@@ -45,7 +45,10 @@ export function loadAssetName(symbol: string): Promise<string | null> {
     }
   )
     .then((response) => response.ok ? response.json() : null)
-    .then((data) => data?.name || null)
+    .then((data) => {
+      const name = data?.name || null;
+      return name && name !== normalized ? name : null;
+    })
     .catch(() => null);
 
   assetRequests.set(normalized, request);
