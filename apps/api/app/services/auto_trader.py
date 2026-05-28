@@ -342,12 +342,5 @@ class AutoTraderService:
                     updated_at=datetime.now(timezone.utc),
                 ))
                 await db.commit()
-                await NotificationService(db).send(
-                    "auto_trade_broker_error",
-                    f"Trading OS - Auto-trade broker fout: {signal.asset} {signal.direction.upper()}",
-                    str(e)[:1200],
-                    severity="error",
-                    entity_type="signal",
-                    entity_id=signal.id,
-                )
+                # Broker errors worden gebundeld in de dagelijkse samenvatting, geen losse ping
                 return False

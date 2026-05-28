@@ -161,7 +161,7 @@ class SignalGeneratorService:
                     )
 
                 if lessons:
-                    ta_summary += f"\n\nEerdere lessen voor {asset}:\n" + "\n".join(f"- {l}" for l in lessons)
+                    ta_summary += f"\n\n🧠 Geheugen — eerdere trades {asset} (BELANGRIJK: pas deze lessen toe):\n" + "\n".join(f"  {l}" for l in lessons)
 
                 price_str = f"{price:.4f}" if price else "onbekend"
 
@@ -279,8 +279,8 @@ class SignalGeneratorService:
         svc = MarketDataService()
         return await svc.get_candles(symbol, "1Day", 50)
 
-    async def _get_memory_lessons(self, asset: str, limit: int = 3) -> list[str]:
-        """Fetch recent memory lessons for this asset."""
+    async def _get_memory_lessons(self, asset: str, limit: int = 6) -> list[str]:
+        """Fetch recent trade lessons for this asset, including rule suggestions."""
         try:
             async with AsyncSessionLocal() as db:
                 result = await db.execute(
@@ -288,19 +288,29 @@ class SignalGeneratorService:
                         MemoryEntry.memory_type == "trade_lesson",
                         MemoryEntry.related_symbols.contains([asset]),
                         MemoryEntry.status == "active",
-                    ).order_by(MemoryEntry.created_at.desc()).limit(limit)
+                    ).order_by(MemoryEntry.importance.desc(), MemoryEntry.created_at.desc()).limit(limit)
                 )
                 entries = result.scalars().all()
-                lessons = []
+                winning, losing, rules = [], [], []
                 for e in entries:
                     try:
                         content = json.loads(e.content) if e.content else {}
                         lesson = content.get("lesson", "")
+                        pattern = content.get("pattern", "unknown")
+                        rule = content.get("rule_suggestion")
+                        pnl = content.get("pnl")
+                        pnl_str = f" (P&L: ${pnl:.2f})" if pnl is not None else ""
                         if lesson:
-                            lessons.append(f"{e.title}: {lesson}")
+                            line = f"{lesson}{pnl_str}"
+                            if pattern == "winning":
+                                winning.append(f"✅ {line}")
+                            else:
+                                losing.append(f"❌ {line}")
+                        if rule:
+                            rules.append(f"📌 Regel: {rule}")
                     except Exception:
-                        lessons.append(e.title)
-                return lessons
+                        pass
+                return rules + winning + losing
         except Exception:
             return []
 

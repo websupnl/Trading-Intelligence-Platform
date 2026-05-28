@@ -110,6 +110,7 @@ class TradeTrackerService:
                 qty = float(order.get("filled_qty") or order.get("qty") or 1)
                 fill_price = float(order.get("filled_avg_price") or 0)
                 filled_at_str = order.get("filled_at") or order.get("created_at")
+                mode = "paper" if "paper" in self.settings.alpaca_base_url else "live"
 
                 try:
                     filled_at = datetime.fromisoformat(
@@ -118,7 +119,38 @@ class TradeTrackerService:
                 except Exception:
                     filled_at = datetime.now(timezone.utc)
 
-                status = "closed" if order.get("status") == "filled" else "open"
+                # For sell orders: try to close an existing open buy Trade instead of
+                # creating a duplicate sell record
+                if side == "sell" and fill_price:
+                    open_buy = await db.execute(
+                        select(Trade).where(
+                            Trade.symbol == symbol,
+                            Trade.status == "open",
+                            Trade.side == "buy",
+                        ).order_by(Trade.opened_at.asc()).limit(1)
+                    )
+                    open_trade = open_buy.scalar_one_or_none()
+                    if open_trade:
+                        entry = open_trade.entry_price or 0
+                        pnl = (fill_price - entry) * (open_trade.quantity or qty)
+                        pnl_pct = (pnl / (entry * (open_trade.quantity or qty)) * 100) if entry > 0 else 0
+                        open_trade.exit_price = fill_price
+                        open_trade.pnl = pnl
+                        open_trade.pnl_pct = pnl_pct
+                        open_trade.status = "closed"
+                        open_trade.closed_at = filled_at
+                        open_trade.exit_reason = f"Alpaca order {alpaca_id} uitgevoerd"
+                        db.add(AuditLog(
+                            action="trade_synced_from_alpaca",
+                            actor="trade_tracker",
+                            entity_type="trade",
+                            details={"symbol": symbol, "side": side, "alpaca_id": alpaca_id, "pnl": pnl},
+                            status="success",
+                            created_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc),
+                        ))
+                        created += 1
+                        continue
 
                 trade = Trade(
                     alpaca_order_id=alpaca_id,
@@ -127,11 +159,11 @@ class TradeTrackerService:
                     quantity=qty,
                     entry_price=fill_price if side == "buy" else None,
                     exit_price=fill_price if side == "sell" else None,
-                    mode="paper" if "paper" in self.settings.alpaca_base_url else "live",
-                    status=status,
+                    mode=mode,
+                    status="open" if side == "buy" else "closed",
                     entry_reason="Handmatig of auto-trader",
                     opened_at=filled_at,
-                    closed_at=filled_at if status == "closed" else None,
+                    closed_at=filled_at if side == "sell" else None,
                 )
                 db.add(trade)
                 created += 1
@@ -154,22 +186,40 @@ class TradeTrackerService:
         return created
 
     async def _process_order(self, order: dict) -> bool:
-        """Match a filled order to an open Trade, close it and compute P&L."""
+        """Match a filled exit order to an open Trade, close it and compute P&L."""
         symbol = order.get("symbol", "")
         side = order.get("side", "buy")
         fill_price = float(order.get("filled_avg_price") or 0)
         alpaca_id = order.get("id", "")
 
-        if not fill_price or not symbol:
+        if not fill_price or not symbol or not alpaca_id:
             return False
 
         async with AsyncSessionLocal() as db:
-            # Find open trade for this symbol
+            # Skip if this order was already processed as an exit
+            already_exit = await db.execute(
+                select(Trade).where(
+                    Trade.exit_reason.contains(alpaca_id),
+                ).limit(1)
+            )
+            if already_exit.scalar_one_or_none():
+                return False
+
+            # Skip entry orders — they are already recorded by auto_trader at submission
+            entry_exists = await db.execute(
+                select(Trade).where(Trade.alpaca_order_id == alpaca_id).limit(1)
+            )
+            if entry_exists.scalar_one_or_none():
+                return False
+
+            # Find the open trade that this exit order closes:
+            # sell closes a long (buy), buy closes a short (sell)
+            entry_side = "buy" if side == "sell" else "sell"
             result = await db.execute(
                 select(Trade).where(
                     Trade.symbol == symbol,
                     Trade.status == "open",
-                    Trade.side == ("buy" if side == "sell" else "sell"),  # closing side
+                    Trade.side == entry_side,
                 ).order_by(Trade.opened_at.asc()).limit(1)
             )
             trade = result.scalar_one_or_none()

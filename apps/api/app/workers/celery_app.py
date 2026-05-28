@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.config import get_settings
 
 settings = get_settings()
@@ -78,9 +79,10 @@ celery_app.conf.update(
             "schedule": 300.0,
         },
 
-        "activity-summary-every-4h": {
+        # Daily summary at 21:30 UTC (after US market close at ~21:00 UTC)
+        "daily-summary-after-close": {
             "task": "app.tasks.analysis_tasks.send_activity_summary",
-            "schedule": 14400.0,
+            "schedule": crontab(hour=21, minute=30),
         },
     },
 )

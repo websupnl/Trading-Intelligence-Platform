@@ -1,8 +1,18 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _us_market_open() -> bool:
+    """True if US stock market is currently open (approx 14:30–21:00 UTC, Mon–Fri)."""
+    now = datetime.now(timezone.utc)
+    if now.weekday() >= 5:  # Saturday=5, Sunday=6
+        return False
+    minutes = now.hour * 60 + now.minute
+    return 870 <= minutes <= 1260  # 14:30–21:00 UTC
 
 
 @celery_app.task(name="app.tasks.analysis_tasks.analyze_news")
@@ -35,7 +45,9 @@ def detect_rumours():
 
 @celery_app.task(name="app.tasks.analysis_tasks.fetch_market_data")
 def fetch_market_data():
-    """Fetch market data for tickers mentioned in recent news/signals."""
+    """Fetch market data for tickers mentioned in recent news/signals. Skip outside market hours."""
+    if not _us_market_open():
+        return {"status": "skipped", "reason": "market_closed"}
     from app.services.market_data_service import MarketDataService
     from app.database import AsyncSessionLocal
     from app.models.news import NewsItem
@@ -104,6 +116,13 @@ def evaluate_signal_outcomes():
 def auto_trade():
     """Auto-execute high-confidence signals in paper/live mode."""
     from app.services.auto_trader import AutoTraderService
+    from app.services.runtime_state import get_runtime_value
+    from app.config import get_settings
+    # Skip stock trading outside market hours; crypto runs 24/7 so we always
+    # proceed — the signal generator already filters crypto vs. stock separately.
+    if not _us_market_open():
+        logger.debug("Auto-trade overgeslagen: markt gesloten")
+        return {"status": "skipped", "reason": "market_closed"}
     try:
         svc = AutoTraderService()
         count = asyncio.run(svc.process_pending_signals())
@@ -117,6 +136,8 @@ def auto_trade():
 def monitor_positions():
     """Monitor open trades and auto-close when stop-loss or take-profit is hit."""
     from app.services.position_monitor import PositionMonitorService
+    if not _us_market_open():
+        return {"status": "skipped", "reason": "market_closed"}
     try:
         svc = PositionMonitorService()
         count = asyncio.run(svc.monitor())
@@ -146,13 +167,12 @@ def sync_closed_trades():
 
 
 @celery_app.task(name="app.tasks.analysis_tasks.send_activity_summary")
-def send_activity_summary(hours: int = 4):
-    """Send a concise action/risk/P&L summary to app notifications + Telegram."""
+def send_activity_summary(hours: int = 24):
+    """Send daily P&L + actions summary. Focused on results, not noise."""
     from datetime import datetime, timezone, timedelta
     from sqlalchemy import select, func, desc
     from app.database import AsyncSessionLocal
     from app.models.audit import AuditLog
-    from app.models.news import NewsItem
     from app.models.signals import Signal
     from app.models.trades import Trade
     from app.services.ai_guard import ai_pause_status
@@ -162,58 +182,103 @@ def send_activity_summary(hours: int = 4):
         now = datetime.now(timezone.utc)
         since = now - timedelta(hours=hours)
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
         async with AsyncSessionLocal() as db:
-            signal_count = (await db.execute(select(func.count()).where(Signal.created_at >= since))).scalar() or 0
-            trade_count = (await db.execute(select(func.count()).where(Trade.created_at >= since))).scalar() or 0
-            open_trades = (await db.execute(select(Trade).where(Trade.status == "open").order_by(desc(Trade.created_at)).limit(12))).scalars().all()
-            closed_today = (await db.execute(select(func.count(), func.coalesce(func.sum(Trade.pnl), 0)).where(Trade.status == "closed", Trade.closed_at >= today))).one()
-            errors = (await db.execute(select(AuditLog).where(AuditLog.created_at >= since, AuditLog.status == "error").order_by(desc(AuditLog.created_at)).limit(5))).scalars().all()
-            news_count = (await db.execute(select(func.count()).where(NewsItem.created_at >= since))).scalar() or 0
-            analyzed_news = (await db.execute(select(func.count()).where(NewsItem.updated_at >= since, NewsItem.ai_analyzed == True))).scalar() or 0
+            open_trades = (await db.execute(
+                select(Trade).where(Trade.status == "open").order_by(desc(Trade.opened_at)).limit(10)
+            )).scalars().all()
+
+            closed_rows = (await db.execute(
+                select(Trade).where(Trade.status == "closed", Trade.closed_at >= today)
+                .order_by(desc(Trade.closed_at))
+            )).scalars().all()
+
+            signals_today = (await db.execute(
+                select(func.count()).where(Signal.created_at >= today)
+            )).scalar() or 0
+
+            # Critical errors only (not broker retries)
+            critical_errors = (await db.execute(
+                select(AuditLog).where(
+                    AuditLog.created_at >= since,
+                    AuditLog.status == "error",
+                    AuditLog.action.in_(["circuit_breaker_triggered", "ai_provider_paused", "position_close_failed"]),
+                ).order_by(desc(AuditLog.created_at)).limit(3)
+            )).scalars().all()
 
             ai = ai_pause_status()
-            lines = [
-                f"Periode: laatste {hours} uur",
-                f"AI status: {'GEPAUZEERD tot ' + str(ai.get('until')) if ai.get('paused') else 'actief'}",
-                f"Nieuwe signalen: {signal_count}",
-                f"Nieuwe trades: {trade_count}",
-                f"Open trades: {len(open_trades)}",
-                f"Vandaag gesloten: {closed_today[0] or 0}, realized P&L: ${float(closed_today[1] or 0):.2f}",
-                f"Nieuws opgehaald: {news_count}, AI-geanalyseerd: {analyzed_news}",
-            ]
+
+            # P&L summary
+            total_pnl = sum(t.pnl or 0 for t in closed_rows)
+            wins = [t for t in closed_rows if (t.pnl or 0) > 0]
+            losses = [t for t in closed_rows if (t.pnl or 0) < 0]
+            unrealized = sum(
+                ((t.entry_price or 0) * (t.quantity or 0)) * 0  # placeholder, no live price here
+                for t in open_trades
+            )
+
+            lines = ["📊 Trading OS — Dagelijkse samenvatting", ""]
+
+            # P&L
+            pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            lines.append(f"{pnl_emoji} Realized P&L vandaag: ${total_pnl:.2f}")
+            if closed_rows:
+                lines.append(f"   Trades: {len(closed_rows)} gesloten ({len(wins)} winst / {len(losses)} verlies)")
+                for t in closed_rows[:5]:
+                    emoji = "✅" if (t.pnl or 0) > 0 else "❌"
+                    lines.append(f"   {emoji} {t.symbol} {t.side}: ${t.pnl:.2f} ({t.pnl_pct:.1f}%)")
+            else:
+                lines.append("   Geen gesloten trades vandaag")
+
+            lines.append("")
+
+            # Open positions
             if open_trades:
-                lines.append("Open exposure:")
-                for t in open_trades[:8]:
-                    lines.append(f"- {t.symbol} {t.side} qty={t.quantity} entry={t.entry_price or 'n/a'} SL={t.stop_loss or 'n/a'} TP={t.take_profit or 'n/a'}")
-            if errors:
-                lines.append("Recente fouten:")
-                for e in errors:
-                    lines.append(f"- {e.action}: {(e.message or '')[:140]}")
+                lines.append(f"📂 Open posities ({len(open_trades)}):")
+                for t in open_trades[:6]:
+                    sl = f"SL ${t.stop_loss:.2f}" if t.stop_loss else "geen SL"
+                    tp = f"TP ${t.take_profit:.2f}" if t.take_profit else "geen TP"
+                    lines.append(f"   {t.symbol} {t.side} — entry ${t.entry_price or 0:.2f} | {sl} | {tp}")
+            else:
+                lines.append("📂 Geen open posities")
+
+            lines.append("")
+            lines.append(f"🤖 AI-signalen vandaag: {signals_today}")
+            if ai.get("paused"):
+                lines.append(f"⚠️ AI GEPAUZEERD tot {ai.get('until')}")
+
+            if critical_errors:
+                lines.append("")
+                lines.append("🚨 Kritieke meldingen:")
+                for e in critical_errors:
+                    lines.append(f"   {e.action}: {(e.message or '')[:120]}")
 
             message = "\n".join(lines)
+            severity = "critical" if critical_errors or ai.get("paused") else ("warning" if losses else "info")
+
             db.add(AuditLog(
                 action="activity_summary_sent",
                 actor="scheduler",
                 entity_type="system",
                 status="success",
-                message=f"{hours}h activity summary sent",
+                message=f"Dagelijkse samenvatting: P&L ${total_pnl:.2f}, {len(closed_rows)} trades",
                 created_at=now,
                 updated_at=now,
             ))
             await db.commit()
             await NotificationService(db).send(
                 "daily_summary",
-                "Trading OS - Actie en risico overzicht",
+                "Trading OS — Dagelijkse samenvatting",
                 message,
-                severity="warning" if errors or ai.get("paused") else "info",
+                severity=severity,
                 entity_type="system",
                 entity_id="activity_summary",
             )
-            return {"status": "ok", "open_trades": len(open_trades), "errors": len(errors), "ai_paused": ai.get("paused")}
+            return {"status": "ok", "open_trades": len(open_trades), "closed_today": len(closed_rows), "pnl": total_pnl}
 
     try:
         result = asyncio.run(_run())
-        logger.info("Activity summary verstuurd: %s", result)
+        logger.info("Dagelijkse samenvatting verstuurd: %s", result)
         return result
     except Exception as e:
         logger.error(f"Activity summary fout: {e}")

@@ -116,13 +116,11 @@ class AlpacaBroker:
         alpaca_sym = to_alpaca_symbol(symbol)
         tif = "gtc" if is_crypto(symbol) else "day"
         payload: dict[str, Any] = {"symbol": alpaca_sym, "side": side, "type": order_type, "time_in_force": tif}
-        if notional and not is_crypto(symbol):
+        if notional:
+            # Alpaca accepts notional for both stocks and crypto
             payload["notional"] = f"{float(notional):.2f}"
         elif qty:
             payload["qty"] = str(qty)
-        elif notional and is_crypto(symbol):
-            # Alpaca crypto uses qty, not notional; use a minimal qty fallback
-            payload["qty"] = "0.001"
         if limit_price:
             payload["limit_price"] = str(limit_price)
 
