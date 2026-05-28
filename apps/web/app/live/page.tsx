@@ -330,6 +330,28 @@ export default function LiveSessionPage() {
     }
   }
 
+  // ── Manual chart refresh ─────────────────────────────────────────────────
+
+  const [refreshingCharts, setRefreshingCharts] = useState(false);
+
+  async function handleRefreshCharts() {
+    setRefreshingCharts(true);
+    try {
+      await Promise.all(
+        symbols.map(async (sym) => {
+          try {
+            const data = await api.getCandles(sym);
+            if (data && Array.isArray(data.candles)) {
+              setChartData((prev) => ({ ...prev, [sym]: data.candles }));
+            }
+          } catch { /* ignore per-symbol errors */ }
+        })
+      );
+    } finally {
+      setRefreshingCharts(false);
+    }
+  }
+
   // ── Derived data ──────────────────────────────────────────────────────────
 
   const currentPrice = prices[selectedSymbol];
@@ -390,13 +412,24 @@ export default function LiveSessionPage() {
           })}
         </div>
 
-        {/* Portfolio mini */}
-        {portfolio && (
-          <div className="hidden md:flex items-center gap-4 text-[11px] font-mono">
-            <Stat label="Equity" value={`$${portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
-            <Stat label="Day P&L" value={`${portfolio.day_pnl >= 0 ? '+' : ''}$${portfolio.day_pnl.toFixed(2)}`} green={portfolio.day_pnl > 0} red={portfolio.day_pnl < 0} />
-          </div>
-        )}
+        {/* Portfolio mini + refresh */}
+        <div className="hidden md:flex items-center gap-4 text-[11px] font-mono">
+          {portfolio && (
+            <>
+              <Stat label="Equity" value={`$${portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
+              <Stat label="Day P&L" value={`${portfolio.day_pnl >= 0 ? '+' : ''}$${portfolio.day_pnl.toFixed(2)}`} green={portfolio.day_pnl > 0} red={portfolio.day_pnl < 0} />
+            </>
+          )}
+          <button
+            onClick={handleRefreshCharts}
+            disabled={refreshingCharts}
+            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            title="Grafiekdata handmatig verversen"
+          >
+            <RefreshCw size={10} className={refreshingCharts ? 'animate-spin' : ''} />
+            {refreshingCharts ? 'Laden...' : 'Ververs grafieken'}
+          </button>
+        </div>
       </div>
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
@@ -441,10 +474,21 @@ export default function LiveSessionPage() {
                 signals={visibleSignals}
               />
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
                 <BarChart2 size={32} className="opacity-40" />
-                <span className="text-sm font-mono">Grafiekdata laden voor <AssetLabel symbol={selectedSymbol} compact /></span>
-                <span className="text-xs text-muted-foreground">Verbinden met SSE stream...</span>
+                <span className="text-sm font-mono">Geen grafiekdata voor <AssetLabel symbol={selectedSymbol} compact /></span>
+                <div className="text-center space-y-1 max-w-xs">
+                  <p className="text-xs text-muted-foreground">Candle data wordt via de SSE stream aangeleverd. Zorg dat de Pipeline minimaal 1x gedraaid heeft.</p>
+                  <p className="text-xs text-muted-foreground">Klik op <strong className="text-foreground">&apos;Ververs grafieken&apos;</strong> om handmatig te laden.</p>
+                </div>
+                <button
+                  onClick={handleRefreshCharts}
+                  disabled={refreshingCharts}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={refreshingCharts ? 'animate-spin' : ''} />
+                  {refreshingCharts ? 'Laden...' : 'Ververs grafieken'}
+                </button>
               </div>
             )}
           </div>
