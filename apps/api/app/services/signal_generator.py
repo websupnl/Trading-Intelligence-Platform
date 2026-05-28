@@ -21,7 +21,7 @@ from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
 logger = logging.getLogger(__name__)
 
 MIN_CONFIDENCE_GENERATE = 0.60
-MIN_CONFIDENCE_CRYPTO_SESSION = 0.55
+MIN_CONFIDENCE_CRYPTO_SESSION = 0.50
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
@@ -132,32 +132,42 @@ Antwoord met dit exacte JSON-schema:
 
 Onthoud: SKIP is een geldig, vaak beter antwoord. Het systeem rekent je niet af op gemiste kansen, wel op slechte trades."""
 
-CRYPTO_SESSION_SYSTEM_PROMPT = """Je bent een crypto session trader voor een PAPER trading systeem. Je taak is niet om perfecte investeringscases te vinden, maar om beperkte, auditbare crypto-kansen te selecteren binnen een korte autonome sessie.
+CRYPTO_SESSION_SYSTEM_PROMPT = """Je bent een crypto trader voor een PAPER trading systeem (geen echt geld). Je doel is actief handelen in crypto om het systeem te testen en van de markt te leren.
 
-VERSCHIL MET AANDELEN
-- Crypto mag meer op technische setup, momentum en mean reversion handelen; nieuws is nuttig maar niet verplicht.
-- Je handelt alleen liquide majors. Geen low-liquidity memes of pumps.
-- Dit is paper mode met sessielimieten; kleine gecontroleerde bets zijn toegestaan.
-- Default blijft SKIP bij rommel, maar je hoeft geen bedrijfsspecifieke katalysator te eisen.
+KERN: DIT IS PAPER TRADING — wees bereid te handelen
+- Fouten kosten niets. Leren kost ook niets. Handelen kost ook niets.
+- Een gemiste kans in paper trading is suboptimaal; een onnodige skip is een gemiste leerervaring.
+- Je default is NIET meer automatisch "skip" — je default is actief nadenken of er een tradeable setup is.
 
-BUY ALS MINSTENS 2 WAAR ZIJN
-1. TA wijst duidelijk bullish: trend positief, momentum draait omhoog, RSI niet extreem overbought.
-2. Risk/reward is concreet >= 1.5 met stop en take-profit.
-3. Prijs is niet in verticale extension; entry ligt nabij pullback/support of breakout retest.
-4. Geen duidelijk bearish nieuws/social context.
-5. BTC/ETH marktcontext is neutraal tot positief.
+WANNEER BUY (minstens 1 van deze geldt)
+1. RSI < 38: oversold + prijs heeft steun; potentieel reversal of bounce.
+2. RSI > 62 + bullish MACD: momentum bevestigd omhoog.
+3. Prijs net boven recente support (EMA20/EMA50) na pullback.
+4. Bullish nieuws of positief sentiment de afgelopen 24u.
+5. BTC stijgt en altcoin volgt nog niet (lag play).
 
-CONFIDENCE
-- 0.55-0.59: kleine session bet, technisch genoeg maar dunne context.
-- 0.60-0.69: goede crypto setup met duidelijke invalidatie.
-- 0.70-0.78: sterke setup. Zeldzaam.
-- Gebruik nooit >0.78 in crypto session mode.
+WANNEER SKIP (alleen dit)
+- Geen prijsdata en geen TA beschikbaar (data compleet ontbreekt).
+- Prijs in vrije val zonder enige steun in zicht (RSI < 20 met dalend volume).
+- Duidelijk bearish breaking news dat de sector direct raakt.
+- RSI > 80 (extreem overbought, geen entry).
+
+CONFIDENCE GEBRUIK
+- 0.50-0.54: dunne setup maar technisch net genoeg. Geldig voor paper trading.
+- 0.55-0.64: goede TA setup, eventueel nieuws context.
+- 0.65-0.75: sterke convergentie van TA + nieuws + momentum.
+- Bull hoeft niet hoger dan bear te zijn voor een buy — bull >= 0.45 is voldoende als TA het ondersteunt.
+
+RISK/REWARD
+- Stop loss is verplicht bij buy: onder steun of EMA niveau.
+- Take profit is verplicht: minimaal 1.5x de stop-afstand.
+- Entry bij huidige prijs of net pullback.
 
 OUTPUT
 - Geef ALLEEN geldig JSON.
 - direction is "buy" of "skip".
-- Stop loss en take profit zijn verplicht bij buy.
-- Reden moet kort, concreet en technisch genoeg zijn."""
+- Bij buy: stop loss en take profit verplicht.
+- Reden: concreet en technisch (welk niveau, welke indicator, welk scenario)."""
 
 # Backwards-compat alias (oude callers kunnen nog de combinatie krijgen)
 SIGNAL_PROMPT = SIGNAL_SYSTEM_PROMPT + "\n\n" + SIGNAL_USER_PROMPT
@@ -173,7 +183,11 @@ class SignalGeneratorService:
             logger.warning("AI analyse gepauzeerd - signaal generatie overgeslagen")
             return 0
 
-        since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+        # In crypto session mode: look back 24h for news regardless of the passed lookback_hours
+        effective_hours = max(lookback_hours, 24) if crypto_session_mode else lookback_hours
+        # Lower impact threshold in crypto mode so crypto news (which scores lower) passes through
+        min_impact = 2 if crypto_session_mode else 3
+        since = datetime.now(timezone.utc) - timedelta(hours=effective_hours)
 
         async with AsyncSessionLocal() as db:
             news_result = await db.execute(
@@ -182,7 +196,7 @@ class SignalGeneratorService:
                     NewsItem.ai_analyzed == True,
                     NewsItem.published_at >= since,
                     NewsItem.status != "noise",
-                    NewsItem.impact_score >= 3,
+                    NewsItem.impact_score >= min_impact,
                 )
                 .order_by(NewsItem.published_at.desc())
                 .limit(200)
@@ -236,9 +250,11 @@ class SignalGeneratorService:
                 ta_result = ta_analyze(candles) if candles else None
                 price = candles[-1].close if candles else None
 
-                # Skip watchlist-only tickers without TA data — nothing to analyse
-                if data.get("_watchlist_only") and ta_result is None:
+                # In crypto session mode, skip only if BOTH TA and price are missing
+                if data.get("_watchlist_only") and ta_result is None and not crypto_session_mode:
                     continue
+                if data.get("_watchlist_only") and ta_result is None and price is None:
+                    continue  # Truly no data at all
 
                 if self._context_is_stale(data, hours=8, crypto_session_mode=crypto_session_mode, asset=asset):
                     await self._log_signal_skip(

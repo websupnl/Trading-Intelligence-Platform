@@ -13,7 +13,8 @@ def generate_signals():
     try:
         svc = SignalGeneratorService()
         crypto_mode = crypto_session_allows_autonomy()
-        count = asyncio.run(svc.generate_signals(lookback_hours=8, crypto_session_mode=crypto_mode))
+        lookback = 24 if crypto_mode else 8
+        count = asyncio.run(svc.generate_signals(lookback_hours=lookback, crypto_session_mode=crypto_mode))
         logger.info(f"Signal generatie: {count} nieuwe signalen")
         return {"status": "ok", "signals_generated": count, "crypto_session_mode": crypto_mode}
     except Exception as e:
