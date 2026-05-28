@@ -75,7 +75,7 @@ docker compose exec api python -m alembic -c app/migrations/alembic.ini current
 
 # Upgrade naar laatste versie
 docker compose exec api python -m alembic -c app/migrations/alembic.ini upgrade head
-# Verwachte huidige head na Telegram/outcome-update: 003_notifications
+# Verwachte huidige head na AI-guard/token-usage-update: 004_token_usage
 
 # Nieuwe migration aanmaken (na model wijziging)
 docker compose exec api python -m alembic -c app/migrations/alembic.ini revision --autogenerate -m "beschrijving"

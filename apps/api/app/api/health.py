@@ -7,6 +7,7 @@ from app.services.runtime_state import get_runtime_value
 from app.models.signals import Signal
 from app.models.trades import Trade
 from app.models.audit import AuditLog
+from app.services.ai_guard import ai_pause_status
 
 router = APIRouter()
 settings = get_settings()
@@ -29,6 +30,7 @@ async def bot_health():
     trading_mode = get_runtime_value("trading_mode", settings.trading_mode)
     live_enabled = get_runtime_value("live_trading_enabled", settings.live_trading_enabled)
     position_size_pct = get_runtime_value("position_size_pct", settings.position_size_pct)
+    ai_guard = ai_pause_status()
 
     # Check recent activity from DB
     recent_signal_count = 0
@@ -86,6 +88,8 @@ async def bot_health():
         blockers.append("require_manual_confirmation=True (auto-trade paused)")
     if not settings.anthropic_api_key:
         blockers.append("ANTHROPIC_API_KEY not set (no signals)")
+    if ai_guard.get("paused"):
+        blockers.append(f"anthropic_api_paused_until={ai_guard.get('until')}")
     if not settings.alpaca_configured:
         blockers.append("Alpaca not configured (simulated paper orders only)")
     if trading_mode == "live" and not live_enabled:
@@ -103,6 +107,7 @@ async def bot_health():
         "alpaca_configured": settings.alpaca_configured,
         "anthropic_configured": settings.anthropic_configured,
         "position_size_pct": position_size_pct,
+        "ai_guard": ai_guard,
         "recent_signals_1h": recent_signal_count,
         "recent_trades_1h": recent_trade_count,
         "open_trades": open_trades,

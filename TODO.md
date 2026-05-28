@@ -13,7 +13,7 @@
 - [x] Cloudflare DNS wildcard `*.onlinewerkplek.cloud → 82.180.155.249`
 - [x] TimescaleDB (PostgreSQL), Redis, Qdrant volumes
 - [x] Celery worker + beat scheduler
-- [x] Alembic migraties (`001_initial`, `002_signal_outcomes`, `003_notifications`)
+- [x] Alembic migraties (`001_initial`, `002_signal_outcomes`, `003_notifications`, `004_token_usage`)
 - [x] CORS via env var `CORS_ORIGINS` (geen hardcode meer)
 - [x] `NEXT_PUBLIC_API_URL` als build-arg in web Dockerfile
 

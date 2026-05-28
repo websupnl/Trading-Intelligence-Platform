@@ -17,6 +17,7 @@ from app.models.trades import Trade
 from app.models.memory import MemoryEntry
 from app.models.audit import AuditLog
 from app.services.notifications import NotificationService
+from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,7 @@ class TradeTrackerService:
 
     async def _write_reflection(self, trade_data: dict):
         """Write Claude reflection + MemoryEntry for a closed trade."""
-        if not self.settings.anthropic_api_key:
+        if not self.settings.anthropic_api_key or is_ai_paused():
             return
 
         symbol = trade_data["symbol"]
@@ -332,6 +333,8 @@ class TradeTrackerService:
 
         except Exception as e:
             logger.error(f"Reflectie schrijven mislukt voor {symbol}: {e}")
+            if is_ai_failure(e):
+                await pause_ai("trade_tracker.reflection", e)
 
     async def _write_memory_file(self, symbol: str, reflection: dict, trade_data: dict):
         """Write reflection to memory/trades/ filesystem."""

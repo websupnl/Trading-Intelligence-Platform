@@ -34,6 +34,7 @@
 
 ### Telegram Alerts
 - Nieuwe migratie `003_notifications.py`, notificatieservice en API `/api/notifications/*`.
+- Nieuwe migratie `004_token_usage.py` zodat AI-tokenregistratie na deploy niet faalt.
 - Telegram is optioneel configureerbaar via `TELEGRAM_BOT_TOKEN` en `TELEGRAM_CHAT_ID`; afleverfouten blokkeren trading niet.
 - Alerts worden aangemaakt voor kill switch, signalen, order/liquidatie, hoog-impact nieuws, AI trade-lessen en eerste complete 5d-outcome.
 - Nieuwe pagina `/notifications` met afleverhistorie en testberichtknop; status is zichtbaar in Settings en Systeemstatus.

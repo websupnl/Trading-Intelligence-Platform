@@ -92,7 +92,7 @@ Stel in Coolify per service het domein in.
      python -m alembic -c app/migrations/alembic.ini upgrade head
    ```
    Of via Coolify's **Terminal** knop op de `api` service.
-   De huidige head is `003_notifications`; deze bevat ook de eerdere outcome-migratie.
+   De huidige head is `004_token_usage`; deze bevat ook de eerdere outcome- en notificatie-migraties.
 
 ## Stap 5 — Verificatie
 

@@ -77,5 +77,10 @@ celery_app.conf.update(
             "task": "app.tasks.analysis_tasks.sync_closed_trades",
             "schedule": 300.0,
         },
+
+        "activity-summary-every-4h": {
+            "task": "app.tasks.analysis_tasks.send_activity_summary",
+            "schedule": 14400.0,
+        },
     },
 )

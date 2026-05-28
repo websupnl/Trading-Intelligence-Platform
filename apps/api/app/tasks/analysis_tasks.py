@@ -143,3 +143,78 @@ def sync_closed_trades():
     except Exception as e:
         logger.error(f"Trade sync fout: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.send_activity_summary")
+def send_activity_summary(hours: int = 4):
+    """Send a concise action/risk/P&L summary to app notifications + Telegram."""
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, func, desc
+    from app.database import AsyncSessionLocal
+    from app.models.audit import AuditLog
+    from app.models.news import NewsItem
+    from app.models.signals import Signal
+    from app.models.trades import Trade
+    from app.services.ai_guard import ai_pause_status
+    from app.services.notifications import NotificationService
+
+    async def _run():
+        now = datetime.now(timezone.utc)
+        since = now - timedelta(hours=hours)
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        async with AsyncSessionLocal() as db:
+            signal_count = (await db.execute(select(func.count()).where(Signal.created_at >= since))).scalar() or 0
+            trade_count = (await db.execute(select(func.count()).where(Trade.created_at >= since))).scalar() or 0
+            open_trades = (await db.execute(select(Trade).where(Trade.status == "open").order_by(desc(Trade.created_at)).limit(12))).scalars().all()
+            closed_today = (await db.execute(select(func.count(), func.coalesce(func.sum(Trade.pnl), 0)).where(Trade.status == "closed", Trade.closed_at >= today))).one()
+            errors = (await db.execute(select(AuditLog).where(AuditLog.created_at >= since, AuditLog.status == "error").order_by(desc(AuditLog.created_at)).limit(5))).scalars().all()
+            news_count = (await db.execute(select(func.count()).where(NewsItem.created_at >= since))).scalar() or 0
+            analyzed_news = (await db.execute(select(func.count()).where(NewsItem.updated_at >= since, NewsItem.ai_analyzed == True))).scalar() or 0
+
+            ai = ai_pause_status()
+            lines = [
+                f"Periode: laatste {hours} uur",
+                f"AI status: {'GEPAUZEERD tot ' + str(ai.get('until')) if ai.get('paused') else 'actief'}",
+                f"Nieuwe signalen: {signal_count}",
+                f"Nieuwe trades: {trade_count}",
+                f"Open trades: {len(open_trades)}",
+                f"Vandaag gesloten: {closed_today[0] or 0}, realized P&L: ${float(closed_today[1] or 0):.2f}",
+                f"Nieuws opgehaald: {news_count}, AI-geanalyseerd: {analyzed_news}",
+            ]
+            if open_trades:
+                lines.append("Open exposure:")
+                for t in open_trades[:8]:
+                    lines.append(f"- {t.symbol} {t.side} qty={t.quantity} entry={t.entry_price or 'n/a'} SL={t.stop_loss or 'n/a'} TP={t.take_profit or 'n/a'}")
+            if errors:
+                lines.append("Recente fouten:")
+                for e in errors:
+                    lines.append(f"- {e.action}: {(e.message or '')[:140]}")
+
+            message = "\n".join(lines)
+            db.add(AuditLog(
+                action="activity_summary_sent",
+                actor="scheduler",
+                entity_type="system",
+                status="success",
+                message=f"{hours}h activity summary sent",
+                created_at=now,
+                updated_at=now,
+            ))
+            await db.commit()
+            await NotificationService(db).send(
+                "daily_summary",
+                "Trading OS - Actie en risico overzicht",
+                message,
+                severity="warning" if errors or ai.get("paused") else "info",
+                entity_type="system",
+                entity_id="activity_summary",
+            )
+            return {"status": "ok", "open_trades": len(open_trades), "errors": len(errors), "ai_paused": ai.get("paused")}
+
+    try:
+        result = asyncio.run(_run())
+        logger.info("Activity summary verstuurd: %s", result)
+        return result
+    except Exception as e:
+        logger.error(f"Activity summary fout: {e}")
+        return {"status": "error", "message": str(e)}

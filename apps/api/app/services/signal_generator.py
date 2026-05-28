@@ -15,6 +15,7 @@ from app.models.audit import AuditLog
 from app.services.technical_analysis import analyze as ta_analyze
 from app.services.token_tracker import usage_record, flush_usage
 from app.services.notifications import NotificationService
+from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,10 @@ class SignalGeneratorService:
 
     async def generate_signals(self, lookback_hours: int = 24) -> int:
         """Generate signals via Bull/Bear debate. Returns count generated."""
+        if is_ai_paused():
+            logger.warning("AI analyse gepauzeerd - signaal generatie overgeslagen")
+            return 0
+
         since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
 
         async with AsyncSessionLocal() as db:
@@ -201,6 +206,9 @@ class SignalGeneratorService:
 
             except Exception as e:
                 logger.error(f"Signal generatie fout voor {asset}: {e}")
+                if is_ai_failure(e):
+                    await pause_ai("signal_generator", e)
+                    break
 
         return generated
 

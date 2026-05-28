@@ -117,7 +117,7 @@ class AlpacaBroker:
         tif = "gtc" if is_crypto(symbol) else "day"
         payload: dict[str, Any] = {"symbol": alpaca_sym, "side": side, "type": order_type, "time_in_force": tif}
         if notional and not is_crypto(symbol):
-            payload["notional"] = str(notional)
+            payload["notional"] = f"{float(notional):.2f}"
         elif qty:
             payload["qty"] = str(qty)
         elif notional and is_crypto(symbol):
@@ -126,12 +126,9 @@ class AlpacaBroker:
         if limit_price:
             payload["limit_price"] = str(limit_price)
 
-        # Bracket orders require qty (not notional) — only use when qty is provided
-        # Market orders must NOT have top-level stop_price; position_monitor handles SL/TP
-        if stop_price and take_profit_price and not is_crypto(symbol) and qty:
-            payload["order_class"] = "bracket"
-            payload["take_profit"] = {"limit_price": str(round(take_profit_price, 4))}
-            payload["stop_loss"] = {"stop_price": str(round(stop_price, 4))}
+        # Do not attach bracket orders in the autonomous flow.
+        # position_monitor owns stop-loss/take-profit exits, and Alpaca rejects some
+        # short/closing bracket combinations that are valid as plain market entries.
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{settings.alpaca_base_url}/v2/orders", headers=self._headers, json=payload, timeout=15)

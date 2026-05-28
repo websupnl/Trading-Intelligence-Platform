@@ -101,7 +101,7 @@ lsof -i :8000
 ```bash
 docker compose logs api
 docker compose exec api python -m alembic -c app/migrations/alembic.ini upgrade head
-# Verwachte huidige head: 003_notifications
+# Verwachte huidige head: 004_token_usage
 ```
 
 ### Frontend niet bereikbaar

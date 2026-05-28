@@ -5,7 +5,7 @@ from typing import Optional
 class RiskCheckRequest(BaseModel):
     symbol: str
     side: str
-    quantity: float
+    quantity: Optional[float] = None
     estimated_notional: Optional[float] = None
     signal_id: Optional[str] = None
     confidence: Optional[float] = None

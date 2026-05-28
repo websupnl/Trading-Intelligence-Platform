@@ -10,6 +10,7 @@ from app.models.news import NewsItem
 from app.models.social import SocialPost
 from app.services.notifications import NotificationService
 from app.services.token_tracker import usage_record, flush_usage
+from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,10 @@ class NewsAnalyzerService:
 
     async def analyze_pending_news(self, batch_size: int = 20) -> int:
         """Analyze unanalyzed news items. Returns count analyzed."""
+        if is_ai_paused():
+            logger.warning("AI analyse gepauzeerd - news analyse overgeslagen")
+            return 0
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(NewsItem)
@@ -121,6 +126,9 @@ class NewsAnalyzerService:
 
             except Exception as e:
                 logger.warning(f"News analyse fout voor {item.id}: {e}")
+                if is_ai_failure(e):
+                    await pause_ai("news_analyzer", e)
+                    break
                 # Mark as analyzed with error to avoid infinite retries
                 # Mark as analyzed with error to avoid infinite retries
                 async with AsyncSessionLocal() as db:
@@ -157,6 +165,10 @@ class NewsAnalyzerService:
 
     async def analyze_pending_social(self, batch_size: int = 30) -> int:
         """Analyze unanalyzed social posts."""
+        if is_ai_paused():
+            logger.warning("AI analyse gepauzeerd - social analyse overgeslagen")
+            return 0
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(SocialPost)
@@ -196,6 +208,9 @@ class NewsAnalyzerService:
 
             except Exception as e:
                 logger.warning(f"Social analyse fout {item.id}: {e}")
+                if is_ai_failure(e):
+                    await pause_ai("news_analyzer.social", e)
+                    break
                 async with AsyncSessionLocal() as db:
                     result = await db.execute(select(SocialPost).where(SocialPost.id == item.id))
                     db_item = result.scalar_one_or_none()

@@ -9,6 +9,14 @@ from app.models.notifications import Notification
 
 logger = logging.getLogger(__name__)
 
+TELEGRAM_EVENT_TYPES = {
+    "ai_provider_paused", "ai_provider_resumed",
+    "auto_trade_executed", "auto_trade_broker_error",
+    "position_closed", "position_close_failed",
+    "order_submitted", "order_failed",
+    "trade_reflection_written", "daily_summary", "trade_summary",
+    "circuit_breaker_triggered", "telegram_test",
+}
 
 class NotificationService:
     """Persist alerts and optionally deliver them through Telegram."""
@@ -38,13 +46,27 @@ class NotificationService:
         )
         self.db.add(notification)
 
+        should_send_telegram = (
+            event_type in TELEGRAM_EVENT_TYPES
+            or severity in {"error", "critical"}
+        )
+        if not should_send_telegram:
+            notification.status = "stored"
+            await self.db.commit()
+            return notification
+
         if not self.settings.telegram_configured:
             notification.status = "disabled"
             notification.error_message = "Telegram niet geconfigureerd"
             await self.db.commit()
             return notification
 
-        text = f"{title}\n\n{message}"[:4096]
+        prefix = ""
+        if severity == "critical":
+            prefix = "[CRITICAL] "
+        elif severity == "error":
+            prefix = "[ERROR] "
+        text = f"{prefix}{title}\n\n{message}"[:4096]
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(

@@ -128,6 +128,7 @@ Migraties:
 - `001_initial.py` - maakt de basisschema-tabellen aan.
 - `002_signal_outcomes.py` - voegt objectieve signaaluitkomsten toe.
 - `003_notifications.py` - voegt Telegram-notificatielog en afleverstatus toe.
+- `004_token_usage.py` - voegt AI-tokengebruik en kostenregistratie toe.
 
 Nieuwe migratie aanmaken:
 ```bash

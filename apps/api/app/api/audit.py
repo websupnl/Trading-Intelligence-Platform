@@ -13,5 +13,5 @@ async def get_audit_logs(limit: int = Query(100, le=500), db: AsyncSession = Dep
     items = result.scalars().all()
     return [{"id": i.id, "action": i.action, "actor": i.actor, "entity_type": i.entity_type,
              "entity_id": i.entity_id, "status": i.status, "message": i.message,
-             "created_at": i.created_at}
+             "details": i.details, "created_at": i.created_at}
             for i in items]

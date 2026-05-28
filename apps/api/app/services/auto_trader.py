@@ -134,12 +134,60 @@ class AutoTraderService:
             equity = await self._get_equity()
             pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
             notional = equity * pct
-            return max(MIN_NOTIONAL, min(notional, MAX_AUTO_NOTIONAL * 5))
+            return round(max(MIN_NOTIONAL, min(notional, MAX_AUTO_NOTIONAL * 5)), 2)
         except Exception:
             return MAX_AUTO_NOTIONAL
 
+    async def _get_broker_exposure(self, symbol: str) -> float | None:
+        """Return signed broker quantity if a position exists; positive=long, negative=short."""
+        try:
+            positions = await self.broker.get_positions()
+            for pos in positions:
+                if (pos.get("symbol") or "").upper() == symbol.upper():
+                    return float(pos.get("qty") or 0)
+        except Exception as exc:
+            logger.warning(f"Broker exposure check overgeslagen voor {symbol}: {exc}")
+        return None
+
+    async def _skip_signal(self, signal: Signal, status: str, message: str) -> None:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Signal).where(Signal.id == signal.id))
+            db_signal = result.scalar_one_or_none()
+            if not db_signal:
+                return
+            db_signal.status = status
+            db.add(AuditLog(
+                action=status,
+                actor="auto_trader",
+                entity_type="signal",
+                entity_id=signal.id,
+                details={"asset": signal.asset, "direction": signal.direction},
+                status="skipped",
+                message=message,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ))
+            await db.commit()
+
     async def _execute_signal(self, signal: Signal, notional: float) -> bool:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)
+
+        exposure = await self._get_broker_exposure(signal.asset)
+        if exposure:
+            current_side = "buy" if exposure > 0 else "sell"
+            if current_side == signal.direction:
+                await self._skip_signal(
+                    signal,
+                    "skipped_existing",
+                    f"{signal.asset}: bestaande {current_side} exposure ({exposure}) - signaal niet gestapeld",
+                )
+                return False
+            await self._skip_signal(
+                signal,
+                "skipped_conflict",
+                f"{signal.asset}: bestaande {current_side} exposure ({exposure}) conflicteert met {signal.direction} signaal",
+            )
+            return False
 
         risk_req = RiskCheckRequest(
             symbol=signal.asset,
@@ -177,11 +225,18 @@ class AutoTraderService:
                 logger.info(f"Auto trade geweigerd door risk: {signal.asset} — {risk_result.reasons}")
                 return False
 
+            order_qty = None
+            order_notional = round(float(notional), 2)
+            if signal.direction == "sell" and signal.suggested_entry:
+                # Alpaca rejects fractional short sells. Use whole-share qty for sell/short signals.
+                order_qty = max(1, int(order_notional / float(signal.suggested_entry)))
+                order_notional = None
+
             try:
                 order = await self.broker.submit_order(
                     symbol=signal.asset,
-                    qty=None,
-                    notional=notional,
+                    qty=order_qty,
+                    notional=order_notional,
                     side=signal.direction,
                     stop_price=signal.suggested_stop,
                     take_profit_price=signal.suggested_take_profit,
@@ -201,7 +256,7 @@ class AutoTraderService:
                     alpaca_order_id=alpaca_id,
                     symbol=signal.asset,
                     side=signal.direction,
-                    quantity=fill_qty or notional,
+                    quantity=fill_qty or order_qty or notional,
                     entry_price=fill_price or signal.suggested_entry,
                     stop_loss=signal.suggested_stop,
                     take_profit=signal.suggested_take_profit,
@@ -214,8 +269,8 @@ class AutoTraderService:
                     db,
                     symbol=signal.asset,
                     side=signal.direction,
-                    quantity=None,
-                    notional=notional,
+                    quantity=order_qty,
+                    notional=order_notional,
                     order_type="market",
                     mode=mode,
                     broker_response=order,
@@ -287,4 +342,12 @@ class AutoTraderService:
                     updated_at=datetime.now(timezone.utc),
                 ))
                 await db.commit()
+                await NotificationService(db).send(
+                    "auto_trade_broker_error",
+                    f"Trading OS - Auto-trade broker fout: {signal.asset} {signal.direction.upper()}",
+                    str(e)[:1200],
+                    severity="error",
+                    entity_type="signal",
+                    entity_id=signal.id,
+                )
                 return False

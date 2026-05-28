@@ -8,6 +8,7 @@ from app.database import AsyncSessionLocal
 from app.models.news import NewsItem
 from app.models.social import SocialPost
 from app.models.rumours import Rumour
+from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,10 @@ class RumourDetectorService:
 
     async def detect_rumours(self, lookback_hours: int = 12) -> int:
         """Detect rumours from cross-source patterns. Returns count created."""
+        if is_ai_paused():
+            logger.warning("AI analyse gepauzeerd - geruchtendetectie overgeslagen")
+            return 0
+
         since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
 
         async with AsyncSessionLocal() as db:
@@ -105,6 +110,9 @@ class RumourDetectorService:
 
             except Exception as e:
                 logger.error(f"Rumour detectie fout {asset}: {e}")
+                if is_ai_failure(e):
+                    await pause_ai("rumour_detector", e)
+                    break
 
         return created
 
