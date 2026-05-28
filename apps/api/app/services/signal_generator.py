@@ -244,10 +244,12 @@ class SignalGeneratorService:
                     await db.commit()
 
                 if signal_data.get("direction") == "skip":
+                    await self._log_signal_skip(asset, "AI koos SKIP", signal_data, data, ta_result)
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
                 if confidence < MIN_CONFIDENCE_GENERATE:
+                    await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
                     continue
 
                 # Build bull_data / bear_data from combined response for _save_signal compatibility
@@ -279,6 +281,38 @@ class SignalGeneratorService:
                     break
 
         return generated
+
+    async def _log_signal_skip(self, asset: str, reason: str, signal_data: dict, agg_data: dict, ta_result) -> None:
+        async with AsyncSessionLocal() as db:
+            db.add(AuditLog(
+                action="signal_skipped",
+                actor="signal_generator",
+                entity_type="signal",
+                entity_id=asset,
+                details={
+                    "asset": asset,
+                    "skip_reason": reason,
+                    "direction": signal_data.get("direction"),
+                    "confidence": signal_data.get("confidence"),
+                    "bull_score": signal_data.get("bull_score"),
+                    "bear_score": signal_data.get("bear_score"),
+                    "already_priced_in": signal_data.get("already_priced_in"),
+                    "edge_criteria_met": signal_data.get("edge_criteria_met"),
+                    "catalyst_window": signal_data.get("catalyst_window"),
+                    "key_catalyst": signal_data.get("key_catalyst"),
+                    "key_risk": signal_data.get("key_risk"),
+                    "reason": signal_data.get("reason"),
+                    "news_count": len(agg_data.get("news_items", [])),
+                    "social_count": len(agg_data.get("social_posts", [])),
+                    "ta_score": ta_result.score if ta_result else None,
+                    "ta_summary": ta_result.summary if ta_result else None,
+                },
+                status="skipped",
+                message=f"{asset}: {reason} - {signal_data.get('reason') or signal_data.get('key_risk') or 'geen edge'}",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ))
+            await db.commit()
 
     def _call_signal_agent(self, client, asset: str, price: str,
                             news_summary: str, social_summary: str, ta_summary: str) -> tuple[dict, any]:

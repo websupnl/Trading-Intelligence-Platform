@@ -79,6 +79,10 @@ class MarketDataService:
         crypto = [s.upper() for s in symbols if is_crypto(s)]
         stocks = [s.upper() for s in symbols if not is_crypto(s)]
         saved = 0
+        # Alpaca can return only the latest grouped daily bar without an explicit
+        # historical window. TA needs enough bars, so always request a lookback.
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=max(limit * 3, 120))
 
         async with httpx.AsyncClient(timeout=30) as client:
             # ── Stocks ────────────────────────────────────────────────────────
@@ -91,6 +95,8 @@ class MarketDataService:
                             "symbols": ",".join(stocks[:50]),
                             "timeframe": timeframe,
                             "limit": limit,
+                            "start": start.isoformat(),
+                            "end": end.isoformat(),
                             "adjustment": "raw",
                             "feed": "iex",
                         },
@@ -114,6 +120,8 @@ class MarketDataService:
                             "symbols": ",".join(crypto_pairs[:50]),
                             "timeframe": timeframe,
                             "limit": limit,
+                            "start": start.isoformat(),
+                            "end": end.isoformat(),
                         },
                     )
                     if resp.status_code == 200:
