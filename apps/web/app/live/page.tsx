@@ -233,6 +233,27 @@ export default function LiveSessionPage() {
     }
   );
 
+  // ── Fallback: fetch candles via REST if SSE hasn't sent data yet ─────────
+
+  useEffect(() => {
+    const timeout = setTimeout(async () => {
+      for (const sym of symbols) {
+        if (!chartData[sym]) {
+          try {
+            const res = await fetch(
+              `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/stream/candles/${sym}?timeframe=1Day&limit=80`
+            );
+            const json = await res.json();
+            if (Array.isArray(json.candles) && json.candles.length > 0) {
+              setChartData((prev) => ({ ...prev, [sym]: json.candles }));
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    }, 3000); // wait 3s for SSE, then fall back to REST
+    return () => clearTimeout(timeout);
+  }, [symbols]); // eslint-disable-line
+
   // ── Quote fetcher ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -327,7 +348,7 @@ export default function LiveSessionPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col -m-3 md:-m-4 bg-background overflow-hidden" style={{ height: 'calc(100vh - 48px)' }}>
+    <div className="flex flex-col -m-3 md:-m-4 bg-background overflow-hidden" style={{ height: 'calc(100dvh - 48px)' }}>
 
       {/* ── Header bar ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
@@ -379,10 +400,10 @@ export default function LiveSessionPage() {
       </div>
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
 
         {/* Left: chart + stats */}
-        <div className="flex flex-col flex-1 min-w-0 border-r border-border">
+        <div className="flex flex-col flex-1 min-w-0 border-b md:border-b-0 md:border-r border-border" style={{ minHeight: 0 }}>
 
           {/* Price stats bar */}
           <div className="flex items-center gap-6 px-4 py-2 border-b border-border shrink-0 bg-card/50 overflow-x-auto">
@@ -413,7 +434,7 @@ export default function LiveSessionPage() {
           </div>
 
           {/* Chart */}
-          <div className="flex-1 min-h-0 p-2">
+          <div className="flex-1 min-h-0 p-2" style={{ minHeight: '200px' }}>
             {currentCandles.length > 0 ? (
               <CandlestickChart
                 candles={currentCandles}
@@ -452,7 +473,7 @@ export default function LiveSessionPage() {
         </div>
 
         {/* Right: activity + signals + trade */}
-        <div className="w-80 xl:w-96 flex flex-col shrink-0 overflow-hidden">
+        <div className="w-full md:w-80 xl:w-96 flex flex-col shrink-0 overflow-hidden max-h-[45vh] md:max-h-none">
 
           {/* AI Activity feed */}
           <div className="flex-1 flex flex-col min-h-0 border-b border-border">
