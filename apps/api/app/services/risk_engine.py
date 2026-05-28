@@ -61,6 +61,12 @@ class RiskEngine:
             required_manual = True
             warnings.append("Handmatige bevestiging vereist (REQUIRE_MANUAL_CONFIRMATION=true)")
 
+        # Short selling check
+        if req.side == "sell" and not get_runtime_value("allow_short_selling", settings.allow_short_selling):
+            reasons.append("Short selling uitgeschakeld (allow_short_selling=false)")
+            approved = False
+            blocked_by = "short_selling_disabled"
+
         # Missing stop loss warning
         if req.stop_loss is None:
             warnings.append("Geen stop loss ingesteld - risico niet begrensd")
