@@ -126,13 +126,12 @@ class AlpacaBroker:
         if limit_price:
             payload["limit_price"] = str(limit_price)
 
-        # Use bracket order when both SL and TP are provided (equity only, not crypto)
-        if stop_price and take_profit_price and not is_crypto(symbol):
+        # Bracket orders require qty (not notional) — only use when qty is provided
+        # Market orders must NOT have top-level stop_price; position_monitor handles SL/TP
+        if stop_price and take_profit_price and not is_crypto(symbol) and qty:
             payload["order_class"] = "bracket"
             payload["take_profit"] = {"limit_price": str(round(take_profit_price, 4))}
             payload["stop_loss"] = {"stop_price": str(round(stop_price, 4))}
-        elif stop_price:
-            payload["stop_price"] = str(stop_price)
 
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{settings.alpaca_base_url}/v2/orders", headers=self._headers, json=payload, timeout=15)

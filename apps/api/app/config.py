@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
+    anthropic_analysis_model: str = "claude-haiku-4-5-20251001"  # cheaper model for news/social
     anthropic_enable_prompt_caching: bool = True
     anthropic_max_tokens: int = 4096
     anthropic_enable_web_search: bool = False
