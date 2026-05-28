@@ -15,7 +15,7 @@ from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
-AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.78
+AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.60
 MAX_AUTO_NOTIONAL = 500.0
 
 
