@@ -120,7 +120,7 @@ async def submit_paper_order(req: PaperOrderRequest, db: AsyncSession = Depends(
         stop_loss=req.stop_loss,
         mode="paper",
     )
-    risk_result = risk_engine.check(risk_req)
+    risk_result = await risk_engine.check_async(risk_req)
 
     await audit.log("order_attempt", entity_type="order", details={
         "symbol": req.symbol,

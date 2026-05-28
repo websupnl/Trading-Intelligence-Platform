@@ -17,14 +17,14 @@ export default function MemoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const { data: pending, loading: pl, reload: rp } = useApi(() => api.getPendingRules(), []);
-  const { data: active, loading: al } = useApi(() => api.getActiveRules(), []);
+  const { data: active, loading: al, reload: ra } = useApi(() => api.getActiveRules(), []);
   const { data: lessons, loading: ll } = useApi(() => api.searchMemory(''), []);
   const { data: searchResults, loading: sl } = useApi(
     () => searchQuery ? api.searchMemory(searchQuery) : Promise.resolve(null),
     [searchQuery]
   );
 
-  async function approve(id: string) { await api.approveRule(id); rp(); }
+  async function approve(id: string) { await api.approveRule(id); rp(); ra(); }
   async function reject(id: string) { await api.rejectRule(id); rp(); }
 
   const tradeLessons = (lessons || []).filter((m: any) => m.type === 'trade_lesson');
@@ -93,6 +93,9 @@ export default function MemoryPage() {
         <Card>
           <CardHeader>
             <CardTitle>Pending Rules</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Goedgekeurde risk_filter/block regels worden meegenomen in de order risk check.
+            </p>
             <Button variant="outline" size="sm" onClick={rp}>Vernieuwen</Button>
           </CardHeader>
           <CardContent className="p-0">
@@ -128,7 +131,12 @@ export default function MemoryPage() {
       {/* Active rules */}
       {tab === 'active' && (
         <Card>
-          <CardHeader><CardTitle>Active Rules</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Active Rules</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Deze regels zijn actief in auto-trader, handmatige orders en signal paper-trades wanneer ze matchen op symbool, crypto of alle assets.
+            </p>
+          </CardHeader>
           <CardContent className="p-0">
             {al && <LoadingSpinner />}
             {!al && (!active || active.length === 0) && (

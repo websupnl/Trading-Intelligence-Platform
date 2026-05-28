@@ -5,6 +5,8 @@ from app.services.risk_engine import RiskEngine
 from app.services.audit import AuditLogService
 from app.schemas.risk import RiskCheckRequest
 from app.config import get_settings
+from app.database import AsyncSessionLocal
+from app.models.rules import ActiveRule
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.settings_store import persist_runtime_setting
 from app.services.notifications import NotificationService
@@ -16,6 +18,15 @@ risk_engine = RiskEngine()
 @router.get("/status")
 async def risk_status():
     s = get_settings()
+    active_rules = 0
+    try:
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import func, select
+            active_rules = (await db.execute(
+                select(func.count()).select_from(ActiveRule).where(ActiveRule.status == "active")
+            )).scalar() or 0
+    except Exception:
+        active_rules = 0
     return {
         "kill_switch_enabled": get_runtime_value("kill_switch_enabled", s.kill_switch_enabled),
         "trading_mode": get_runtime_value("trading_mode", s.trading_mode),
@@ -24,12 +35,13 @@ async def risk_status():
         "max_position_size_usd": 10000.0,
         "max_trades_per_day": 20,
         "max_open_positions": 10,
+        "active_learning_rules": active_rules,
     }
 
 
 @router.post("/check")
 async def check_risk(req: RiskCheckRequest):
-    return risk_engine.check(req)
+    return await risk_engine.check_async(req)
 
 
 @router.post("/kill-switch/enable")

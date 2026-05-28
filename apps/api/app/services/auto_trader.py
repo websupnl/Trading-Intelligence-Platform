@@ -247,7 +247,7 @@ class AutoTraderService:
             mode=mode,
             estimated_notional=notional,
         )
-        risk_result = self.risk_engine.check(risk_req)
+        risk_result = await self.risk_engine.check_async(risk_req)
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Signal).where(Signal.id == signal.id))

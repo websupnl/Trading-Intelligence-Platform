@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 from app.config import get_settings
 from app.schemas.risk import RiskCheckRequest, RiskCheckResult
+from app.services.active_rule_engine import evaluate_active_rules
 from app.services.runtime_state import get_runtime_value
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,23 @@ class RiskEngine:
             warnings=warnings,
             max_position_size=MAX_POSITION_SIZE_USD,
             blocked_by_rule=blocked_by,
+        )
+
+    async def check_async(self, req: RiskCheckRequest) -> RiskCheckResult:
+        result = self.check(req)
+        if not result.approved:
+            return result
+
+        rule_result = await evaluate_active_rules(req)
+        reasons = [*result.reasons, *rule_result.reasons]
+        warnings = [*result.warnings, *rule_result.warnings]
+        return RiskCheckResult(
+            approved=result.approved and rule_result.approved,
+            required_manual_approval=result.required_manual_approval or rule_result.required_manual,
+            reasons=reasons,
+            warnings=warnings,
+            max_position_size=result.max_position_size,
+            blocked_by_rule=rule_result.blocked_by_rule or result.blocked_by_rule,
         )
 
     async def get_status(self) -> dict:

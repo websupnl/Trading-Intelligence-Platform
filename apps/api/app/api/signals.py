@@ -42,7 +42,7 @@ async def paper_trade_signal(signal_id: str, confirmed: bool = False, db: AsyncS
         mode="paper",
         estimated_notional=signal.suggested_entry,
     )
-    risk_result = risk_engine.check(risk_req)
+    risk_result = await risk_engine.check_async(risk_req)
 
     if not risk_result.approved:
         signal.status = "risk_rejected"

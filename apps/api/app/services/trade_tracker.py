@@ -16,6 +16,7 @@ from app.database import AsyncSessionLocal
 from app.models.trades import Trade
 from app.models.memory import MemoryEntry
 from app.models.audit import AuditLog
+from app.models.rules import PendingRule
 from app.services.notifications import NotificationService
 from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
@@ -387,6 +388,7 @@ class TradeTrackerService:
             # Save MemoryEntry
             pattern = reflection.get("pattern", "unknown")
             lesson = reflection.get("lesson", "")
+            rule_suggestion = reflection.get("rule_suggestion")
             title = f"Trade {symbol} {side}: {'✅' if pnl and pnl > 0 else '❌'} {pattern} — P&L ${pnl:.2f}"
 
             async with AsyncSessionLocal() as db:
@@ -395,7 +397,7 @@ class TradeTrackerService:
                     title=title[:500],
                     content=json.dumps({
                         "lesson": lesson,
-                        "rule_suggestion": reflection.get("rule_suggestion"),
+                        "rule_suggestion": rule_suggestion,
                         "confidence_assessment": reflection.get("confidence_assessment"),
                         "next_time": reflection.get("next_time"),
                         "pnl": pnl,
@@ -411,6 +413,33 @@ class TradeTrackerService:
                     status="active",
                 )
                 db.add(memory)
+                if rule_suggestion:
+                    existing_rule = await db.execute(
+                        select(PendingRule).where(
+                            PendingRule.description == rule_suggestion,
+                            PendingRule.status == "pending",
+                        ).limit(1)
+                    )
+                    if not existing_rule.scalar_one_or_none():
+                        db.add(PendingRule(
+                            title=f"{symbol}: {rule_suggestion[:120]}",
+                            description=rule_suggestion[:1000],
+                            rule_type="risk_filter",
+                            proposed_by="trade_tracker",
+                            confidence=0.75 if reflection.get("would_repeat") is False else 0.6,
+                            supporting_evidence=[{
+                                "trade_id": trade_data["id"],
+                                "symbol": symbol,
+                                "pnl": pnl,
+                                "pnl_pct": pnl_pct,
+                                "pattern": pattern,
+                                "key_mistake": reflection.get("key_mistake"),
+                                "trigger_condition": reflection.get("rule_trigger_condition"),
+                            }],
+                            status="pending",
+                            created_at=datetime.now(timezone.utc),
+                            updated_at=datetime.now(timezone.utc),
+                        ))
 
                 # Audit log
                 db.add(AuditLog(
