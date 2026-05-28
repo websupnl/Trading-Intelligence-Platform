@@ -71,7 +71,9 @@ export default function PerformancePage() {
         <p className="mb-3 text-xs text-muted-foreground">
           Resultaten van daadwerkelijk uitgevoerde en gesloten trades uit Alpaca-sync.
         </p>
-        {realizedLoading ? <LoadingSpinner /> : (
+        {realizedLoading ? <LoadingSpinner /> : !realized?.total_trades ? (
+          <p className="text-xs text-muted-foreground py-2">Nog geen gesloten trades. Sync trades via de Portfolio pagina of wacht tot de bot een trade sluit.</p>
+        ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatCard label="Gesloten trades" value={`${realized?.total_trades ?? 0}`} />
             <StatCard
@@ -127,7 +129,13 @@ export default function PerformancePage() {
         <CardContent className="p-0">
           {outcomesLoading && <LoadingSpinner />}
           {!outcomesLoading && (!outcomes || outcomes.length === 0) && (
-            <EmptyState message="Nog geen outcomes. Evalueer signalen nadat dagelijkse koersdata beschikbaar is." />
+            <div className="p-6 text-center space-y-2">
+              <p className="text-sm text-muted-foreground">Nog geen signaaluitkomsten beschikbaar.</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                Klik op <strong>Outcomes evalueren</strong> hierboven. Dit vereist candle data — zorg dat de Pipeline minstens 1x gedraaid heeft (elke 15 min automatisch, of handmatig via Pipeline pagina).
+              </p>
+              <p className="text-xs text-muted-foreground">Na 1 handelsdag verschijnen de 1d-resultaten, na 5 handelsdagen ook de 5d-resultaten vs SPY.</p>
+            </div>
           )}
           {outcomes && outcomes.length > 0 && (
             <div className="overflow-x-auto">
