@@ -177,6 +177,18 @@ class AutoTraderService:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)
 
         exposure = await self._get_broker_exposure(signal.asset)
+
+        if signal.direction == "sell":
+            # Long-only strategy: SELL only closes an existing long position.
+            # Without an existing long, a sell order would open a short — not allowed.
+            if not exposure or exposure <= 0:
+                await self._skip_signal(
+                    signal,
+                    "skipped_no_position",
+                    f"{signal.asset}: SELL signaal overgeslagen — geen bestaande long positie om te sluiten (long-only strategie)",
+                )
+                return False
+
         if exposure:
             current_side = "buy" if exposure > 0 else "sell"
             if current_side == signal.direction:
@@ -186,6 +198,8 @@ class AutoTraderService:
                     f"{signal.asset}: bestaande {current_side} exposure ({exposure}) - signaal niet gestapeld",
                 )
                 return False
+            # exposure exists but direction conflicts — for sell this is handled above,
+            # for buy on a short position, skip to avoid adding complexity
             await self._skip_signal(
                 signal,
                 "skipped_conflict",

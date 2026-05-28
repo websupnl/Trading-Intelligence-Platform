@@ -35,6 +35,8 @@ DEFAULT_WATCHLIST: set[str] = {
 
 SIGNAL_PROMPT = """Analyseer {asset} en geef een handelssignaal. Weeg bull vs bear argumenten objectief.
 
+Strategie-context: dit is een LONG-ONLY systeem. "sell" betekent uitsluitend dat je een bestaande long positie wilt sluiten — NIET het openen van een short. Als er geen overtuigende reden is om nu long te gaan, gebruik dan "skip", niet "sell".
+
 Asset: {asset} | Prijs: ${price}
 Nieuws: {news_summary}
 Social: {social_summary}
@@ -63,7 +65,7 @@ Geef ALLEEN dit JSON object:
   "invalidation": "<max 25 woorden>"
 }}
 
-Gebruik "skip" bij onvoldoende bewijs. Stop altijd onder entry (buy) of boven entry (sell). Risk/reward >= 1.5."""
+Gebruik "skip" bij onvoldoende bewijs of bearish scenario (geen short positie mogelijk). Stop altijd onder entry (buy). Risk/reward >= 1.5."""
 
 
 class SignalGeneratorService:
