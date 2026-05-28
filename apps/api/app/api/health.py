@@ -9,7 +9,7 @@ from app.models.trades import Trade
 from app.models.audit import AuditLog
 from app.services.ai_guard import ai_pause_status
 from app.services.market_session import market_session_status
-from app.services.crypto_session import get_crypto_session
+from app.services.crypto_session import get_crypto_session, is_crypto_24_7_enabled
 
 router = APIRouter()
 settings = get_settings()
@@ -114,6 +114,7 @@ async def bot_health():
         "ai_guard": ai_guard,
         "market_session": market_session,
         "crypto_session": crypto_session,
+        "crypto_24_7_enabled": is_crypto_24_7_enabled(),
         "recent_signals_1h": recent_signal_count,
         "recent_trades_1h": recent_trade_count,
         "open_trades": open_trades,

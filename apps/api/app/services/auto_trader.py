@@ -12,7 +12,7 @@ from app.schemas.risk import RiskCheckRequest
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.order_recorder import record_submitted_order
 from app.services.notifications import NotificationService
-from app.services.crypto_session import crypto_session_allows_autonomy, get_crypto_session
+from app.services.crypto_session import crypto_session_allows_autonomy, get_crypto_session, is_crypto_24_7_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,9 @@ class AutoTraderService:
         crypto_only=True filters to crypto assets (for outside US market hours)."""
         crypto_session = get_crypto_session()
         session_autonomy = crypto_session_allows_autonomy()
-        if session_autonomy:
+        crypto_24_7 = is_crypto_24_7_enabled()
+        autonomous = session_autonomy or crypto_24_7
+        if autonomous:
             crypto_only = True
         if get_runtime_value("kill_switch_enabled", self.settings.kill_switch_enabled):
             logger.info("Kill switch actief - auto trader gestopt")
@@ -42,10 +44,10 @@ class AutoTraderService:
         if mode not in ("paper", "live"):
             logger.info("Ongeldig trading_mode - auto trader gestopt")
             return 0
-        if crypto_only and not session_autonomy:
-            logger.info("US markt gesloten - crypto auto trader wacht op expliciete sessie")
+        if crypto_only and not autonomous:
+            logger.info("US markt gesloten - crypto auto trader wacht op sessie of 24/7 modus")
             return 0
-        if get_runtime_value("require_manual_confirmation", self.settings.require_manual_confirmation) and not session_autonomy:
+        if get_runtime_value("require_manual_confirmation", self.settings.require_manual_confirmation) and not autonomous:
             logger.info("Handmatige bevestiging vereist - auto trader gestopt")
             return 0
 
@@ -55,7 +57,8 @@ class AutoTraderService:
 
         now = datetime.now(timezone.utc)
         remaining_session_trades = None
-        if session_autonomy:
+        # Session trade limits only apply to timed sessions, not 24/7 mode
+        if session_autonomy and not crypto_24_7:
             started_at = crypto_session.get("started_at")
             try:
                 session_start = datetime.fromisoformat(started_at) if started_at else now
@@ -75,7 +78,7 @@ class AutoTraderService:
                 return 0
 
         async with AsyncSessionLocal() as db:
-            threshold = CRYPTO_SESSION_CONFIDENCE_THRESHOLD if session_autonomy else AUTO_TRADE_CONFIDENCE_THRESHOLD
+            threshold = CRYPTO_SESSION_CONFIDENCE_THRESHOLD if autonomous else AUTO_TRADE_CONFIDENCE_THRESHOLD
             query = select(Signal).where(
                 Signal.status.in_(["pending", "broker_error"]),
                 Signal.confidence >= threshold,
@@ -95,11 +98,11 @@ class AutoTraderService:
         executed = 0
         for signal in signals:
             try:
-                session_cap = float(crypto_session.get("max_notional_per_trade") or notional)
+                session_cap = float(crypto_session.get("max_notional_per_trade") or notional) if session_autonomy and not crypto_24_7 else notional
                 result = await self._execute_signal(
                     signal,
                     min(notional, session_cap),
-                    session_autonomy=session_autonomy,
+                    session_autonomy=autonomous,
                 )
                 if result:
                     executed += 1

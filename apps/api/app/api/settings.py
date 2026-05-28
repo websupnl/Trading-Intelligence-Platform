@@ -6,6 +6,7 @@ from app.database import get_db
 from app.services.audit import AuditLogService
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.settings_store import persist_runtime_setting
+from app.services.crypto_session import is_crypto_24_7_enabled, set_crypto_24_7
 import app.config as cfg_module
 
 router = APIRouter(prefix="/api/settings")
@@ -39,6 +40,7 @@ async def get_settings_endpoint():
         "telegram_configured": s.telegram_configured,
         "news_feed_count": len(s.news_feed_list),
         "crypto_feed_count": len(s.crypto_feed_list),
+        "crypto_24_7_enabled": is_crypto_24_7_enabled(),
         "runtime_overrides": list(_runtime_overrides.keys()),
     }
 
@@ -51,13 +53,13 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
     Note: kill_switch is managed via /api/risk/kill-switch endpoints.
     """
     audit = AuditLogService(db)
-    allowed_keys = {"require_manual_confirmation", "live_trading_enabled", "trading_mode"}
+    allowed_keys = {"require_manual_confirmation", "live_trading_enabled", "trading_mode", "crypto_24_7_enabled"}
     changed = {}
 
     invalid = {
         key: value for key, value in body.items()
         if (
-            key in {"require_manual_confirmation", "live_trading_enabled"} and not isinstance(value, bool)
+            key in {"require_manual_confirmation", "live_trading_enabled", "crypto_24_7_enabled"} and not isinstance(value, bool)
         ) or (
             key == "trading_mode" and value not in {"paper", "live"}
         )
@@ -67,6 +69,12 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
 
     for key, value in body.items():
         if key not in allowed_keys:
+            continue
+        if key == "crypto_24_7_enabled":
+            if not set_crypto_24_7(value):
+                raise HTTPException(status_code=503, detail="crypto_24_7_enabled kon niet worden opgeslagen in Redis.")
+            _runtime_overrides[key] = value
+            changed[key] = value
             continue
         if not set_runtime_value(key, value):
             raise HTTPException(

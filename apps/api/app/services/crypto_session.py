@@ -6,6 +6,7 @@ from app.services.market_session import market_session_status
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 
 SESSION_KEY = "autonomous_crypto_session"
+CRYPTO_24_7_KEY = "crypto_24_7_enabled"
 DEFAULT_SESSION = {
     "active": False,
     "session_id": None,
@@ -34,11 +35,13 @@ def get_crypto_session() -> dict[str, Any]:
             session = stop_crypto_session("invalid_expiry")
 
     market = market_session_status()
+    crypto_24_7 = is_crypto_24_7_enabled()
     return {
         **DEFAULT_SESSION,
         **session,
         "market_session": market,
-        "autonomous_allowed_now": bool(session.get("active")),
+        "crypto_24_7_enabled": crypto_24_7,
+        "autonomous_allowed_now": bool(session.get("active")) or crypto_24_7,
     }
 
 
@@ -81,6 +84,14 @@ def stop_crypto_session(reason: str = "manual") -> dict[str, Any]:
     return session
 
 
+def is_crypto_24_7_enabled() -> bool:
+    return bool(get_runtime_value(CRYPTO_24_7_KEY, False))
+
+
+def set_crypto_24_7(enabled: bool) -> bool:
+    return set_runtime_value(CRYPTO_24_7_KEY, bool(enabled))
+
+
 def crypto_session_allows_autonomy() -> bool:
     session = get_crypto_session()
-    return bool(session["autonomous_allowed_now"])
+    return bool(session["autonomous_allowed_now"]) or is_crypto_24_7_enabled()
