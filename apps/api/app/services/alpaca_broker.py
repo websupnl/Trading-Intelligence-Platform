@@ -54,7 +54,7 @@ class AlpacaBroker:
     async def get_account(self) -> dict:
         self._require_configured()
         async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{settings.alpaca_base_url}/v2/account", headers=self._headers, timeout=10)
+            resp = await client.get(f"{settings.alpaca_base_url}/v2/account", headers=self._headers, timeout=3)
             if resp.status_code != 200:
                 raise AlpacaAPIError(f"Alpaca account error: {resp.status_code} {resp.text}")
             return resp.json()

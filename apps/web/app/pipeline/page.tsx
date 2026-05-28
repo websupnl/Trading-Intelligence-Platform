@@ -27,8 +27,8 @@ function fmtSchedule(sec: number) {
 }
 
 export default function PipelinePage() {
-  const { data, loading, reload } = useApi(() => api.getPipelineStatus(), []);
-  const { data: botHealth, reload: reloadBotHealth } = useApi(() => api.getBotHealth(), []);
+  const { data, loading, reload } = useApi(() => api.getPipelineStatus(), [], { pollIntervalMs: 4000 });
+  const { data: botHealth, reload: reloadBotHealth } = useApi(() => api.getBotHealth(), [], { pollIntervalMs: 4000 });
   const [triggering, setTriggering] = useState<string | null>(null);
   const [triggerResult, setTriggerResult] = useState<Record<string, string>>({});
 

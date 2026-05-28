@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, ShoppingCart, Zap, Radio,
   Newspaper, MessageSquare, Brain, Database, Settings, Activity,
-  Cpu, LogOut, MonitorPlay, BarChart3, Bell, ShieldCheck
+  Cpu, LogOut, MonitorPlay, BarChart3, Bell, ShieldCheck, Moon, ScrollText
 } from 'lucide-react';
 import { api, clearPin } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
@@ -13,11 +13,13 @@ import { useApi } from '@/hooks/useApi';
 const nav = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/live', label: 'Live Session', icon: MonitorPlay },
+  { href: '/crypto-session', label: 'Crypto Sessie', icon: Moon },
   { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
   { href: '/orders', label: 'Orders', icon: ShoppingCart },
   { href: '/signals', label: 'Signals', icon: Zap },
   { href: '/performance', label: 'Performance', icon: BarChart3 },
   { href: '/notifications', label: 'Alerts', icon: Bell },
+  { href: '/activity-log', label: 'Live Log', icon: ScrollText },
   { href: '/rumour-radar', label: 'Rumour Radar', icon: Radio },
   { href: '/news', label: 'Nieuws', icon: Newspaper },
   { href: '/social', label: 'Social', icon: MessageSquare },
@@ -32,9 +34,9 @@ const nav = [
 const mobileNav = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/live', label: 'Live', icon: MonitorPlay },
+  { href: '/crypto-session', label: 'Sessie', icon: Moon },
+  { href: '/activity-log', label: 'Log', icon: ScrollText },
   { href: '/signals', label: 'Signals', icon: Zap },
-  { href: '/performance', label: 'Scores', icon: BarChart3 },
-  { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
 ];
 
 export function Sidebar() {

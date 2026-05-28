@@ -39,7 +39,7 @@ const FILTER_ACTIONS: Record<FilterType, string[]> = {
 };
 
 export default function AuditPage() {
-  const { data: logs, loading, reload } = useApi(() => api.getAuditLogs(500), []);
+  const { data: logs, loading, reload } = useApi(() => api.getAuditLogs(500), [], { pollIntervalMs: 5000 });
   const [filter, setFilter] = useState<FilterType>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
 

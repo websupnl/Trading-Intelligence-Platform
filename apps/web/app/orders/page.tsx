@@ -29,7 +29,7 @@ const STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warni
 const canCancel = (status: string) => ['open', 'pending_new', 'new', 'accepted'].includes(status);
 
 export default function OrdersPage() {
-  const { data: orders, loading, error, reload } = useApi(() => api.getOrders('all'), []);
+  const { data: orders, loading, error, reload } = useApi(() => api.getOrders('all'), [], { pollIntervalMs: 10000 });
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [form, setForm] = useState({ symbol: '', side: 'buy', notional: '', order_type: 'market' });

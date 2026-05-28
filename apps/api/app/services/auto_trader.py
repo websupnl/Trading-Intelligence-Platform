@@ -12,6 +12,7 @@ from app.schemas.risk import RiskCheckRequest
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.order_recorder import record_submitted_order
 from app.services.notifications import NotificationService
+from app.services.crypto_session import crypto_session_allows_autonomy, get_crypto_session
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ class AutoTraderService:
     async def process_pending_signals(self, crypto_only: bool = False) -> int:
         """Auto-trade high-confidence signals. Returns count traded.
         crypto_only=True filters to crypto assets (for outside US market hours)."""
+        crypto_session = get_crypto_session()
+        session_autonomy = crypto_only and crypto_session_allows_autonomy()
         if get_runtime_value("kill_switch_enabled", self.settings.kill_switch_enabled):
             logger.info("Kill switch actief - auto trader gestopt")
             return 0
@@ -36,7 +39,10 @@ class AutoTraderService:
         if mode not in ("paper", "live"):
             logger.info("Ongeldig trading_mode - auto trader gestopt")
             return 0
-        if get_runtime_value("require_manual_confirmation", self.settings.require_manual_confirmation):
+        if crypto_only and not session_autonomy:
+            logger.info("US markt gesloten - crypto auto trader wacht op expliciete sessie")
+            return 0
+        if get_runtime_value("require_manual_confirmation", self.settings.require_manual_confirmation) and not session_autonomy:
             logger.info("Handmatige bevestiging vereist - auto trader gestopt")
             return 0
 
@@ -45,6 +51,26 @@ class AutoTraderService:
             return 0
 
         now = datetime.now(timezone.utc)
+        remaining_session_trades = None
+        if session_autonomy:
+            started_at = crypto_session.get("started_at")
+            try:
+                session_start = datetime.fromisoformat(started_at) if started_at else now
+            except ValueError:
+                session_start = now
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(func.count()).where(
+                        Trade.opened_at >= session_start,
+                        Trade.symbol.in_(CRYPTO_SYMBOLS),
+                    )
+                )
+                used = int(result.scalar() or 0)
+            remaining_session_trades = max(0, int(crypto_session.get("max_trades") or 0) - used)
+            if remaining_session_trades <= 0:
+                logger.info("Crypto sessie trade-limiet bereikt")
+                return 0
+
         async with AsyncSessionLocal() as db:
             query = select(Signal).where(
                 Signal.status.in_(["pending", "broker_error"]),
@@ -54,7 +80,7 @@ class AutoTraderService:
             if crypto_only:
                 query = query.where(Signal.asset.in_(CRYPTO_SYMBOLS))
             result = await db.execute(
-                query.order_by(Signal.confidence.desc()).limit(10)
+                query.order_by(Signal.confidence.desc()).limit(remaining_session_trades or 10)
             )
             signals = result.scalars().all()
 
@@ -65,7 +91,12 @@ class AutoTraderService:
         executed = 0
         for signal in signals:
             try:
-                result = await self._execute_signal(signal, notional)
+                session_cap = float(crypto_session.get("max_notional_per_trade") or notional)
+                result = await self._execute_signal(
+                    signal,
+                    min(notional, session_cap),
+                    session_autonomy=session_autonomy,
+                )
                 if result:
                     executed += 1
             except Exception as e:
@@ -173,7 +204,7 @@ class AutoTraderService:
             ))
             await db.commit()
 
-    async def _execute_signal(self, signal: Signal, notional: float) -> bool:
+    async def _execute_signal(self, signal: Signal, notional: float, session_autonomy: bool = False) -> bool:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)
 
         exposure = await self._get_broker_exposure(signal.asset)
@@ -224,7 +255,8 @@ class AutoTraderService:
             if not db_signal:
                 return False
 
-            if not risk_result.approved or risk_result.required_manual_approval:
+            manual_allowed_by_session = session_autonomy and mode == "paper" and signal.asset in CRYPTO_SYMBOLS
+            if not risk_result.approved or (risk_result.required_manual_approval and not manual_allowed_by_session):
                 db_signal.status = "risk_rejected" if not risk_result.approved else "pending"
                 db_signal.risk_check_result = risk_result.model_dump()
 
@@ -310,6 +342,7 @@ class AutoTraderService:
                         "confidence": signal.confidence,
                         "mode": mode,
                         "notional": notional,
+                        "crypto_session": session_autonomy,
                         "alpaca_order_id": alpaca_id,
                         "bull_score": signal.ai_analysis.get("bull_score") if signal.ai_analysis else None,
                         "bear_score": signal.ai_analysis.get("bear_score") if signal.ai_analysis else None,

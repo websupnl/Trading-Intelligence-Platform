@@ -127,6 +127,11 @@ export const api = {
   triggerTask: (key: string) => apiFetch(`/api/pipeline/trigger/${key}`, { method: 'POST' }),
   triggerFullPipeline: () => apiFetch('/api/pipeline/trigger-all-data', { method: 'POST' }),
 
+  // ── Autonomous Crypto Session ───────────────────────────────────────────
+  getCryptoSession: () => apiFetch('/api/crypto-session/status'),
+  startCryptoSession: (data: any) => apiFetch('/api/crypto-session/start', { method: 'POST', body: JSON.stringify(data) }),
+  stopCryptoSession: () => apiFetch('/api/crypto-session/stop', { method: 'POST' }),
+
   // ── Chat (SSE) ───────────────────────────────────────────────────────────
   chatStream: async (messages: {role: string; content: string}[], context?: string): Promise<Response> => {
     const pin = getPin();

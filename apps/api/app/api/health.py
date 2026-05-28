@@ -9,6 +9,7 @@ from app.models.trades import Trade
 from app.models.audit import AuditLog
 from app.services.ai_guard import ai_pause_status
 from app.services.market_session import market_session_status
+from app.services.crypto_session import get_crypto_session
 
 router = APIRouter()
 settings = get_settings()
@@ -33,6 +34,7 @@ async def bot_health():
     position_size_pct = get_runtime_value("position_size_pct", settings.position_size_pct)
     ai_guard = ai_pause_status()
     market_session = market_session_status()
+    crypto_session = get_crypto_session()
 
     # Check recent activity from DB
     recent_signal_count = 0
@@ -111,6 +113,7 @@ async def bot_health():
         "position_size_pct": position_size_pct,
         "ai_guard": ai_guard,
         "market_session": market_session,
+        "crypto_session": crypto_session,
         "recent_signals_1h": recent_signal_count,
         "recent_trades_1h": recent_trade_count,
         "open_trades": open_trades,

@@ -95,10 +95,8 @@ async def get_pipeline_status():
     market_session = market_session_status()
     try:
         from app.workers.celery_app import celery_app
-        inspector = celery_app.control.inspect(timeout=2.0)
+        inspector = celery_app.control.inspect(timeout=0.2)
         active = inspector.active() or {}
-        scheduled = inspector.scheduled() or {}
-        reserved = inspector.reserved() or {}
 
         # Flatten running tasks
         running_tasks = set()

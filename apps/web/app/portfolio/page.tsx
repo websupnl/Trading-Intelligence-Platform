@@ -23,10 +23,10 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
 }
 
 export default function PortfolioPage() {
-  const { data: account, loading: acctLoading, error: acctError, reload: reloadAccount } = useApi(() => api.getAccount(), []);
-  const { data: positions, loading: posLoading, reload: reloadPositions } = useApi(() => api.getPositions(), []);
-  const { data: perf, loading: perfLoading, reload: reloadPerf } = useApi(() => api.getPerformance(), []);
-  const { data: trades, loading: tradesLoading } = useApi(() => api.getTrades(50), []);
+  const { data: account, loading: acctLoading, error: acctError } = useApi(() => api.getAccount(), [], { pollIntervalMs: 10000 });
+  const { data: positions, loading: posLoading, reload: reloadPositions } = useApi(() => api.getPositions(), [], { pollIntervalMs: 10000 });
+  const { data: perf, loading: perfLoading, reload: reloadPerf } = useApi(() => api.getPerformance(), [], { pollIntervalMs: 15000 });
+  const { data: trades, loading: tradesLoading } = useApi(() => api.getTrades(50), [], { pollIntervalMs: 15000 });
 
   const [closing, setClosing] = useState<string | null>(null);
   const [closingAll, setClosingAll] = useState(false);

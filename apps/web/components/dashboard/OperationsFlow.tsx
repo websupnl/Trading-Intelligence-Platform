@@ -1,12 +1,12 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bot, Brain, ChartCandlestick, Database, Play, ShieldCheck, Target, TrendingUp } from 'lucide-react';
+import { Bot, Brain, ChartCandlestick, Database, Play, ShieldCheck, Target } from 'lucide-react';
 
 const flow = [
   {
@@ -16,6 +16,7 @@ const flow = [
     icon: Database,
     taskKeys: ['ingest_news', 'fetch_reddit', 'fetch_market_data'],
     trigger: 'fetch_market_data',
+    idleAction: 'Wacht op volgende data-run',
   },
   {
     id: 'ai',
@@ -24,6 +25,7 @@ const flow = [
     icon: Brain,
     taskKeys: ['analyze_content', 'detect_rumours'],
     trigger: 'analyze_content',
+    idleAction: 'Wacht op analyseerbare items',
   },
   {
     id: 'signals',
@@ -32,6 +34,7 @@ const flow = [
     icon: Target,
     taskKeys: ['generate_signals'],
     trigger: 'generate_signals',
+    idleAction: 'Wacht op genoeg edge-context',
   },
   {
     id: 'risk',
@@ -40,6 +43,7 @@ const flow = [
     icon: ShieldCheck,
     taskKeys: ['auto_trade'],
     trigger: 'auto_trade',
+    idleAction: 'Wacht op uitvoerbaar signaal',
   },
   {
     id: 'outcomes',
@@ -48,6 +52,7 @@ const flow = [
     icon: ChartCandlestick,
     taskKeys: ['sync_closed_trades', 'evaluate_signal_outcomes'],
     trigger: 'sync_closed_trades',
+    idleAction: 'Wacht op trades/outcomes',
   },
 ];
 
@@ -61,8 +66,13 @@ export function OperationsFlow() {
   const { data: pipeline, reload: reloadPipeline } = useApi(() => api.getPipelineStatus(), []);
   const { data: botHealth, reload: reloadBot } = useApi(() => api.getBotHealth(), []);
   const [triggering, setTriggering] = useState<string | null>(null);
+  const [triggeringFlow, setTriggeringFlow] = useState(false);
+  const [, setLiveTick] = useState(0);
 
   const tasks = pipeline?.tasks ?? [];
+  const taskByKey = useMemo(() => {
+    return new Map(tasks.map((task: any) => [task.key, task]));
+  }, [tasks]);
   const running = useMemo(() => {
     return new Set(tasks.filter((task: any) => task.is_running).map((task: any) => task.key));
   }, [tasks]);
@@ -70,14 +80,44 @@ export function OperationsFlow() {
   const blockers: string[] = botHealth?.blockers ?? [];
   const marketSession = pipeline?.market_session || botHealth?.market_session;
   const autoBlocked = blockers.length > 0;
+  const [requested, setRequested] = useState<Record<string, number>>({});
+  const flowTriggers = useMemo(() => flow.map(step => step.trigger), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      if (cancelled) return;
+      await Promise.all([reloadPipeline(), reloadBot()]);
+      setLiveTick(tick => tick + 1);
+    }, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [reloadPipeline, reloadBot]);
 
   async function trigger(key: string) {
     setTriggering(key);
+    setRequested(prev => ({ ...prev, [key]: Date.now() }));
     try {
       await api.triggerTask(key);
       await Promise.all([reloadPipeline(), reloadBot()]);
     } finally {
       setTriggering(null);
+    }
+  }
+
+  async function triggerCycle() {
+    setTriggeringFlow(true);
+    try {
+      for (const key of flowTriggers) {
+        setRequested(prev => ({ ...prev, [key]: Date.now() }));
+        await api.triggerTask(key);
+        await new Promise(resolve => window.setTimeout(resolve, 350));
+      }
+      await Promise.all([reloadPipeline(), reloadBot()]);
+    } finally {
+      setTriggeringFlow(false);
     }
   }
 
@@ -89,6 +129,11 @@ export function OperationsFlow() {
           <CardTitle>Live Operation Flow</CardTitle>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
+          <Button variant="outline" size="sm" onClick={triggerCycle} disabled={triggeringFlow}>
+            <Play size={13} />
+            {triggeringFlow ? 'Cyclus aangevraagd' : 'Run cyclus'}
+          </Button>
+          <Badge variant="muted">Realtime</Badge>
           <Badge variant={marketSession?.crypto_only ? 'warning' : 'success'}>
             {marketSession?.crypto_only ? 'Crypto-focus' : 'Aandelen + crypto'}
           </Badge>
@@ -127,6 +172,22 @@ export function OperationsFlow() {
             const active = step.taskKeys.some((key) => running.has(key));
             const blocked = step.id === 'risk' && autoBlocked;
             const cryptoNote = marketSession?.crypto_only && step.id === 'data';
+            const activeTasks = step.taskKeys
+              .map((key) => taskByKey.get(key))
+              .filter((task: any) => task?.is_running);
+            const requestedRecently = step.taskKeys.some((key) => {
+              const ts = requested[key];
+              return ts && Date.now() - ts < 10000;
+            });
+            const anyFlowRequested = flowTriggers.some(key => {
+              const ts = requested[key];
+              return ts && Date.now() - ts < 10000;
+            });
+            const firstUnrequestedIndex = flow.findIndex(item => !item.taskKeys.some(key => {
+              const ts = requested[key];
+              return ts && Date.now() - ts < 10000;
+            }));
+            const isNextInRequestedFlow = anyFlowRequested && firstUnrequestedIndex === index;
             return (
               <div key={step.id} className="relative">
                 {index > 0 && <div className="hidden lg:block absolute -left-3 top-9 h-px w-3 bg-border" />}
@@ -144,6 +205,36 @@ export function OperationsFlow() {
                   <p className="mt-3 text-sm font-semibold">{step.title}</p>
                   <p className="mt-1 text-xs text-muted-foreground min-h-[32px]">{step.detail}</p>
                   {cryptoNote && <p className="mt-1 text-xs text-amber-700">Buiten US markturen alleen crypto.</p>}
+                  <div className="mt-3 min-h-[44px] rounded-md border border-border/70 bg-muted/30 px-2 py-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Actie nu</p>
+                    {activeTasks.length > 0 ? (
+                      <div className="mt-1 space-y-1">
+                        {activeTasks.map((task: any) => (
+                          <div key={task.key} className="flex items-center gap-1.5 text-[11px] text-foreground">
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500 flow-pulse shrink-0" />
+                            <span className="truncate">{task.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : requestedRecently ? (
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        <span>In cyclus aangevraagd</span>
+                      </div>
+                    ) : isNextInRequestedFlow ? (
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60" />
+                        <span>Volgende stap</span>
+                      </div>
+                    ) : blocked ? (
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        <span className="truncate">Geblokkeerd door safeguards</span>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-muted-foreground">{step.idleAction}</p>
+                    )}
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -151,8 +242,8 @@ export function OperationsFlow() {
                     onClick={() => trigger(step.trigger)}
                     disabled={triggering === step.trigger}
                   >
-                    {triggering === step.trigger ? <TrendingUp size={13} className="animate-spin" /> : <Play size={13} />}
-                    Start
+                    <Play size={13} />
+                    {triggering === step.trigger ? 'Aangevraagd' : 'Start'}
                   </Button>
                 </div>
               </div>

@@ -28,9 +28,9 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
 }
 
 export default function PerformancePage() {
-  const { data: realized, loading: realizedLoading, reload: reloadRealized } = useApi(() => api.getPerformance(), []);
-  const { data: summary, loading: summaryLoading, reload: reloadSummary } = useApi(() => api.getOutcomeSummary(), []);
-  const { data: outcomes, loading: outcomesLoading, reload: reloadOutcomes } = useApi(() => api.getSignalOutcomes(), []);
+  const { data: realized, loading: realizedLoading, reload: reloadRealized } = useApi(() => api.getPerformance(), [], { pollIntervalMs: 15000 });
+  const { data: summary, loading: summaryLoading, reload: reloadSummary } = useApi(() => api.getOutcomeSummary(), [], { pollIntervalMs: 15000 });
+  const { data: outcomes, loading: outcomesLoading, reload: reloadOutcomes } = useApi(() => api.getSignalOutcomes(), [], { pollIntervalMs: 15000 });
   const [evaluating, setEvaluating] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const { toast } = useToast();
