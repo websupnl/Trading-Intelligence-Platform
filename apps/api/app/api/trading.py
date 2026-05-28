@@ -1,6 +1,7 @@
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func, cast, Date
 from app.database import get_db
 from app.models.trades import Trade
 from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
@@ -344,6 +345,64 @@ async def get_performance():
     """Get performance statistics from closed trades."""
     svc = TradeTrackerService()
     return await svc.get_performance_stats()
+
+
+@router.get("/pnl-summary")
+async def get_pnl_summary(db: AsyncSession = Depends(get_db)):
+    """Realized P&L breakdown: today, this week, total and daily series."""
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=6)
+
+    closed_filter = (Trade.status == "closed", Trade.pnl.isnot(None))
+
+    total_q = await db.execute(
+        select(func.sum(Trade.pnl), func.count(Trade.id)).where(*closed_filter)
+    )
+    total_row = total_q.one()
+
+    today_q = await db.execute(
+        select(func.sum(Trade.pnl), func.count(Trade.id))
+        .where(*closed_filter, Trade.closed_at >= today_start)
+    )
+    today_row = today_q.one()
+
+    week_q = await db.execute(
+        select(func.sum(Trade.pnl), func.count(Trade.id))
+        .where(*closed_filter, Trade.closed_at >= week_start)
+    )
+    week_row = week_q.one()
+
+    open_count_q = await db.execute(
+        select(func.count(Trade.id)).where(Trade.status == "open")
+    )
+    open_count = open_count_q.scalar() or 0
+
+    daily_q = await db.execute(
+        select(
+            cast(Trade.closed_at, Date).label("date"),
+            func.sum(Trade.pnl).label("pnl"),
+            func.count(Trade.id).label("trade_count"),
+        )
+        .where(*closed_filter, Trade.closed_at >= week_start)
+        .group_by(cast(Trade.closed_at, Date))
+        .order_by(cast(Trade.closed_at, Date).desc())
+    )
+    daily = [
+        {"date": str(row.date), "pnl": float(row.pnl or 0), "trade_count": row.trade_count}
+        for row in daily_q.all()
+    ]
+
+    return {
+        "total_pnl": float(total_row[0] or 0),
+        "total_trades": int(total_row[1] or 0),
+        "today_pnl": float(today_row[0] or 0),
+        "today_trades": int(today_row[1] or 0),
+        "week_pnl": float(week_row[0] or 0),
+        "week_trades": int(week_row[1] or 0),
+        "open_trades": int(open_count),
+        "daily": daily,
+    }
 
 
 @router.post("/sync-trades")

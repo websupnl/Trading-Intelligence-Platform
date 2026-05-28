@@ -13,6 +13,7 @@ from app.models.candles import Candle
 from app.models.memory import MemoryEntry
 from app.models.audit import AuditLog
 from app.services.technical_analysis import analyze as ta_analyze
+from app.services.token_tracker import usage_record, flush_usage
 from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,16 @@ logger = logging.getLogger(__name__)
 MIN_CONFIDENCE_GENERATE = 0.55
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
+
+# Always-monitored assets — generate signals even without news/social data
+DEFAULT_WATCHLIST: set[str] = {
+    # Crypto
+    "BTC", "ETH", "SOL", "DOGE", "AVAX",
+    # US equities & ETFs
+    "SPY", "QQQ", "NVDA", "TSLA", "META", "AAPL", "MSFT", "MSTR", "AMZN", "GOOGL",
+    # Defense / Energy
+    "LMT", "RTX", "XOM", "CVX", "XLE",
+}
 
 BULL_PROMPT = """Je bent een bullish trading analyst. Zoek naar de STERKSTE argumenten VOOR een buy op {asset}.
 
@@ -115,6 +126,12 @@ class SignalGeneratorService:
             social_posts = social_result.scalars().all()
 
         ticker_data = self._aggregate_by_ticker(news_items, social_posts)
+
+        # Always include watchlist tickers (TA-only if no news/social)
+        for ticker in DEFAULT_WATCHLIST:
+            if ticker not in ticker_data:
+                ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0}
+
         if not ticker_data:
             logger.info("Geen tickers met voldoende data voor signaal generatie")
             return 0
@@ -166,8 +183,8 @@ class SignalGeneratorService:
                 price_str = f"{price:.2f}" if price else "onbekend"
 
                 # 3-step debate
-                bull_data = self._call_agent(client, BULL_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
-                bear_data = self._call_agent(client, BEAR_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
+                bull_data, bull_resp = self._call_agent(client, BULL_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
+                bear_data, bear_resp = self._call_agent(client, BEAR_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
 
                 bull_score = float(bull_data.get("bull_score", 0.5))
                 bear_score = float(bear_data.get("bear_score", 0.5))
@@ -181,10 +198,19 @@ class SignalGeneratorService:
                     f"Argumenten: {'; '.join(bear_data.get('bear_arguments', []))}"
                 )
 
-                signal_data = self._call_final_agent(
+                signal_data, final_resp = self._call_final_agent(
                     client, asset, price_str, bull_score, bear_score,
                     bull_reasoning, bear_reasoning, ta_summary
                 )
+
+                # Track token usage for this asset's 3 calls
+                async with AsyncSessionLocal() as db:
+                    await flush_usage(db, [
+                        usage_record(self.settings.anthropic_model, "signal_bull", bull_resp.usage),
+                        usage_record(self.settings.anthropic_model, "signal_bear", bear_resp.usage),
+                        usage_record(self.settings.anthropic_model, "signal_final", final_resp.usage),
+                    ])
+                    await db.commit()
 
                 if signal_data.get("direction") == "skip":
                     continue
@@ -220,8 +246,8 @@ class SignalGeneratorService:
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        return {}
+            return json.loads(text[start:end]), response
+        return {}, response
 
     def _call_final_agent(self, client, asset: str, price: str,
                            bull_score: float, bear_score: float,
@@ -245,8 +271,8 @@ class SignalGeneratorService:
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        return {"direction": "skip"}
+            return json.loads(text[start:end]), response
+        return {"direction": "skip"}, response
 
     def _aggregate_by_ticker(self, news_items, social_posts) -> dict:
         data = {}

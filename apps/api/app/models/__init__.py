@@ -19,6 +19,7 @@ from app.models.settings import Setting
 from app.models.rules import PendingRule, ActiveRule
 from app.models.outcomes import SignalOutcome
 from app.models.notifications import Notification
+from app.models.token_usage import TokenUsage
 
 __all__ = [
     "TimestampMixin", "Asset", "Candle", "NewsItem", "SocialPost",
@@ -26,4 +27,5 @@ __all__ = [
     "RiskEvent", "AuditLog", "AIAgentRun", "MemoryEntry",
     "SourceCredibility", "StrategyPerformance", "Setting",
     "PendingRule", "ActiveRule", "SignalOutcome", "Notification",
+    "TokenUsage",
 ]

@@ -44,8 +44,9 @@ def fetch_market_data():
     from datetime import datetime, timezone, timedelta
 
     async def _run():
+        from app.services.signal_generator import DEFAULT_WATCHLIST
         since = datetime.now(timezone.utc) - timedelta(hours=48)
-        tickers = {"SPY"}
+        tickers = set(DEFAULT_WATCHLIST)  # Always fetch for watchlist
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -109,6 +110,21 @@ def auto_trade():
         return {"status": "ok", "executed": count}
     except Exception as e:
         logger.error(f"Auto trade fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.monitor_positions")
+def monitor_positions():
+    """Monitor open trades and auto-close when stop-loss or take-profit is hit."""
+    from app.services.position_monitor import PositionMonitorService
+    try:
+        svc = PositionMonitorService()
+        count = asyncio.run(svc.monitor())
+        if count:
+            logger.info(f"Positie monitor: {count} posities gesloten")
+        return {"status": "ok", "closed": count}
+    except Exception as e:
+        logger.error(f"Positie monitor fout: {e}")
         return {"status": "error", "message": str(e)}
 
 
