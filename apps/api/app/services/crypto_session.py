@@ -38,7 +38,7 @@ def get_crypto_session() -> dict[str, Any]:
         **DEFAULT_SESSION,
         **session,
         "market_session": market,
-        "autonomous_allowed_now": bool(session.get("active")) and market["crypto_only"],
+        "autonomous_allowed_now": bool(session.get("active")),
     }
 
 

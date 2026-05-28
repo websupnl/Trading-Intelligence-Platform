@@ -125,13 +125,60 @@ def evaluate_signal_outcomes():
 def auto_trade():
     """Auto-execute high-confidence signals. Crypto runs 24/7; stocks only during market hours."""
     from app.services.auto_trader import AutoTraderService
+    from app.services.crypto_session import crypto_session_allows_autonomy
     market_open = _us_market_open()
     try:
         svc = AutoTraderService()
-        count = asyncio.run(svc.process_pending_signals(crypto_only=not market_open))
-        return {"status": "ok", "executed": count, "crypto_only": not market_open}
+        crypto_only = (not market_open) or crypto_session_allows_autonomy()
+        count = asyncio.run(svc.process_pending_signals(crypto_only=crypto_only))
+        return {"status": "ok", "executed": count, "crypto_only": crypto_only}
     except Exception as e:
         logger.error(f"Auto trade fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.run_crypto_session")
+def run_crypto_session():
+    """Run a sequenced autonomous crypto session: data -> crypto signals -> auto-trade."""
+    from app.services.alpaca_broker import CRYPTO_SYMBOLS as _CRYPTO
+    from app.services.auto_trader import AutoTraderService
+    from app.services.crypto_session import crypto_session_allows_autonomy, get_crypto_session
+    from app.services.market_data_service import MarketDataService
+    from app.services.signal_generator import SignalGeneratorService
+    from app.database import AsyncSessionLocal
+    from app.models.audit import AuditLog
+    from datetime import datetime, timezone
+
+    async def _run():
+        session = get_crypto_session()
+        if not crypto_session_allows_autonomy():
+            return {"status": "skipped", "reason": "crypto_session_not_active", "session": session}
+
+        candles = await MarketDataService().fetch_bars(sorted(_CRYPTO), "1Day", 60)
+        signals = await SignalGeneratorService().generate_signals(lookback_hours=8, crypto_session_mode=True)
+        executed = await AutoTraderService().process_pending_signals(crypto_only=True)
+
+        async with AsyncSessionLocal() as db:
+            db.add(AuditLog(
+                action="crypto_session_cycle_completed",
+                actor="crypto_session",
+                entity_type="crypto_session",
+                entity_id=session.get("session_id"),
+                status="success",
+                details={"candles": candles, "signals": signals, "executed": executed, "session": session},
+                message=f"Crypto cycle: candles={candles}, signals={signals}, trades={executed}",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            ))
+            await db.commit()
+        return {"status": "ok", "candles": candles, "signals_generated": signals, "executed": executed}
+
+    try:
+        result = asyncio.run(_run())
+        logger.info("Crypto session cycle: %s", result)
+        return result
+    except Exception as e:
+        logger.error(f"Crypto session cycle fout: {e}")
         return {"status": "error", "message": str(e)}
 
 

@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, Bot, Clock, Coins, Gauge, Moon, Play, ShieldCheck, Square, Zap } from 'lucide-react';
+import { Bot, Clock, Coins, Gauge, Moon, Play, ShieldCheck, Square, Zap } from 'lucide-react';
 
 function minutesLeft(expiresAt?: string | null) {
   if (!expiresAt) return 0;
@@ -19,6 +19,7 @@ function minutesLeft(expiresAt?: string | null) {
 export default function CryptoSessionPage() {
   const { data: session, reload } = useApi(() => api.getCryptoSession(), [], { pollIntervalMs: 4000 });
   const { data: botHealth, reload: reloadBot } = useApi(() => api.getBotHealth(), [], { pollIntervalMs: 4000 });
+  const { data: audit, reload: reloadAudit } = useApi(() => api.getAuditLogs(80), [], { pollIntervalMs: 3000 });
   const [duration, setDuration] = useState(120);
   const [notional, setNotional] = useState(250);
   const [maxTrades, setMaxTrades] = useState(5);
@@ -32,10 +33,12 @@ export default function CryptoSessionPage() {
   }, []);
 
   const active = !!session?.active;
-  const cryptoOnly = !!session?.market_session?.crypto_only;
   const allowed = !!session?.autonomous_allowed_now;
   const remaining = useMemo(() => minutesLeft(session?.expires_at), [session?.expires_at, now]);
   const blockers: string[] = botHealth?.blockers ?? [];
+  const sessionEvents = (audit || []).filter((item: any) =>
+    ['crypto_session_started', 'crypto_session_stopped', 'crypto_session_cycle_completed', 'signal_generated', 'signal_skipped', 'auto_trade_executed', 'auto_trade_risk_rejected', 'auto_trade_broker_error'].includes(item.action)
+  ).slice(0, 10);
 
   async function start() {
     setBusy('start');
@@ -46,7 +49,7 @@ export default function CryptoSessionPage() {
         max_trades: maxTrades,
         note: 'Away-mode crypto session',
       });
-      await Promise.all([reload(), reloadBot()]);
+      await Promise.all([reload(), reloadBot(), reloadAudit()]);
       toast('Crypto-sessie gestart', 'success');
     } catch (e: any) {
       toast(e?.detail || 'Sessie starten mislukt', 'error');
@@ -59,7 +62,7 @@ export default function CryptoSessionPage() {
     setBusy('stop');
     try {
       await api.stopCryptoSession();
-      await Promise.all([reload(), reloadBot()]);
+      await Promise.all([reload(), reloadBot(), reloadAudit()]);
       toast('Crypto-sessie gestopt', 'info');
     } catch (e: any) {
       toast(e?.detail || 'Sessie stoppen mislukt', 'error');
@@ -74,7 +77,7 @@ export default function CryptoSessionPage() {
         <div>
           <h1 className="text-base font-semibold">Crypto Away Session</h1>
           <p className="mt-1 text-xs text-muted-foreground">
-            Voor momenten waarop je weg bent en de US markt dicht is: crypto-only, paper mode, begrensd en auditbaar.
+            Een aparte crypto-only paper engine met eigen sessielimieten, eigen signaalprompt en zichtbare data → signalen → orders flow.
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -117,7 +120,7 @@ export default function CryptoSessionPage() {
             </div>
 
             <div className="mt-3 rounded-md border border-border bg-card p-3 text-xs">
-              <p className="font-medium">Wat gebeurt er bij start?</p>
+              <p className="font-medium">Live flow bij start</p>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-2">
                 {['Crypto data ophalen', 'Signalen maken', 'Risk gate checken', 'Paper orders plaatsen'].map((label, i) => (
                   <div key={label} className="relative rounded-md bg-muted/35 border border-border px-2 py-2">
@@ -137,7 +140,7 @@ export default function CryptoSessionPage() {
               <Play size={16} />
               <CardTitle>Start Away Mode</CardTitle>
             </div>
-            <Badge variant={cryptoOnly ? 'success' : 'warning'}>{cryptoOnly ? 'US markt dicht' : 'US markt open'}</Badge>
+            <Badge variant={allowed ? 'success' : active ? 'warning' : 'muted'}>{allowed ? 'Crypto engine aan' : active ? 'Start loopt' : 'Standby'}</Badge>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -160,12 +163,10 @@ export default function CryptoSessionPage() {
               </label>
             </div>
 
-            {!cryptoOnly && (
-              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <div className="flex items-center gap-2 font-medium"><AlertTriangle size={14} /> Sessie kan alvast klaarstaan</div>
-                <p className="mt-1">Autonome uitvoering gaat pas aan als de US markt dicht is. Tot die tijd blijft dit een crypto-plan, geen away-mode execution.</p>
-              </div>
-            )}
+            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <div className="flex items-center gap-2 font-medium"><ShieldCheck size={14} /> Apart crypto-systeem</div>
+              <p className="mt-1">Deze sessie draait crypto-only en mag ook handelen terwijl de US markt open is. Risk limieten, kill switch en sessie-limieten blijven actief.</p>
+            </div>
 
             {blockers.length > 0 && (
               <div className="mt-3 rounded-md border border-border bg-muted/35 px-3 py-2 text-xs">
@@ -192,23 +193,21 @@ export default function CryptoSessionPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Bot size={16} />
-            <CardTitle>Wat Mist Nog Voor Een Ultra-Setup</CardTitle>
+            <CardTitle>Session Log</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-            <div className="rounded-md border border-border bg-muted/30 p-3">
-              <p className="font-medium">Design & Flow</p>
-              <p className="mt-1 text-muted-foreground">Sessie-timeline met candles, AI decisions, risk rejects en orders als één verhaal.</p>
-            </div>
-            <div className="rounded-md border border-border bg-muted/30 p-3">
-              <p className="font-medium">AI Brein</p>
-              <p className="mt-1 text-muted-foreground">Regime-detectie: trend/range/news shock/liquidity. Niet elk signaal door dezelfde lens behandelen.</p>
-            </div>
-            <div className="rounded-md border border-border bg-muted/30 p-3">
-              <p className="font-medium">Money Potential</p>
-              <p className="mt-1 text-muted-foreground">Edge meten per crypto, tijdstip, setup-type en modelversie voordat live geld logisch is.</p>
-            </div>
+          {sessionEvents.length === 0 && <p className="text-xs text-muted-foreground">Nog geen sessie-events.</p>}
+          <div className="space-y-2">
+            {sessionEvents.map((event: any) => (
+              <div key={event.id} className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-medium">{event.action.replaceAll('_', ' ')}</p>
+                  <Badge variant={event.status === 'success' ? 'success' : event.status === 'skipped' ? 'warning' : 'muted'}>{event.status}</Badge>
+                </div>
+                {event.message && <p className="mt-1 text-muted-foreground">{event.message}</p>}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

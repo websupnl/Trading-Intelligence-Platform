@@ -16,10 +16,12 @@ from app.services.technical_analysis import analyze as ta_analyze
 from app.services.token_tracker import usage_record, flush_usage
 from app.services.notifications import NotificationService
 from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
+from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
 
 logger = logging.getLogger(__name__)
 
 MIN_CONFIDENCE_GENERATE = 0.60
+MIN_CONFIDENCE_CRYPTO_SESSION = 0.55
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
@@ -130,6 +132,33 @@ Antwoord met dit exacte JSON-schema:
 
 Onthoud: SKIP is een geldig, vaak beter antwoord. Het systeem rekent je niet af op gemiste kansen, wel op slechte trades."""
 
+CRYPTO_SESSION_SYSTEM_PROMPT = """Je bent een crypto session trader voor een PAPER trading systeem. Je taak is niet om perfecte investeringscases te vinden, maar om beperkte, auditbare crypto-kansen te selecteren binnen een korte autonome sessie.
+
+VERSCHIL MET AANDELEN
+- Crypto mag meer op technische setup, momentum en mean reversion handelen; nieuws is nuttig maar niet verplicht.
+- Je handelt alleen liquide majors. Geen low-liquidity memes of pumps.
+- Dit is paper mode met sessielimieten; kleine gecontroleerde bets zijn toegestaan.
+- Default blijft SKIP bij rommel, maar je hoeft geen bedrijfsspecifieke katalysator te eisen.
+
+BUY ALS MINSTENS 2 WAAR ZIJN
+1. TA wijst duidelijk bullish: trend positief, momentum draait omhoog, RSI niet extreem overbought.
+2. Risk/reward is concreet >= 1.5 met stop en take-profit.
+3. Prijs is niet in verticale extension; entry ligt nabij pullback/support of breakout retest.
+4. Geen duidelijk bearish nieuws/social context.
+5. BTC/ETH marktcontext is neutraal tot positief.
+
+CONFIDENCE
+- 0.55-0.59: kleine session bet, technisch genoeg maar dunne context.
+- 0.60-0.69: goede crypto setup met duidelijke invalidatie.
+- 0.70-0.78: sterke setup. Zeldzaam.
+- Gebruik nooit >0.78 in crypto session mode.
+
+OUTPUT
+- Geef ALLEEN geldig JSON.
+- direction is "buy" of "skip".
+- Stop loss en take profit zijn verplicht bij buy.
+- Reden moet kort, concreet en technisch genoeg zijn."""
+
 # Backwards-compat alias (oude callers kunnen nog de combinatie krijgen)
 SIGNAL_PROMPT = SIGNAL_SYSTEM_PROMPT + "\n\n" + SIGNAL_USER_PROMPT
 
@@ -138,7 +167,7 @@ class SignalGeneratorService:
     def __init__(self):
         self.settings = get_settings()
 
-    async def generate_signals(self, lookback_hours: int = 24) -> int:
+    async def generate_signals(self, lookback_hours: int = 24, crypto_session_mode: bool = False) -> int:
         """Generate signals via Bull/Bear debate. Returns count generated."""
         if is_ai_paused():
             logger.warning("AI analyse gepauzeerd - signaal generatie overgeslagen")
@@ -174,10 +203,14 @@ class SignalGeneratorService:
 
         ticker_data = self._aggregate_by_ticker(news_items, social_posts)
 
+        watchlist = sorted(CRYPTO_SYMBOLS) if crypto_session_mode else DEFAULT_WATCHLIST
         # Add watchlist tickers only when we have TA data for them (avoids wasting tokens on data-less tickers)
-        for ticker in DEFAULT_WATCHLIST:
+        for ticker in watchlist:
             if ticker not in ticker_data:
                 ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0, "_watchlist_only": True}
+
+        if crypto_session_mode:
+            ticker_data = {ticker: data for ticker, data in ticker_data.items() if is_crypto(ticker)}
 
         if not ticker_data:
             logger.info("Geen tickers met voldoende data voor signaal generatie")
@@ -190,7 +223,8 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        for asset, data in list(ticker_data.items())[:15]:
+        limit = 10 if crypto_session_mode else 15
+        for asset, data in list(ticker_data.items())[:limit]:
             if is_ai_paused():
                 logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")
                 break
@@ -206,7 +240,7 @@ class SignalGeneratorService:
                 if data.get("_watchlist_only") and ta_result is None:
                     continue
 
-                if self._context_is_stale(data, hours=8):
+                if self._context_is_stale(data, hours=8, crypto_session_mode=crypto_session_mode, asset=asset):
                     await self._log_signal_skip(
                         asset,
                         "Context te oud voor nieuwe AI-call",
@@ -255,7 +289,8 @@ class SignalGeneratorService:
                     logger.warning("AI analyse vlak voor signaalcall gepauzeerd - resterende assets overgeslagen")
                     break
                 signal_data, resp = self._call_signal_agent(
-                    client, asset, price_str, news_summary, social_summary, ta_summary
+                    client, asset, price_str, news_summary, social_summary, ta_summary,
+                    crypto_session_mode=crypto_session_mode,
                 )
 
                 # Track token usage
@@ -268,7 +303,8 @@ class SignalGeneratorService:
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
-                if confidence < MIN_CONFIDENCE_GENERATE:
+                min_confidence = MIN_CONFIDENCE_CRYPTO_SESSION if crypto_session_mode and is_crypto(asset) else MIN_CONFIDENCE_GENERATE
+                if confidence < min_confidence:
                     await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
                     continue
 
@@ -302,7 +338,9 @@ class SignalGeneratorService:
 
         return generated
 
-    def _context_is_stale(self, data: dict, hours: int = 8) -> bool:
+    def _context_is_stale(self, data: dict, hours: int = 8, crypto_session_mode: bool = False, asset: str | None = None) -> bool:
+        if crypto_session_mode and asset and is_crypto(asset):
+            return False
         if data.get("_watchlist_only"):
             return True
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -350,7 +388,8 @@ class SignalGeneratorService:
             await db.commit()
 
     def _call_signal_agent(self, client, asset: str, price: str,
-                            news_summary: str, social_summary: str, ta_summary: str) -> tuple[dict, any]:
+                            news_summary: str, social_summary: str, ta_summary: str,
+                            crypto_session_mode: bool = False) -> tuple[dict, any]:
         user_prompt = SIGNAL_USER_PROMPT.format(
             asset=asset,
             price=price,
@@ -360,16 +399,17 @@ class SignalGeneratorService:
         )
         # System prompt is gecached (zelfde voor elke call), user prompt bevat de variërende data.
         # Lage temperature voor consistente, gedisciplineerde reasoning.
+        system_prompt = CRYPTO_SESSION_SYSTEM_PROMPT if crypto_session_mode and is_crypto(asset) else SIGNAL_SYSTEM_PROMPT
         system_blocks = [{
             "type": "text",
-            "text": SIGNAL_SYSTEM_PROMPT,
+            "text": system_prompt,
             "cache_control": {"type": "ephemeral"},
-        }] if self.settings.anthropic_enable_prompt_caching else SIGNAL_SYSTEM_PROMPT
+        }] if self.settings.anthropic_enable_prompt_caching else system_prompt
 
         response = client.messages.create(
             model=self.settings.anthropic_model,
             max_tokens=800,
-            temperature=0.3,
+            temperature=0.45 if crypto_session_mode and is_crypto(asset) else 0.3,
             system=system_blocks,
             messages=[{"role": "user", "content": user_prompt}],
         )

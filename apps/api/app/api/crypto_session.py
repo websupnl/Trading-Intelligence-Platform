@@ -38,8 +38,7 @@ async def start(req: StartCryptoSessionRequest, db: AsyncSession = Depends(get_d
         details=session,
         message="Autonome crypto-sessie gestart",
     )
-    for task in ("app.tasks.analysis_tasks.fetch_market_data", "app.tasks.signal_tasks.generate_signals", "app.tasks.analysis_tasks.auto_trade"):
-        celery_app.send_task(task)
+    celery_app.send_task("app.tasks.analysis_tasks.run_crypto_session")
     return session
 
 

@@ -17,6 +17,7 @@ from app.services.crypto_session import crypto_session_allows_autonomy, get_cryp
 logger = logging.getLogger(__name__)
 
 AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.60
+CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.55
 MAX_AUTO_NOTIONAL = 500.0
 MIN_NOTIONAL = 50.0
 
@@ -31,7 +32,9 @@ class AutoTraderService:
         """Auto-trade high-confidence signals. Returns count traded.
         crypto_only=True filters to crypto assets (for outside US market hours)."""
         crypto_session = get_crypto_session()
-        session_autonomy = crypto_only and crypto_session_allows_autonomy()
+        session_autonomy = crypto_session_allows_autonomy()
+        if session_autonomy:
+            crypto_only = True
         if get_runtime_value("kill_switch_enabled", self.settings.kill_switch_enabled):
             logger.info("Kill switch actief - auto trader gestopt")
             return 0
@@ -72,9 +75,10 @@ class AutoTraderService:
                 return 0
 
         async with AsyncSessionLocal() as db:
+            threshold = CRYPTO_SESSION_CONFIDENCE_THRESHOLD if session_autonomy else AUTO_TRADE_CONFIDENCE_THRESHOLD
             query = select(Signal).where(
                 Signal.status.in_(["pending", "broker_error"]),
-                Signal.confidence >= AUTO_TRADE_CONFIDENCE_THRESHOLD,
+                Signal.confidence >= threshold,
                 Signal.expires_at > now,
             )
             if crypto_only:
