@@ -12,6 +12,70 @@ import { LoadingSpinner } from '@/components/ui/loading';
 import { fmtUSD, fmtDate, confidenceColor } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { AssetLabel } from '@/components/market/AssetLabel';
+import { CheckCircle, XCircle, AlertTriangle, Bot } from 'lucide-react';
+
+function BotStatusCard() {
+  const { data, loading, reload: refetch } = useApi(() => api.getBotHealth(), []);
+
+  const ready = data?.ready;
+  const blockers: string[] = data?.blockers ?? [];
+
+  return (
+    <Card className="md:col-span-3">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Bot size={16} />
+          <CardTitle>Bot Status</CardTitle>
+        </div>
+        <button onClick={refetch} className="text-xs text-primary hover:underline">Vernieuwen</button>
+      </CardHeader>
+      <CardContent>
+        {loading && <LoadingSpinner />}
+        {!loading && data && (
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            {/* Ready indicator */}
+            <div className="flex items-center gap-2 shrink-0">
+              {ready ? (
+                <CheckCircle size={20} className="text-green-500" />
+              ) : (
+                <XCircle size={20} className="text-red-500" />
+              )}
+              <span className={cn('font-semibold text-sm', ready ? 'text-green-500' : 'text-red-500')}>
+                {ready ? 'Bot actief — auto-trading AAN' : 'Bot geblokkeerd'}
+              </span>
+            </div>
+
+            {/* Blockers */}
+            {blockers.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {blockers.map((b) => (
+                  <span key={b} className="flex items-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">
+                    <AlertTriangle size={10} />
+                    {b}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Stats */}
+            <div className="flex items-center gap-4 text-xs text-muted-foreground ml-auto flex-wrap">
+              <span>Mode: <b className="text-foreground">{data.trading_mode}</b></span>
+              <span>Signalen (1h): <b className="text-foreground">{data.recent_signals_1h}</b></span>
+              <span>Trades (1h): <b className="text-foreground">{data.recent_trades_1h}</b></span>
+              <span>Open posities: <b className="text-foreground">{data.open_trades}</b></span>
+              {data.last_signal_at && (
+                <span>Laatste signaal: <b className="text-foreground">{new Date(data.last_signal_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</b></span>
+              )}
+              {data.last_auto_trade_at && (
+                <span>Laatste trade: <b className="text-foreground">{new Date(data.last_auto_trade_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</b></span>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function AccountCard() {
   const { data, loading, error } = useApi(() => api.getAccount(), []);
@@ -359,6 +423,9 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-base font-semibold text-foreground">Dashboard</h1>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <BotStatusCard />
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatusGrid />
         <AccountCard />

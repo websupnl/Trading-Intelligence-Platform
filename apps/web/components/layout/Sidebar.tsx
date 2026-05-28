@@ -47,7 +47,7 @@ export function Sidebar() {
   return (
     <>
       {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
-      <aside className="w-56 shrink-0 bg-card border-r border-border flex flex-col min-h-screen shadow-sm">
+      <aside className="hidden md:flex w-56 shrink-0 bg-card border-r border-border flex-col min-h-screen shadow-sm">
         <div className="px-4 py-5 border-b border-border">
           <span className="text-sm font-bold tracking-widest text-foreground/80 uppercase">Trading OS</span>
         </div>

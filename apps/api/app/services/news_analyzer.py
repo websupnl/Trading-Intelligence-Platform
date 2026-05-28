@@ -58,6 +58,10 @@ class NewsAnalyzerService:
             raise ValueError("ANTHROPIC_API_KEY niet geconfigureerd")
         return anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
 
+    @property
+    def _analysis_model(self) -> str:
+        return self.settings.anthropic_analysis_model
+
     async def analyze_pending_news(self, batch_size: int = 20) -> int:
         """Analyze unanalyzed news items. Returns count analyzed."""
         async with AsyncSessionLocal() as db:
@@ -138,8 +142,8 @@ class NewsAnalyzerService:
             content=content,
         )
         response = client.messages.create(
-            model=self.settings.anthropic_model,
-            max_tokens=512,
+            model=self._analysis_model,
+            max_tokens=256,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.content[0].text.strip()
@@ -210,8 +214,8 @@ class NewsAnalyzerService:
             content=item.content[:600],
         )
         response = client.messages.create(
-            model=self.settings.anthropic_model,
-            max_tokens=256,
+            model=self._analysis_model,
+            max_tokens=150,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.content[0].text.strip()

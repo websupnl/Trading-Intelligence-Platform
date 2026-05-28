@@ -233,6 +233,27 @@ export default function LiveSessionPage() {
     }
   );
 
+  // ── Fallback: fetch candles via REST if SSE hasn't sent data yet ─────────
+
+  useEffect(() => {
+    const timeout = setTimeout(async () => {
+      for (const sym of symbols) {
+        if (!chartData[sym]) {
+          try {
+            const res = await fetch(
+              `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/stream/candles/${sym}?timeframe=1Day&limit=80`
+            );
+            const json = await res.json();
+            if (Array.isArray(json.candles) && json.candles.length > 0) {
+              setChartData((prev) => ({ ...prev, [sym]: json.candles }));
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    }, 3000); // wait 3s for SSE, then fall back to REST
+    return () => clearTimeout(timeout);
+  }, [symbols]); // eslint-disable-line
+
   // ── Quote fetcher ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -309,6 +330,28 @@ export default function LiveSessionPage() {
     }
   }
 
+  // ── Manual chart refresh ─────────────────────────────────────────────────
+
+  const [refreshingCharts, setRefreshingCharts] = useState(false);
+
+  async function handleRefreshCharts() {
+    setRefreshingCharts(true);
+    try {
+      await Promise.all(
+        symbols.map(async (sym) => {
+          try {
+            const data = await api.getCandles(sym);
+            if (data && Array.isArray(data.candles)) {
+              setChartData((prev) => ({ ...prev, [sym]: data.candles }));
+            }
+          } catch { /* ignore per-symbol errors */ }
+        })
+      );
+    } finally {
+      setRefreshingCharts(false);
+    }
+  }
+
   // ── Derived data ──────────────────────────────────────────────────────────
 
   const currentPrice = prices[selectedSymbol];
@@ -327,7 +370,7 @@ export default function LiveSessionPage() {
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col -m-3 md:-m-4 bg-background overflow-hidden" style={{ height: 'calc(100vh - 48px)' }}>
+    <div className="flex flex-col -m-3 md:-m-4 bg-background overflow-hidden" style={{ height: 'calc(100dvh - 48px)' }}>
 
       {/* ── Header bar ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
@@ -369,20 +412,31 @@ export default function LiveSessionPage() {
           })}
         </div>
 
-        {/* Portfolio mini */}
-        {portfolio && (
-          <div className="hidden md:flex items-center gap-4 text-[11px] font-mono">
-            <Stat label="Equity" value={`$${portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
-            <Stat label="Day P&L" value={`${portfolio.day_pnl >= 0 ? '+' : ''}$${portfolio.day_pnl.toFixed(2)}`} green={portfolio.day_pnl > 0} red={portfolio.day_pnl < 0} />
-          </div>
-        )}
+        {/* Portfolio mini + refresh */}
+        <div className="hidden md:flex items-center gap-4 text-[11px] font-mono">
+          {portfolio && (
+            <>
+              <Stat label="Equity" value={`$${portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2 })}`} />
+              <Stat label="Day P&L" value={`${portfolio.day_pnl >= 0 ? '+' : ''}$${portfolio.day_pnl.toFixed(2)}`} green={portfolio.day_pnl > 0} red={portfolio.day_pnl < 0} />
+            </>
+          )}
+          <button
+            onClick={handleRefreshCharts}
+            disabled={refreshingCharts}
+            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            title="Grafiekdata handmatig verversen"
+          >
+            <RefreshCw size={10} className={refreshingCharts ? 'animate-spin' : ''} />
+            {refreshingCharts ? 'Laden...' : 'Ververs grafieken'}
+          </button>
+        </div>
       </div>
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
 
         {/* Left: chart + stats */}
-        <div className="flex flex-col flex-1 min-w-0 border-r border-border">
+        <div className="flex flex-col flex-1 min-w-0 border-b md:border-b-0 md:border-r border-border" style={{ minHeight: 0 }}>
 
           {/* Price stats bar */}
           <div className="flex items-center gap-6 px-4 py-2 border-b border-border shrink-0 bg-card/50 overflow-x-auto">
@@ -413,17 +467,28 @@ export default function LiveSessionPage() {
           </div>
 
           {/* Chart */}
-          <div className="flex-1 min-h-0 p-2">
+          <div className="flex-1 min-h-0 p-2" style={{ minHeight: '200px' }}>
             {currentCandles.length > 0 ? (
               <CandlestickChart
                 candles={currentCandles}
                 signals={visibleSignals}
               />
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
+              <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-muted-foreground">
                 <BarChart2 size={32} className="opacity-40" />
-                <span className="text-sm font-mono">Grafiekdata laden voor <AssetLabel symbol={selectedSymbol} compact /></span>
-                <span className="text-xs text-muted-foreground">Verbinden met SSE stream...</span>
+                <span className="text-sm font-mono">Geen grafiekdata voor <AssetLabel symbol={selectedSymbol} compact /></span>
+                <div className="text-center space-y-1 max-w-xs">
+                  <p className="text-xs text-muted-foreground">Candle data wordt via de SSE stream aangeleverd. Zorg dat de Pipeline minimaal 1x gedraaid heeft.</p>
+                  <p className="text-xs text-muted-foreground">Klik op <strong className="text-foreground">&apos;Ververs grafieken&apos;</strong> om handmatig te laden.</p>
+                </div>
+                <button
+                  onClick={handleRefreshCharts}
+                  disabled={refreshingCharts}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono bg-muted hover:bg-accent border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw size={12} className={refreshingCharts ? 'animate-spin' : ''} />
+                  {refreshingCharts ? 'Laden...' : 'Ververs grafieken'}
+                </button>
               </div>
             )}
           </div>
@@ -452,7 +517,7 @@ export default function LiveSessionPage() {
         </div>
 
         {/* Right: activity + signals + trade */}
-        <div className="w-80 xl:w-96 flex flex-col shrink-0 overflow-hidden">
+        <div className="w-full md:w-80 xl:w-96 flex flex-col shrink-0 overflow-hidden max-h-[45vh] md:max-h-none">
 
           {/* AI Activity feed */}
           <div className="flex-1 flex flex-col min-h-0 border-b border-border">

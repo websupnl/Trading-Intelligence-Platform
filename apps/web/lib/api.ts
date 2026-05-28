@@ -115,6 +115,9 @@ export const api = {
   // ── AI Usage ────────────────────────────────────────────────────────────
   getAiUsage: () => apiFetch('/api/ai/usage'),
 
+  // ── Bot health ──────────────────────────────────────────────────────────
+  getBotHealth: () => apiFetch('/api/health/bot'),
+
   // ── Pipeline ────────────────────────────────────────────────────────────
   getPipelineStatus: () => apiFetch('/api/pipeline/status'),
   triggerTask: (key: string) => apiFetch(`/api/pipeline/trigger/${key}`, { method: 'POST' }),

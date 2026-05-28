@@ -43,11 +43,13 @@ class AutoTraderService:
         if await self._daily_loss_triggered(mode):
             return 0
 
+        now = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Signal).where(
                     Signal.status.in_(["pending", "broker_error"]),
                     Signal.confidence >= AUTO_TRADE_CONFIDENCE_THRESHOLD,
+                    Signal.expires_at > now,
                 ).order_by(Signal.confidence.desc()).limit(10)
             )
             signals = result.scalars().all()

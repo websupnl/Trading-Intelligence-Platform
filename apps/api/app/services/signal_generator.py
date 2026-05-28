@@ -18,7 +18,7 @@ from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
-MIN_CONFIDENCE_GENERATE = 0.55
+MIN_CONFIDENCE_GENERATE = 0.60
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
@@ -32,63 +32,37 @@ DEFAULT_WATCHLIST: set[str] = {
     "LMT", "RTX", "XOM", "CVX", "XLE",
 }
 
-BULL_PROMPT = """Je bent een bullish trading analyst. Zoek naar de STERKSTE argumenten VOOR een buy op {asset}.
+SIGNAL_PROMPT = """Analyseer {asset} en geef een handelssignaal. Weeg bull vs bear argumenten objectief.
 
-Prijs: ${price}
+Asset: {asset} | Prijs: ${price}
 Nieuws: {news_summary}
 Social: {social_summary}
 TA: {ta_summary}
 
-Geef ALLEEN JSON:
+Geef ALLEEN dit JSON object:
 {{
-  "bull_score": <0.0 tot 1.0, hoe sterk de bullish case is>,
-  "key_catalyst": "<de sterkste reden om te kopen, max 80 woorden>",
-  "price_target": <target prijs of null>,
-  "bull_arguments": ["<argument 1>", "<argument 2>", "<argument 3>"]
-}}"""
-
-BEAR_PROMPT = """Je bent een bearish trading analyst. Zoek naar de STERKSTE risico's en redenen TEGEN een buy op {asset}.
-
-Prijs: ${price}
-Nieuws: {news_summary}
-Social: {social_summary}
-TA: {ta_summary}
-
-Geef ALLEEN JSON:
-{{
-  "bear_score": <0.0 tot 1.0, hoe sterk de bearish case is>,
-  "key_risk": "<het grootste risico, max 80 woorden>",
-  "downside_target": <worst-case prijs of null>,
-  "bear_arguments": ["<argument 1>", "<argument 2>", "<argument 3>"]
-}}"""
-
-FINAL_PROMPT = """Je bent een onafhankelijke trading beslisser. Bull en Bear hebben gedebatteerd over {asset}.
-
-Bull case (score {bull_score:.2f}):
-{bull_reasoning}
-
-Bear case (score {bear_score:.2f}):
-{bear_reasoning}
-
-Technische analyse: {ta_summary}
-Huidige prijs: ${price}
-
-Maak de finale beslissing. Geef ALLEEN JSON:
-{{
-  "direction": "buy" | "sell" | "skip",
-  "confidence": <0.0 tot 1.0>,
-  "timeframe": "intraday" | "swing" | "positional",
-  "reason": "<finale synthese max 150 woorden>",
-  "suggested_entry": <prijs of null>,
-  "suggested_stop": <stop loss prijs of null>,
-  "suggested_take_profit": <target prijs of null>,
-  "risk_reward": <getal of null>,
-  "key_risks": "<max 50 woorden>",
-  "invalidation": "<wanneer is signaal ongeldig>",
-  "bull_won": <true als bull-argumenten zwaarder wogen>
+  "direction": "buy"|"sell"|"skip",
+  "confidence": <0.55-1.0>,
+  "bull_score": <0.0-1.0>,
+  "bear_score": <0.0-1.0>,
+  "bull_won": true|false,
+  "key_catalyst": "<sterkste bull-argument, max 50 woorden>",
+  "key_risk": "<grootste risico, max 50 woorden>",
+  "bull_arguments": ["<arg1>", "<arg2>"],
+  "bear_arguments": ["<arg1>", "<arg2>"],
+  "price_target": <null of getal>,
+  "downside_target": <null of getal>,
+  "timeframe": "intraday"|"swing"|"positional",
+  "reason": "<synthese max 100 woorden>",
+  "suggested_entry": <null of getal>,
+  "suggested_stop": <null of getal>,
+  "suggested_take_profit": <null of getal>,
+  "risk_reward": <null of getal>,
+  "key_risks": "<max 40 woorden>",
+  "invalidation": "<max 25 woorden>"
 }}
 
-Geef "skip" als er onvoldoende bewijs is. Wees conservatief."""
+Gebruik "skip" bij onvoldoende bewijs. Stop altijd onder entry (buy) of boven entry (sell). Risk/reward >= 1.5."""
 
 
 class SignalGeneratorService:
@@ -127,10 +101,10 @@ class SignalGeneratorService:
 
         ticker_data = self._aggregate_by_ticker(news_items, social_posts)
 
-        # Always include watchlist tickers (TA-only if no news/social)
+        # Add watchlist tickers only when we have TA data for them (avoids wasting tokens on data-less tickers)
         for ticker in DEFAULT_WATCHLIST:
             if ticker not in ticker_data:
-                ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0}
+                ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0, "_watchlist_only": True}
 
         if not ticker_data:
             logger.info("Geen tickers met voldoende data voor signaal generatie")
@@ -143,7 +117,7 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        for asset, data in list(ticker_data.items())[:10]:
+        for asset, data in list(ticker_data.items())[:15]:
             try:
                 if await self._recent_signal_exists(asset):
                     continue
@@ -151,6 +125,10 @@ class SignalGeneratorService:
                 candles = await self._get_candles(asset)
                 ta_result = ta_analyze(candles) if candles else None
                 price = candles[-1].close if candles else None
+
+                # Skip watchlist-only tickers without TA data — nothing to analyse
+                if data.get("_watchlist_only") and ta_result is None:
+                    continue
 
                 # Fetch memory lessons for this asset
                 lessons = await self._get_memory_lessons(asset)
@@ -180,36 +158,16 @@ class SignalGeneratorService:
                 if lessons:
                     ta_summary += f"\n\nEerdere lessen voor {asset}:\n" + "\n".join(f"- {l}" for l in lessons)
 
-                price_str = f"{price:.2f}" if price else "onbekend"
+                price_str = f"{price:.4f}" if price else "onbekend"
 
-                # 3-step debate
-                bull_data, bull_resp = self._call_agent(client, BULL_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
-                bear_data, bear_resp = self._call_agent(client, BEAR_PROMPT, asset, price_str, news_summary, social_summary, ta_summary)
-
-                bull_score = float(bull_data.get("bull_score", 0.5))
-                bear_score = float(bear_data.get("bear_score", 0.5))
-
-                bull_reasoning = (
-                    f"Score: {bull_score:.2f} | Katalysator: {bull_data.get('key_catalyst', 'N/A')} | "
-                    f"Argumenten: {'; '.join(bull_data.get('bull_arguments', []))}"
-                )
-                bear_reasoning = (
-                    f"Score: {bear_score:.2f} | Risico: {bear_data.get('key_risk', 'N/A')} | "
-                    f"Argumenten: {'; '.join(bear_data.get('bear_arguments', []))}"
+                # Single combined call (was 3 separate calls — saves ~67% tokens)
+                signal_data, resp = self._call_signal_agent(
+                    client, asset, price_str, news_summary, social_summary, ta_summary
                 )
 
-                signal_data, final_resp = self._call_final_agent(
-                    client, asset, price_str, bull_score, bear_score,
-                    bull_reasoning, bear_reasoning, ta_summary
-                )
-
-                # Track token usage for this asset's 3 calls
+                # Track token usage
                 async with AsyncSessionLocal() as db:
-                    await flush_usage(db, [
-                        usage_record(self.settings.anthropic_model, "signal_bull", bull_resp.usage),
-                        usage_record(self.settings.anthropic_model, "signal_bear", bear_resp.usage),
-                        usage_record(self.settings.anthropic_model, "signal_final", final_resp.usage),
-                    ])
+                    await flush_usage(db, [usage_record(self.settings.anthropic_model, "signal", resp.usage)])
                     await db.commit()
 
                 if signal_data.get("direction") == "skip":
@@ -219,18 +177,36 @@ class SignalGeneratorService:
                 if confidence < MIN_CONFIDENCE_GENERATE:
                     continue
 
+                # Build bull_data / bear_data from combined response for _save_signal compatibility
+                bull_data = {
+                    "bull_score": signal_data.get("bull_score"),
+                    "key_catalyst": signal_data.get("key_catalyst"),
+                    "bull_arguments": signal_data.get("bull_arguments", []),
+                    "price_target": signal_data.get("price_target"),
+                }
+                bear_data = {
+                    "bear_score": signal_data.get("bear_score"),
+                    "key_risk": signal_data.get("key_risk"),
+                    "bear_arguments": signal_data.get("bear_arguments", []),
+                    "downside_target": signal_data.get("downside_target"),
+                }
+
                 await self._save_signal(asset, signal_data, data, ta_result, bull_data, bear_data)
                 generated += 1
-                logger.info(f"Signaal gegenereerd: {asset} {signal_data['direction']} confidence={confidence:.2f} (bull={bull_score:.2f} bear={bear_score:.2f})")
+                logger.info(
+                    f"Signaal gegenereerd: {asset} {signal_data['direction']} "
+                    f"confidence={confidence:.2f} bull={signal_data.get('bull_score', 0):.2f} "
+                    f"bear={signal_data.get('bear_score', 0):.2f}"
+                )
 
             except Exception as e:
                 logger.error(f"Signal generatie fout voor {asset}: {e}")
 
         return generated
 
-    def _call_agent(self, client, prompt_template: str, asset: str, price: str,
-                    news_summary: str, social_summary: str, ta_summary: str) -> dict:
-        prompt = prompt_template.format(
+    def _call_signal_agent(self, client, asset: str, price: str,
+                            news_summary: str, social_summary: str, ta_summary: str) -> tuple[dict, any]:
+        prompt = SIGNAL_PROMPT.format(
             asset=asset,
             price=price,
             news_summary=news_summary,
@@ -239,32 +215,7 @@ class SignalGeneratorService:
         )
         response = client.messages.create(
             model=self.settings.anthropic_model,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = response.content[0].text.strip()
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start >= 0 and end > start:
-            return json.loads(text[start:end]), response
-        return {}, response
-
-    def _call_final_agent(self, client, asset: str, price: str,
-                           bull_score: float, bear_score: float,
-                           bull_reasoning: str, bear_reasoning: str,
-                           ta_summary: str) -> dict:
-        prompt = FINAL_PROMPT.format(
-            asset=asset,
-            price=price,
-            bull_score=bull_score,
-            bear_score=bear_score,
-            bull_reasoning=bull_reasoning,
-            bear_reasoning=bear_reasoning,
-            ta_summary=ta_summary,
-        )
-        response = client.messages.create(
-            model=self.settings.anthropic_model,
-            max_tokens=600,
+            max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.content[0].text.strip()

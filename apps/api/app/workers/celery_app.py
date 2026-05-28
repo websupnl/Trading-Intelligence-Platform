@@ -40,9 +40,9 @@ celery_app.conf.update(
             "task": "app.tasks.analysis_tasks.analyze_news",
             "schedule": 120.0,
         },
-        "detect-rumours-every-30min": {
+        "detect-rumours-every-15min": {
             "task": "app.tasks.analysis_tasks.detect_rumours",
-            "schedule": 1800.0,
+            "schedule": 900.0,
         },
 
         # === MARKET DATA ===

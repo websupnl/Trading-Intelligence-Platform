@@ -8,14 +8,32 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { LoadingSpinner } from '@/components/ui/loading';
-import { fmtDate, fmtUSD } from '@/lib/utils';
+import { fmtDate } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { AssetLabel } from '@/components/market/AssetLabel';
+import { RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+
+const STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warning' | 'muted' | 'destructive' }> = {
+  filled: { label: 'Gevuld', variant: 'success' },
+  partially_filled: { label: 'Deels gevuld', variant: 'warning' },
+  new: { label: 'Nieuw', variant: 'warning' },
+  pending_new: { label: 'In behandeling', variant: 'warning' },
+  open: { label: 'Open', variant: 'warning' },
+  canceled: { label: 'Geannuleerd', variant: 'muted' },
+  cancelled: { label: 'Geannuleerd', variant: 'muted' },
+  expired: { label: 'Verlopen', variant: 'muted' },
+  rejected: { label: 'Geweigerd', variant: 'destructive' },
+  accepted: { label: 'Geaccepteerd', variant: 'success' },
+};
+
+const canCancel = (status: string) => ['open', 'pending_new', 'new', 'accepted'].includes(status);
 
 export default function OrdersPage() {
   const { data: orders, loading, error, reload } = useApi(() => api.getOrders('all'), []);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const [form, setForm] = useState({ symbol: '', side: 'buy', notional: '', order_type: 'market' });
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,122 +48,222 @@ export default function OrdersPage() {
       };
       let r = await api.submitPaperOrder(request);
       if (r.status === 'requires_manual_approval') {
-        if (!confirm('Risk check vereist bevestiging. Deze paper order uitvoeren?')) {
-          setResult({ type: 'success', data: r });
+        if (!confirm('Risk check vereist bevestiging. Wil je deze order toch plaatsen?')) {
+          setResult({ type: 'success', message: 'Order geannuleerd door gebruiker' });
           return;
         }
         r = await api.submitPaperOrder({ ...request, confirmed: true });
       }
-      setResult({ type: 'success', data: r });
+      const symbol = form.symbol.toUpperCase();
+      const side = form.side.toUpperCase();
+      const notional = form.notional ? `$${parseFloat(form.notional).toFixed(2)}` : '';
+      setResult({ type: 'success', message: `✓ ${side} order voor ${symbol} ${notional} ingediend (${r.status})` });
+      setForm(f => ({ ...f, symbol: '', notional: '' }));
       reload();
     } catch (e: any) {
-      setResult({ type: 'error', data: e?.detail || e });
+      const msg = e?.detail?.reasons?.join(', ') || e?.detail || e?.message || 'Order mislukt';
+      setResult({ type: 'error', message: `✗ ${msg}` });
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleCancel(alpacaId: string) {
-    await api.cancelOrder(alpacaId).catch(() => null);
-    reload();
+  async function handleCancel(orderId: string) {
+    setCancelling(orderId);
+    try {
+      await api.cancelOrder(orderId);
+      reload();
+    } catch {
+      // silently ignore — order may already be gone
+    } finally {
+      setCancelling(null);
+    }
   }
 
+  const totalFilled = orders?.filter((o: any) => o.status === 'filled').length ?? 0;
+  const totalOpen = orders?.filter((o: any) => canCancel(o.status)).length ?? 0;
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-base font-semibold">Orders</h1>
-
-      <div className="grid grid-cols-2 gap-4">
-        <Card>
-          <CardHeader><CardTitle>Paper Order Plaatsen</CardTitle></CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Symbool</label>
-                  <input
-                    className="w-full h-9 px-3 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none"
-                    value={form.symbol} onChange={e => setForm(f => ({ ...f, symbol: e.target.value }))}
-                    placeholder="AAPL" required
-                  />
-                  {form.symbol && <AssetLabel symbol={form.symbol} compact className="mt-1 text-xs" />}
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Richting</label>
-                  <select
-                    className="w-full h-9 px-3 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none"
-                    value={form.side} onChange={e => setForm(f => ({ ...f, side: e.target.value }))}
-                  >
-                    <option value="buy">Buy</option>
-                    <option value="sell">Sell</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Notional ($)</label>
-                  <input
-                    className="w-full h-9 px-3 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none"
-                    type="number" value={form.notional}
-                    onChange={e => setForm(f => ({ ...f, notional: e.target.value }))}
-                    placeholder="100"
-                  />
-                </div>
-              </div>
-              <Button type="submit" disabled={submitting} size="sm">
-                {submitting ? 'Verwerken...' : 'Paper Order Plaatsen'}
-              </Button>
-            </form>
-
-            {result && (
-              <div className={`mt-3 p-3 rounded text-xs ${result.type === 'error' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-green-500/10 text-green-400 border border-green-500/20'}`}>
-                {result.type === 'error'
-                  ? (result.data?.reasons?.join(', ') || JSON.stringify(result.data))
-                  : `Status: ${result.data?.status}`
-                }
-              </div>
-            )}
-          </CardContent>
-        </Card>
+    <div className="space-y-4 pb-20 md:pb-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-base font-semibold">Orders</h1>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {orders && (
+            <>
+              <span>{totalFilled} gevuld</span>
+              <span>{totalOpen} open</span>
+              <span>{orders.length} totaal</span>
+            </>
+          )}
+        </div>
       </div>
 
+      {/* Order form */}
       <Card>
         <CardHeader>
-          <CardTitle>Orders</CardTitle>
-          <Button variant="outline" size="sm" onClick={reload}>Vernieuwen</Button>
+          <CardTitle>Paper Order Plaatsen</CardTitle>
+          <span className="text-xs text-muted-foreground">Handmatige paper order — risk check wordt automatisch uitgevoerd</span>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1.5">Symbool *</label>
+                <input
+                  className="w-full h-9 px-3 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring uppercase"
+                  value={form.symbol}
+                  onChange={e => setForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))}
+                  placeholder="AAPL"
+                  required
+                />
+                {form.symbol && <AssetLabel symbol={form.symbol} compact className="mt-1 text-[11px]" />}
+              </div>
+
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1.5">Richting *</label>
+                <div className="flex rounded-md overflow-hidden border border-border h-9">
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, side: 'buy' }))}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1 text-xs font-medium transition-colors',
+                      form.side === 'buy' ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <TrendingUp size={12} /> Buy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, side: 'sell' }))}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1 text-xs font-medium transition-colors',
+                      form.side === 'sell' ? 'bg-red-600 text-white' : 'bg-muted text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <TrendingDown size={12} /> Sell
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1.5">Bedrag ($)</label>
+                <input
+                  className="w-full h-9 px-3 text-sm rounded-md bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  type="number"
+                  min="10"
+                  step="10"
+                  value={form.notional}
+                  onChange={e => setForm(f => ({ ...f, notional: e.target.value }))}
+                  placeholder="100"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <Button type="submit" disabled={submitting || !form.symbol} className="w-full h-9">
+                  {submitting ? '⏳ Verwerken...' : `${form.side === 'buy' ? '▲ BUY' : '▼ SELL'} ${form.symbol || '---'}`}
+                </Button>
+              </div>
+            </div>
+
+            {result && (
+              <div className={cn(
+                'p-3 rounded-md text-xs border',
+                result.type === 'error'
+                  ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                  : 'bg-green-500/10 text-green-400 border-green-500/20'
+              )}>
+                {result.message}
+              </div>
+            )}
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Orders table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Order Historiek</CardTitle>
+          <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
+            <RefreshCw size={12} className={cn('mr-1', loading && 'animate-spin')} />
+            Vernieuwen
+          </Button>
         </CardHeader>
         <CardContent className="p-0">
           {loading && <LoadingSpinner />}
-          {error && <div className="p-4"><ErrorState message="Alpaca niet geconfigureerd" /></div>}
-          {!loading && (!orders || orders.length === 0) && <EmptyState message="Geen orders" />}
-          {orders?.length > 0 && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs text-muted-foreground">
-                  <th className="text-left px-4 py-2">Symbool</th>
-                  <th className="text-left px-4 py-2">Richting</th>
-                  <th className="text-right px-4 py-2">Qty</th>
-                  <th className="text-left px-4 py-2">Status</th>
-                  <th className="text-right px-4 py-2">Aangemaakt</th>
-                  <th className="text-right px-4 py-2">Actie</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((o: any) => (
-                  <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/20">
-                    <td className="px-4 py-2"><AssetLabel symbol={o.symbol} /></td>
-                    <td className={`px-4 py-2 font-medium ${o.side === 'buy' ? 'text-green-400' : 'text-red-400'}`}>{o.side?.toUpperCase()}</td>
-                    <td className="px-4 py-2 text-right">{o.qty ?? o.notional}</td>
-                    <td className="px-4 py-2">
-                      <Badge variant={o.status === 'filled' ? 'success' : o.status === 'canceled' ? 'muted' : 'warning'}>{o.status}</Badge>
-                    </td>
-                    <td className="px-4 py-2 text-right text-xs text-muted-foreground">{fmtDate(o.created_at)}</td>
-                    <td className="px-4 py-2 text-right">
-                      {(o.status === 'open' || o.status === 'pending_new' || o.status === 'new') && (
-                        <Button variant="destructive" size="sm" onClick={() => handleCancel(o.id)}>Annuleer</Button>
-                      )}
-                    </td>
+          {error && (
+            <div className="p-4">
+              <ErrorState message="Alpaca niet geconfigureerd of niet bereikbaar" />
+              <p className="text-xs text-muted-foreground mt-2 text-center">
+                Vul ALPACA_API_KEY en ALPACA_SECRET_KEY in je .env in om orders te zien.
+              </p>
+            </div>
+          )}
+          {!loading && !error && (!orders || orders.length === 0) && (
+            <EmptyState message="Nog geen orders geplaatst. Gebruik het formulier hierboven of laat de bot automatisch traden." />
+          )}
+          {orders && orders.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Asset</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-medium text-muted-foreground">Kant</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-medium text-muted-foreground">Qty / Notional</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-medium text-muted-foreground">Vul prijs</th>
+                    <th className="text-center px-3 py-2.5 text-xs font-medium text-muted-foreground">Status</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-medium text-muted-foreground">Datum</th>
+                    <th className="text-right px-3 py-2.5 text-xs font-medium text-muted-foreground"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {[...orders].sort((a: any, b: any) =>
+                    new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+                  ).map((o: any) => {
+                    const cfg = STATUS_CONFIG[o.status] ?? { label: o.status, variant: 'muted' as const };
+                    const isCancelling = cancelling === o.id;
+                    return (
+                      <tr key={o.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <AssetLabel symbol={o.symbol} />
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={cn(
+                            'text-xs font-bold px-2 py-0.5 rounded',
+                            o.side === 'buy' ? 'text-green-400 bg-green-500/10' : 'text-red-400 bg-red-500/10'
+                          )}>
+                            {o.side?.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-xs font-mono">
+                          {o.qty ? `${parseFloat(o.qty).toFixed(4)} aandelen` : o.notional ? `$${parseFloat(o.notional).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-xs font-mono text-muted-foreground">
+                          {o.filled_avg_price ? `$${parseFloat(o.filled_avg_price).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-xs text-muted-foreground">
+                          {fmtDate(o.created_at)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {canCancel(o.status) && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleCancel(o.id)}
+                              disabled={isCancelling}
+                            >
+                              {isCancelling ? 'Annuleren...' : 'Annuleer'}
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

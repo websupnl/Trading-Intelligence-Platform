@@ -22,11 +22,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <PinGate>
           <TopBar />
           <div className="flex flex-1 overflow-hidden">
-            {/* Sidebar: hidden on mobile, visible md+ */}
-            <div className="hidden md:flex">
-              <Sidebar />
-            </div>
-            <main className="flex-1 overflow-auto p-3 md:p-4">
+            <Sidebar />
+            <main className="flex-1 overflow-auto p-3 md:p-4 pb-20 md:pb-4">
               {children}
             </main>
           </div>
