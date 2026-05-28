@@ -57,14 +57,15 @@ celery_app.conf.update(
         },
 
         # === SIGNAL GENERATION & EXECUTION ===
-        # Faster: every 10 min for signals
-        "generate-signals-every-10min": {
+        # Every 5 min: generate signals; task immediately fires auto_trade if signals found
+        "generate-signals-every-5min": {
             "task": "app.tasks.signal_tasks.generate_signals",
-            "schedule": 600.0,
-        },
-        "auto-trade-every-5min": {
-            "task": "app.tasks.analysis_tasks.auto_trade",
             "schedule": 300.0,
+        },
+        # Every 2 min: fallback sweep for any unexecuted pending signals
+        "auto-trade-every-2min": {
+            "task": "app.tasks.analysis_tasks.auto_trade",
+            "schedule": 120.0,
         },
 
         # === POSITION MANAGEMENT ===
