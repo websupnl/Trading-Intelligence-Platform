@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Trading safety
     trading_mode: str = "paper"
     live_trading_enabled: bool = False
-    require_manual_confirmation: bool = True
+    require_manual_confirmation: bool = False
     kill_switch_enabled: bool = False
     position_size_pct: float = 0.02   # 2% of account equity per trade
     max_daily_loss_pct: float = 0.05  # 5% daily loss triggers circuit breaker
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Anthropic
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-5"
+    anthropic_model: str = "claude-haiku-4-5-20251001"
     anthropic_analysis_model: str = "claude-haiku-4-5-20251001"  # cheaper model for news/social
     anthropic_enable_prompt_caching: bool = True
     anthropic_max_tokens: int = 4096
