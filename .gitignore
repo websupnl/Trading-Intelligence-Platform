@@ -65,3 +65,4 @@ celerybeat.pid
 # ─── Alembic compiled ────────────────────────────────────────────────────────
 apps/api/app/migrations/versions/*.pyc
 .claude/
+apps/web/tsconfig.tsbuildinfo
