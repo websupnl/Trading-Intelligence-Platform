@@ -11,7 +11,7 @@ def generate_signals():
     from app.services.signal_generator import SignalGeneratorService
     try:
         svc = SignalGeneratorService()
-        count = asyncio.run(svc.generate_signals(lookback_hours=24))
+        count = asyncio.run(svc.generate_signals(lookback_hours=8))
         logger.info(f"Signal generatie: {count} nieuwe signalen")
         return {"status": "ok", "signals_generated": count}
     except Exception as e:

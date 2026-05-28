@@ -29,6 +29,36 @@ class MarketDataService:
             "APCA-API-SECRET-KEY": self.settings.alpaca_secret_key,
         }
 
+    async def _fetch_and_save_paginated(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict,
+        timeframe: str,
+        *,
+        normalize: bool,
+        label: str,
+        max_pages: int = 20,
+    ) -> int:
+        saved = 0
+        page_token = None
+        for _ in range(max_pages):
+            request_params = dict(params)
+            if page_token:
+                request_params["page_token"] = page_token
+
+            resp = await client.get(url, headers=self._data_headers(), params=request_params)
+            if resp.status_code != 200:
+                logger.warning(f"{label} market data error: {resp.status_code} — {resp.text[:200]}")
+                break
+
+            payload = resp.json()
+            saved += await self._save_bars(payload.get("bars", {}), timeframe, normalize=normalize)
+            page_token = payload.get("next_page_token")
+            if not page_token:
+                break
+        return saved
+
     async def _save_bars(self, bars_by_symbol: dict, timeframe: str, normalize: bool = False) -> int:
         """Persist a bars dict to DB. If normalize=True, strips '/USD' from symbol names."""
         saved = 0
@@ -99,12 +129,12 @@ class MarketDataService:
         async with httpx.AsyncClient(timeout=30) as client:
             # ── Stocks ────────────────────────────────────────────────────────
             if stocks:
-                for batch in _chunks(stocks, 50):
+                for batch in _chunks(stocks, 10):
                     try:
-                        resp = await client.get(
+                        saved += await self._fetch_and_save_paginated(
+                            client,
                             f"{self.settings.alpaca_data_url}/v2/stocks/bars",
-                            headers=self._data_headers(),
-                            params={
+                            {
                                 "symbols": ",".join(batch),
                                 "timeframe": timeframe,
                                 "limit": limit,
@@ -113,11 +143,10 @@ class MarketDataService:
                                 "adjustment": "raw",
                                 "feed": "iex",
                             },
+                            timeframe,
+                            normalize=False,
+                            label="Stocks",
                         )
-                        if resp.status_code == 200:
-                            saved += await self._save_bars(resp.json().get("bars", {}), timeframe, normalize=False)
-                        else:
-                            logger.warning(f"Stocks market data error: {resp.status_code} — {resp.text[:200]}")
                     except Exception as e:
                         logger.error(f"Stocks fetch fout: {e}")
 
@@ -125,24 +154,22 @@ class MarketDataService:
             if crypto:
                 # Alpaca crypto market data uses v1beta3 with a location segment.
                 crypto_pairs = [f"{s}/USD" for s in crypto]
-                for batch in _chunks(crypto_pairs, 50):
+                for batch in _chunks(crypto_pairs, 10):
                     try:
-                        resp = await client.get(
+                        saved += await self._fetch_and_save_paginated(
+                            client,
                             f"{self.settings.alpaca_data_url}/v1beta3/crypto/us/bars",
-                            headers=self._data_headers(),
-                            params={
+                            {
                                 "symbols": ",".join(batch),
                                 "timeframe": timeframe,
                                 "limit": limit,
                                 "start": start.isoformat(),
                                 "end": end.isoformat(),
                             },
+                            timeframe,
+                            normalize=True,
+                            label="Crypto",
                         )
-                        if resp.status_code == 200:
-                            # normalize=True strips '/USD' so stored as 'BTC', 'ETH', etc.
-                            saved += await self._save_bars(resp.json().get("bars", {}), timeframe, normalize=True)
-                        else:
-                            logger.warning(f"Crypto market data error: {resp.status_code} — {resp.text[:200]}")
                     except Exception as e:
                         logger.error(f"Crypto fetch fout: {e}")
 

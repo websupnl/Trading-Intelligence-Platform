@@ -251,6 +251,9 @@ class SignalGeneratorService:
                 price_str = f"{price:.4f}" if price else "onbekend"
 
                 # Single combined call (was 3 separate calls — saves ~67% tokens)
+                if is_ai_paused():
+                    logger.warning("AI analyse vlak voor signaalcall gepauzeerd - resterende assets overgeslagen")
+                    break
                 signal_data, resp = self._call_signal_agent(
                     client, asset, price_str, news_summary, social_summary, ta_summary
                 )

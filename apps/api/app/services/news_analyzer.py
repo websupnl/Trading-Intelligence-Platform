@@ -177,14 +177,14 @@ class NewsAnalyzerService:
 
     async def analyze_pending_news(self, batch_size: int = 20) -> int:
         """Analyze unanalyzed news items. Returns count analyzed."""
-        if is_ai_paused():
-            logger.warning("AI analyse gepauzeerd - news analyse overgeslagen")
-            return 0
-
         fresh_after = datetime.now(timezone.utc) - timedelta(hours=36)
         stale_count = await self._mark_stale_news(fresh_after)
         if stale_count:
             logger.info("News analyse: %s oude items zonder AI gemarkeerd als stale", stale_count)
+
+        if is_ai_paused():
+            logger.warning("AI analyse gepauzeerd - news analyse overgeslagen na stale cleanup")
+            return 0
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -297,14 +297,14 @@ class NewsAnalyzerService:
 
     async def analyze_pending_social(self, batch_size: int = 30) -> int:
         """Analyze unanalyzed social posts."""
-        if is_ai_paused():
-            logger.warning("AI analyse gepauzeerd - social analyse overgeslagen")
-            return 0
-
         fresh_after = datetime.now(timezone.utc) - timedelta(hours=36)
         stale_count = await self._mark_stale_social(fresh_after)
         if stale_count:
             logger.info("Social analyse: %s oude posts zonder AI gemarkeerd als stale", stale_count)
+
+        if is_ai_paused():
+            logger.warning("AI analyse gepauzeerd - social analyse overgeslagen na stale cleanup")
+            return 0
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
