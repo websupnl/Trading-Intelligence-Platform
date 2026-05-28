@@ -183,6 +183,116 @@ function PerformanceSnapshot() {
   );
 }
 
+function PnlCard() {
+  const { data, loading } = useApi(() => api.getPnlSummary(), []);
+  const pnlColor = (v: number) => v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-muted-foreground';
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>P&amp;L Overzicht</CardTitle>
+        <Link href="/performance" className="text-xs text-primary hover:underline">Details</Link>
+      </CardHeader>
+      <CardContent>
+        {loading && <LoadingSpinner />}
+        {!loading && (
+          <>
+            <div className="grid grid-cols-3 gap-3 text-sm mb-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Vandaag</p>
+                <p className={cn('text-lg font-semibold', pnlColor(data?.today_pnl ?? 0))}>
+                  {data?.today_pnl == null ? '-' : `${data.today_pnl >= 0 ? '+' : ''}$${data.today_pnl.toFixed(2)}`}
+                </p>
+                <p className="text-xs text-muted-foreground">{data?.today_trades ?? 0} trades</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Deze week</p>
+                <p className={cn('text-lg font-semibold', pnlColor(data?.week_pnl ?? 0))}>
+                  {data?.week_pnl == null ? '-' : `${data.week_pnl >= 0 ? '+' : ''}$${data.week_pnl.toFixed(2)}`}
+                </p>
+                <p className="text-xs text-muted-foreground">{data?.week_trades ?? 0} trades</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Totaal</p>
+                <p className={cn('text-lg font-semibold', pnlColor(data?.total_pnl ?? 0))}>
+                  {data?.total_pnl == null ? '-' : `${data.total_pnl >= 0 ? '+' : ''}$${data.total_pnl.toFixed(2)}`}
+                </p>
+                <p className="text-xs text-muted-foreground">{data?.open_trades ?? 0} open</p>
+              </div>
+            </div>
+            {data?.daily?.length > 0 && (
+              <div className="space-y-1">
+                {data.daily.map((d: any) => (
+                  <div key={d.date} className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{d.date}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-muted-foreground">{d.trade_count} trades</span>
+                      <span className={cn('font-medium', pnlColor(d.pnl))}>
+                        {d.pnl >= 0 ? '+' : ''}${d.pnl.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loading && !data?.daily?.length && (
+              <p className="text-xs text-muted-foreground text-center py-2">Nog geen gesloten trades</p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TokenCostCard() {
+  const { data, loading } = useApi(() => api.getAiUsage(), []);
+  const fmtCost = (v: number) => v < 0.01 ? `$${(v * 100).toFixed(2)}¢` : `$${v.toFixed(3)}`;
+  return (
+    <Card>
+      <CardHeader><CardTitle>AI Token Kosten</CardTitle></CardHeader>
+      <CardContent>
+        {loading && <LoadingSpinner />}
+        {!loading && (
+          <>
+            <div className="grid grid-cols-3 gap-3 text-sm mb-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Vandaag</p>
+                <p className="text-lg font-semibold text-amber-400">{data ? fmtCost(data.today_cost) : '-'}</p>
+                <p className="text-xs text-muted-foreground">{data?.today_calls ?? 0} calls</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Deze week</p>
+                <p className="text-lg font-semibold">{data ? fmtCost(data.week_cost) : '-'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Totaal</p>
+                <p className="text-lg font-semibold">{data ? fmtCost(data.total_cost) : '-'}</p>
+                <p className="text-xs text-muted-foreground">{data ? (data.total_tokens / 1000).toFixed(0) + 'K tok' : '-'}</p>
+              </div>
+            </div>
+            {data?.daily?.length > 0 && (
+              <div className="space-y-1">
+                {data.daily.map((d: any) => (
+                  <div key={d.date} className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{d.date}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-muted-foreground">{d.calls} calls · {(d.tokens / 1000).toFixed(0)}K tok</span>
+                      <span className="font-medium text-amber-400">{fmtCost(d.cost)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loading && !data?.daily?.length && (
+              <p className="text-xs text-muted-foreground text-center py-2">Nog geen AI kosten geregistreerd</p>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AiFeedbackCard() {
   const [feedback, setFeedback] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,7 +365,11 @@ export default function DashboardPage() {
         <SignalsCard />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <PnlCard />
+        <TokenCostCard />
         <PerformanceSnapshot />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <AiFeedbackCard />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

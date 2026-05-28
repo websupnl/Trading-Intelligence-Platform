@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 import anthropic
+from app.services.token_tracker import usage_record, flush_usage
 import httpx
 from sqlalchemy import select
 from app.config import get_settings
@@ -263,6 +264,8 @@ class TradeTrackerService:
 
             # Save reflection to Trade
             async with AsyncSessionLocal() as db:
+                await flush_usage(db, [usage_record(self.settings.anthropic_model, "trade_reflection", response.usage)])
+                await db.commit()
                 result = await db.execute(
                     select(Trade).where(Trade.id == trade_data["id"])
                 )

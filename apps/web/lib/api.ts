@@ -60,6 +60,7 @@ export const api = {
   closeAllPositions: () => apiFetch('/api/trading/close-all', { method: 'POST' }),
   getTrades: (limit = 100) => apiFetch(`/api/trading/trades?limit=${limit}`),
   getPerformance: () => apiFetch('/api/trading/performance'),
+  getPnlSummary: () => apiFetch('/api/trading/pnl-summary'),
   syncTrades: () => apiFetch('/api/trading/sync-trades', { method: 'POST' }),
 
   // ── Risk ────────────────────────────────────────────────────────────────
@@ -110,6 +111,9 @@ export const api = {
   getSettings: () => apiFetch('/api/settings'),
   updateRuntimeSettings: (data: Record<string, any>) =>
     apiFetch('/api/settings/runtime', { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // ── AI Usage ────────────────────────────────────────────────────────────
+  getAiUsage: () => apiFetch('/api/ai/usage'),
 
   // ── Pipeline ────────────────────────────────────────────────────────────
   getPipelineStatus: () => apiFetch('/api/pipeline/status'),

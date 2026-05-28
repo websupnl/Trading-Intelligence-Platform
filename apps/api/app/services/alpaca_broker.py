@@ -8,6 +8,24 @@ from app.services.runtime_state import get_runtime_value
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+# Alpaca-supported crypto base symbols
+CRYPTO_SYMBOLS = {
+    "BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK", "LTC", "BCH", "UNI",
+    "AAVE", "CRV", "BAT", "ALGO", "XTZ", "MKR", "SUSHI", "YFI",
+}
+
+
+def to_alpaca_symbol(symbol: str) -> str:
+    base = symbol.upper().split("/")[0]
+    if base in CRYPTO_SYMBOLS:
+        return f"{base}/USD"
+    return symbol.upper()
+
+
+def is_crypto(symbol: str) -> bool:
+    base = symbol.upper().split("/")[0]
+    return base in CRYPTO_SYMBOLS or "/" in symbol
+
 
 class AlpacaNotConfiguredError(Exception):
     pass
@@ -93,7 +111,9 @@ class AlpacaBroker:
         if not live_enabled and mode != "paper":
             raise AlpacaAPIError("Live trading is uitgeschakeld.")
 
-        payload: dict[str, Any] = {"symbol": symbol, "side": side, "type": order_type, "time_in_force": "day"}
+        alpaca_sym = to_alpaca_symbol(symbol)
+        tif = "gtc" if is_crypto(symbol) else "day"
+        payload: dict[str, Any] = {"symbol": alpaca_sym, "side": side, "type": order_type, "time_in_force": tif}
         if notional:
             payload["notional"] = str(notional)
         elif qty:

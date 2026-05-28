@@ -9,6 +9,7 @@ from app.database import AsyncSessionLocal
 from app.models.news import NewsItem
 from app.models.social import SocialPost
 from app.services.notifications import NotificationService
+from app.services.token_tracker import usage_record, flush_usage
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ class NewsAnalyzerService:
 
         for item in items:
             try:
-                analysis = self._analyze_news_item(client, item)
+                analysis, resp = self._analyze_news_item(client, item)
 
                 async with AsyncSessionLocal() as db:
                     result = await db.execute(select(NewsItem).where(NewsItem.id == item.id))
@@ -93,6 +94,7 @@ class NewsAnalyzerService:
                         db_item.ai_analysis = analysis
                         if analysis.get("is_noise"):
                             db_item.status = "noise"
+                        await flush_usage(db, [usage_record(self.settings.anthropic_model, "news_analysis", resp.usage)])
                         await db.commit()
                         if (
                             not analysis.get("is_noise")
@@ -116,6 +118,7 @@ class NewsAnalyzerService:
             except Exception as e:
                 logger.warning(f"News analyse fout voor {item.id}: {e}")
                 # Mark as analyzed with error to avoid infinite retries
+                # Mark as analyzed with error to avoid infinite retries
                 async with AsyncSessionLocal() as db:
                     result = await db.execute(select(NewsItem).where(NewsItem.id == item.id))
                     db_item = result.scalar_one_or_none()
@@ -127,7 +130,7 @@ class NewsAnalyzerService:
         logger.info(f"News analyse: {analyzed}/{len(items)} items verwerkt")
         return analyzed
 
-    def _analyze_news_item(self, client, item: NewsItem) -> dict:
+    def _analyze_news_item(self, client, item: NewsItem) -> tuple[dict, any]:
         content = (item.content or item.title)[:800]
         prompt = ANALYSIS_PROMPT.format(
             title=item.title,
@@ -144,9 +147,9 @@ class NewsAnalyzerService:
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        return {"sentiment": "neutral", "sentiment_score": 0, "impact_score": 5,
-                "tickers": [], "is_noise": False, "urgency": "low", "event_type": "other"}
+            return json.loads(text[start:end]), response
+        return ({"sentiment": "neutral", "sentiment_score": 0, "impact_score": 5,
+                "tickers": [], "is_noise": False, "urgency": "low", "event_type": "other"}, response)
 
     async def analyze_pending_social(self, batch_size: int = 30) -> int:
         """Analyze unanalyzed social posts."""
@@ -167,7 +170,7 @@ class NewsAnalyzerService:
 
         for item in items:
             try:
-                analysis = self._analyze_social_item(client, item)
+                analysis, resp = self._analyze_social_item(client, item)
 
                 async with AsyncSessionLocal() as db:
                     result = await db.execute(select(SocialPost).where(SocialPost.id == item.id))
@@ -181,6 +184,7 @@ class NewsAnalyzerService:
                         db_item.tickers = list(set(existing + new_tickers))[:10]
                         db_item.ai_analyzed = True
                         db_item.ai_analysis = analysis
+                        await flush_usage(db, [usage_record(self.settings.anthropic_model, "social_analysis", resp.usage)])
                         await db.commit()
 
                 analyzed += 1
@@ -197,7 +201,7 @@ class NewsAnalyzerService:
 
         return analyzed
 
-    def _analyze_social_item(self, client, item: SocialPost) -> dict:
+    def _analyze_social_item(self, client, item: SocialPost) -> tuple[dict, any]:
         prompt = SOCIAL_PROMPT.format(
             subreddit=item.subreddit or "unknown",
             author=item.author or "unknown",
@@ -214,6 +218,6 @@ class NewsAnalyzerService:
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
-            return json.loads(text[start:end])
-        return {"sentiment": "neutral", "sentiment_score": 0, "hype_score": 0.3,
-                "tickers": [], "is_dd": False, "is_noise": True, "manipulation_risk": 0.5}
+            return json.loads(text[start:end]), response
+        return ({"sentiment": "neutral", "sentiment_score": 0, "hype_score": 0.3,
+                "tickers": [], "is_dd": False, "is_noise": True, "manipulation_risk": 0.5}, response)

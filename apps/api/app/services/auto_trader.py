@@ -43,7 +43,7 @@ class AutoTraderService:
                 select(Signal).where(
                     Signal.status.in_(["pending", "broker_error"]),
                     Signal.confidence >= AUTO_TRADE_CONFIDENCE_THRESHOLD,
-                ).order_by(Signal.confidence.desc()).limit(5)
+                ).order_by(Signal.confidence.desc()).limit(10)
             )
             signals = result.scalars().all()
 
@@ -67,7 +67,7 @@ class AutoTraderService:
         risk_req = RiskCheckRequest(
             symbol=signal.asset,
             side=signal.direction,
-            quantity=1,
+            quantity=None,
             confidence=signal.confidence,
             stop_loss=signal.suggested_stop,
             mode=mode,
@@ -103,8 +103,8 @@ class AutoTraderService:
             try:
                 order = await self.broker.submit_order(
                     symbol=signal.asset,
-                    qty=1,
-                    notional=None,
+                    qty=None,
+                    notional=MAX_AUTO_NOTIONAL,
                     side=signal.direction,
                     stop_price=signal.suggested_stop,
                 )
@@ -118,12 +118,13 @@ class AutoTraderService:
                 if isinstance(order, dict):
                     fill_price = float(order.get("filled_avg_price") or order.get("limit_price") or 0) or None
 
+                fill_qty = float(order.get("qty") or order.get("notional") or 0) if isinstance(order, dict) else 0
                 trade = Trade(
                     signal_id=signal.id,
                     alpaca_order_id=alpaca_id,
                     symbol=signal.asset,
                     side=signal.direction,
-                    quantity=1,
+                    quantity=fill_qty or MAX_AUTO_NOTIONAL,
                     entry_price=fill_price or signal.suggested_entry,
                     stop_loss=signal.suggested_stop,
                     take_profit=signal.suggested_take_profit,
@@ -136,8 +137,8 @@ class AutoTraderService:
                     db,
                     symbol=signal.asset,
                     side=signal.direction,
-                    quantity=1,
-                    notional=None,
+                    quantity=None,
+                    notional=MAX_AUTO_NOTIONAL,
                     order_type="market",
                     mode=mode,
                     broker_response=order,
