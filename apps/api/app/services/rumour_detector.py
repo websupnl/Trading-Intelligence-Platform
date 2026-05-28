@@ -54,7 +54,7 @@ class RumourDetectorService:
             social_result = await db.execute(
                 select(SocialPost)
                 .where(SocialPost.ai_analyzed == True, SocialPost.posted_at >= since,
-                       SocialPost.score >= 100)
+                       SocialPost.score >= 10)
                 .limit(200)
             )
             social_posts = social_result.scalars().all()
@@ -74,9 +74,10 @@ class RumourDetectorService:
         # Find tickers with cross-source activity
         candidates = set()
         for ticker in ticker_news:
-            if len(ticker_news.get(ticker, [])) >= 2 or (
-                ticker in ticker_social and len(ticker_social[ticker]) >= 3
-            ):
+            if len(ticker_news.get(ticker, [])) >= 2:
+                candidates.add(ticker)
+        for ticker in ticker_social:
+            if len(ticker_social.get(ticker, [])) >= 3:
                 candidates.add(ticker)
 
         if not candidates or not self.settings.anthropic_api_key:
