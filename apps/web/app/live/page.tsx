@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { fmtUSD } from '@/lib/utils';
 import { useSSE } from '@/hooks/useSSE';
+import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
 import { useToast } from '@/contexts/toast';
 import { CandlestickChart } from '@/components/live/CandlestickChart';
@@ -529,6 +530,16 @@ export default function LiveSessionPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
+
+  // Pre-populate from REST so the page isn't empty while SSE connects
+  const { data: initialAudit } = useApi(() => api.getAuditLogs(40), []);
+  const { data: initialSignals } = useApi(() => api.getSignals(50), []);
+  useEffect(() => {
+    if (initialAudit && activityFeed.length === 0) setActivityFeed(initialAudit as any[]);
+  }, [initialAudit]);
+  useEffect(() => {
+    if (initialSignals && signals.length === 0) setSignals(initialSignals as any[]);
+  }, [initialSignals]);
   const [filterMode, setFilterMode] = useState<'all' | 'signals'>('all');
   const { toast } = useToast();
 
@@ -584,7 +595,14 @@ export default function LiveSessionPage() {
   const handleChartData = useCallback((data: Record<string, unknown>) => {
     const sym = data.symbol as string;
     const cs = data.candles as OHLCVCandle[];
-    if (sym && Array.isArray(cs)) setCandles(prev => ({ ...prev, [sym]: cs }));
+    if (sym && Array.isArray(cs)) {
+      setCandles(prev => ({ ...prev, [sym]: cs }));
+      // Extract price from last candle so tiles show immediately (before per-symbol price ticks arrive)
+      const last = cs[cs.length - 1];
+      if (last) {
+        setPrices(prev => prev[sym] ? prev : { ...prev, [sym]: { symbol: sym, price: last.close, open: cs[0]?.open ?? last.open, high: last.high, low: last.low, volume: last.volume } });
+      }
+    }
   }, []);
 
   const handleSignals = useCallback((data: Record<string, unknown>) => {

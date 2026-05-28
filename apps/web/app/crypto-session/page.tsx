@@ -452,6 +452,9 @@ export default function CryptoPage() {
   const { data: settings, reload: reloadSettings } = useApi(() => api.getSettings(), [], { pollIntervalMs: 15000 });
   const { data: botHealth } = useApi(() => api.getBotHealth(), [], { pollIntervalMs: 15000 });
   const { data: positionsRaw, reload: reloadPositions } = useApi(() => api.getPositions(), [], { pollIntervalMs: 10000 });
+  // Pre-load from REST so the page isn't empty while SSE connects
+  const { data: restSignals } = useApi(() => api.getSignals(30), [], { pollIntervalMs: 30000 });
+  const { data: restAudit } = useApi(() => api.getAuditLogs(50), [], { pollIntervalMs: 15000 });
 
   // SSE live state
   const [connected, setConnected] = useState(false);
@@ -460,6 +463,19 @@ export default function CryptoPage() {
   const [flashSymbol, setFlashSymbol] = useState<string | null>(null);
   const [signals, setSignals] = useState<SignalData[]>([]);
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>([]);
+
+  // Seed state from REST data on first load
+  useEffect(() => {
+    if (restSignals && signals.length === 0) {
+      const cryptoSigs = (restSignals as any[]).filter(s =>
+        CRYPTO_SYMBOLS.some(k => (s.asset ?? '').toUpperCase().includes(k))
+      );
+      setSignals(cryptoSigs);
+    }
+  }, [restSignals]);
+  useEffect(() => {
+    if (restAudit && activityFeed.length === 0) setActivityFeed(restAudit as any[]);
+  }, [restAudit]);
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
@@ -467,6 +483,15 @@ export default function CryptoPage() {
   const { toast } = useToast();
 
   // SSE handlers
+  const handleChartDataForPrice = useCallback((data: Record<string, unknown>) => {
+    const sym = data.symbol as string;
+    const cs = data.candles as any[];
+    if (sym && Array.isArray(cs) && cs.length > 0) {
+      const last = cs[cs.length - 1];
+      setPrices(prev => prev[sym] ? prev : { ...prev, [sym]: { symbol: sym, price: last.close, open: cs[0]?.open ?? last.open, high: last.high, low: last.low, volume: last.volume } });
+    }
+  }, []);
+
   const handlePrice = useCallback((data: Record<string, unknown>) => {
     const pd = data as unknown as PriceData;
     if (pd.symbol) {
@@ -515,7 +540,7 @@ export default function CryptoPage() {
 
   useSSE(
     `/api/stream/session?symbols=${SYMBOLS_PARAM}`,
-    { price: handlePrice, signals: handleSignals, new_signal: handleNewSignal, activity_batch: handleActivity, portfolio: handlePortfolio, heartbeat: handleHeartbeat },
+    { chart_data: handleChartDataForPrice, price: handlePrice, signals: handleSignals, new_signal: handleNewSignal, activity_batch: handleActivity, portfolio: handlePortfolio, heartbeat: handleHeartbeat },
     { onConnected: () => setConnected(true), onDisconnected: () => setConnected(false) },
   );
 
@@ -528,7 +553,8 @@ export default function CryptoPage() {
 
   const totalPnl = cryptoPositions.reduce((sum: number, p: any) => sum + parseFloat(p.unrealized_pl ?? '0'), 0);
   const pendingSignals = signals.filter(s => !s.status || s.status === 'pending');
-  const doneSignals = signals.filter(s => s.status && s.status !== 'pending');
+  const tradedSignals = signals.filter(s => s.status === 'paper_traded' || s.status === 'live_traded');
+  const doneSignals = signals.filter(s => s.status && s.status !== 'pending' && s.status !== 'paper_traded' && s.status !== 'live_traded');
 
   // Actions
   async function toggle24_7() {
@@ -733,14 +759,24 @@ export default function CryptoPage() {
             ) : (
               <div className="space-y-2">
                 {pendingSignals.length > 0 && (
-                  <p className="text-[10px] font-mono text-amber-400 font-bold uppercase tracking-wider mb-1">Actie vereist</p>
+                  <>
+                    <p className="text-[10px] font-mono text-amber-400 font-bold uppercase tracking-wider mb-1">⚡ Actie vereist</p>
+                    {pendingSignals.map(s => (
+                      <SignalCard key={s.id} signal={s} onTrade={handleTrade} onReject={handleReject} acting={acting} />
+                    ))}
+                  </>
                 )}
-                {pendingSignals.map(s => (
-                  <SignalCard key={s.id} signal={s} onTrade={handleTrade} onReject={handleReject} acting={acting} />
-                ))}
+                {tradedSignals.length > 0 && (
+                  <>
+                    <p className="text-[10px] font-mono text-green-500 font-bold uppercase tracking-wider mt-3 mb-1">✓ Uitgevoerd ({tradedSignals.length})</p>
+                    {tradedSignals.map(s => (
+                      <SignalCard key={s.id} signal={s} onTrade={handleTrade} onReject={handleReject} acting={acting} />
+                    ))}
+                  </>
+                )}
                 {doneSignals.length > 0 && (
                   <>
-                    <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mt-3 mb-1">Eerder</p>
+                    <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mt-3 mb-1">Overig</p>
                     {doneSignals.map(s => (
                       <SignalCard key={s.id} signal={s} onTrade={handleTrade} onReject={handleReject} acting={acting} />
                     ))}
