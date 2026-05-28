@@ -32,6 +32,40 @@
   ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
 }
 
+@keyframes flow-pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.22); }
+  50% { box-shadow: 0 0 0 6px rgba(21, 128, 61, 0); }
+}
+
+@keyframes flow-scan {
+  0% { transform: translateX(-120%); opacity: 0; }
+  30% { opacity: 0.55; }
+  100% { transform: translateX(220%); opacity: 0; }
+}
+
+.flow-step {
+  position: relative;
+  overflow: hidden;
+}
+
+.flow-step::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.42), transparent);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+.flow-step:hover::after {
+  animation: flow-scan 1.2s ease;
+}
+
+.flow-pulse {
+  animation: flow-pulse-ring 1.7s ease-in-out infinite;
+}
+
 /* Readable status tones for the light research-desk theme. */
 .text-green-400 { color: #15803d; }
 .text-green-300 { color: #15803d; }

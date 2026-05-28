@@ -7,6 +7,7 @@ import { LoadingSpinner } from '@/components/ui/loading';
 
 export function StatusGrid() {
   const { data: config, loading } = useApi(() => api.configStatus(), []);
+  const { data: status } = useApi(() => api.apiStatus(), []);
 
   if (loading) return <LoadingSpinner />;
   if (!config) return null;
@@ -46,6 +47,12 @@ export function StatusGrid() {
                   ? 'AI kan goedgekeurde signalen automatisch paper-traden.'
                   : 'Live modus actief: controleer risico en approvals.'}
           </p>
+          <div className="mt-2 flex gap-2 flex-wrap">
+            <Badge variant={status?.market_session?.crypto_only ? 'warning' : 'success'}>
+              {status?.market_session?.crypto_only ? 'Crypto-focus actief' : 'US markt open'}
+            </Badge>
+            {config.require_manual_confirmation && <Badge variant="warning">Orders vragen bevestiging</Badge>}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
           {integrations.map(({ name, data }) => (

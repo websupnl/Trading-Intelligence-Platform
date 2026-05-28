@@ -56,6 +56,7 @@ export function TopBar() {
   const liveEnabled = risk?.live_trading_enabled;
   const alpacaOk = status?.configured_integrations?.alpaca;
   const aiOk = status?.configured_integrations?.anthropic;
+  const cryptoOnly = status?.market_session?.crypto_only;
   const autoOn = !killSwitch && !risk?.require_manual_confirmation && !!status?.trading_mode;
   const recentAlerts = notifications?.filter((item: any) => item.status === 'sent').length ?? 0;
 
@@ -80,6 +81,11 @@ export function TopBar() {
           label={autoOn ? '🤖 AUTO: AAN' : '⏸ AUTO: UIT'}
           ok={autoOn}
           warn={!autoOn && !killSwitch}
+        />
+        <StatusPill
+          label={cryptoOnly ? 'CRYPTO-FOCUS' : 'US MARKT OPEN'}
+          ok={!cryptoOnly}
+          warn={cryptoOnly}
         />
         <StatusPill
           label={liveEnabled ? '🔴 LIVE' : `${status?.trading_mode?.toUpperCase() ?? '...'}`}

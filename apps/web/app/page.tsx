@@ -13,6 +13,7 @@ import { fmtUSD, fmtDate, confidenceColor } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { AssetLabel } from '@/components/market/AssetLabel';
 import { CheckCircle, XCircle, AlertTriangle, Bot } from 'lucide-react';
+import { OperationsFlow } from '@/components/dashboard/OperationsFlow';
 
 function BotStatusCard() {
   const { data, loading, reload: refetch } = useApi(() => api.getBotHealth(), []);
@@ -446,6 +447,9 @@ export default function DashboardPage() {
       <h1 className="text-base font-semibold text-foreground">Dashboard</h1>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <BotStatusCard />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <OperationsFlow />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatusGrid />

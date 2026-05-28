@@ -1,18 +1,13 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
 from app.workers.celery_app import celery_app
+from app.services.market_session import us_market_open
 
 logger = logging.getLogger(__name__)
 
 
 def _us_market_open() -> bool:
-    """True if US stock market is currently open (approx 14:30–21:00 UTC, Mon–Fri)."""
-    now = datetime.now(timezone.utc)
-    if now.weekday() >= 5:  # Saturday=5, Sunday=6
-        return False
-    minutes = now.hour * 60 + now.minute
-    return 870 <= minutes <= 1260  # 14:30–21:00 UTC
+    return us_market_open()
 
 
 @celery_app.task(name="app.tasks.analysis_tasks.analyze_news")

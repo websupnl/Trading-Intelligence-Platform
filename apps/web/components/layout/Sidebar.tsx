@@ -5,9 +5,10 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, ShoppingCart, Zap, Radio,
   Newspaper, MessageSquare, Brain, Database, Settings, Activity,
-  Cpu, LogOut, MonitorPlay, BarChart3, Bell
+  Cpu, LogOut, MonitorPlay, BarChart3, Bell, ShieldCheck
 } from 'lucide-react';
-import { clearPin } from '@/lib/api';
+import { api, clearPin } from '@/lib/api';
+import { useApi } from '@/hooks/useApi';
 
 const nav = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -38,6 +39,12 @@ const mobileNav = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { data: status } = useApi(() => api.apiStatus(), []);
+  const { data: botHealth } = useApi(() => api.getBotHealth(), []);
+
+  const marketSession = status?.market_session || botHealth?.market_session;
+  const blockers: string[] = botHealth?.blockers ?? [];
+  const autoBlocked = blockers.length > 0 || !!status?.require_manual_confirmation || !!status?.kill_switch_enabled;
 
   function handleLogout() {
     clearPin();
@@ -50,6 +57,23 @@ export function Sidebar() {
       <aside className="hidden md:flex w-56 shrink-0 bg-card border-r border-border flex-col min-h-screen shadow-sm">
         <div className="px-4 py-5 border-b border-border">
           <span className="text-sm font-bold tracking-widest text-foreground/80 uppercase">Trading OS</span>
+          <div className="mt-3 space-y-2 text-xs">
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 px-2 py-1.5">
+              <span className="text-muted-foreground">Market</span>
+              <span className={cn('font-medium', marketSession?.crypto_only ? 'text-amber-700' : 'text-green-700')}>
+                {marketSession?.crypto_only ? 'Crypto' : 'Open'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 px-2 py-1.5">
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <ShieldCheck size={12} />
+                Auto
+              </span>
+              <span className={cn('font-medium', autoBlocked ? 'text-amber-700' : 'text-green-700')}>
+                {autoBlocked ? 'Uit' : 'Klaar'}
+              </span>
+            </div>
+          </div>
         </div>
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
           {nav.map(({ href, label, icon: Icon }) => (

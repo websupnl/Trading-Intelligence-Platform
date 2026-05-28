@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.services.audit import AuditLogService
+from app.services.market_session import market_session_status
 
 router = APIRouter(prefix="/api/pipeline")
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ TASK_REGISTRY = {
     "fetch_market_data": {
         "name": "app.tasks.analysis_tasks.fetch_market_data",
         "label": "Marktdata (OHLCV)",
-        "description": "Haalt dagelijkse OHLCV bars op via Alpaca voor TA",
+        "description": "Haalt OHLCV bars op via Alpaca; buiten US markturen alleen crypto",
         "schedule_sec": 3600,
         "schedule_label": "Elk uur",
         "category": "data",
@@ -72,7 +73,7 @@ TASK_REGISTRY = {
     "auto_trade": {
         "name": "app.tasks.analysis_tasks.auto_trade",
         "label": "Auto Trader",
-        "description": "Voert automatisch hoge-confidence signalen uit (paper mode)",
+        "description": "Voert hoge-confidence signalen uit wanneer safeguards dit toestaan; buiten US markturen alleen crypto",
         "schedule_sec": 300,
         "schedule_label": "Elke 5 min",
         "category": "trading",
@@ -91,6 +92,7 @@ TASK_REGISTRY = {
 @router.get("/status")
 async def get_pipeline_status():
     """Return status of all scheduled tasks from Celery."""
+    market_session = market_session_status()
     try:
         from app.workers.celery_app import celery_app
         inspector = celery_app.control.inspect(timeout=2.0)
@@ -123,6 +125,7 @@ async def get_pipeline_status():
             "tasks": tasks,
             "worker_online": len(active) > 0,
             "checked_at": datetime.now(timezone.utc).isoformat(),
+            "market_session": market_session,
         }
     except Exception as e:
         logger.warning(f"Pipeline status fout (Celery niet bereikbaar?): {e}")
@@ -134,6 +137,7 @@ async def get_pipeline_status():
             ],
             "worker_online": False,
             "checked_at": datetime.now(timezone.utc).isoformat(),
+            "market_session": market_session,
             "error": "Celery worker niet bereikbaar",
         }
 
