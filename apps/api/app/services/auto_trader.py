@@ -41,7 +41,7 @@ class AutoTraderService:
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Signal).where(
-                    Signal.status == "pending",
+                    Signal.status.in_(["pending", "broker_error"]),
                     Signal.confidence >= AUTO_TRADE_CONFIDENCE_THRESHOLD,
                 ).order_by(Signal.confidence.desc()).limit(5)
             )

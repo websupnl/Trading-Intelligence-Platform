@@ -1,7 +1,9 @@
 import logging
+import uuid
 import httpx
 from typing import Optional, Any
 from app.config import get_settings
+from app.services.runtime_state import get_runtime_value
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -71,8 +73,24 @@ class AlpacaBroker:
     async def submit_order(self, symbol: str, qty: Optional[float], notional: Optional[float],
                            side: str, order_type: str = "market", limit_price: Optional[float] = None,
                            stop_price: Optional[float] = None) -> dict:
-        self._require_configured()
-        if settings.live_trading_enabled is False and settings.trading_mode != "paper":
+        mode = get_runtime_value("trading_mode", settings.trading_mode)
+        if not self._configured:
+            if mode == "paper":
+                # Simulate paper order without Alpaca API keys
+                return {
+                    "id": str(uuid.uuid4()),
+                    "symbol": symbol,
+                    "side": side,
+                    "type": order_type,
+                    "status": "accepted",
+                    "qty": str(qty or 0),
+                    "filled_avg_price": None,
+                    "client_order_id": f"sim_{symbol}_{side}_{uuid.uuid4().hex[:8]}",
+                    "simulated": True,
+                }
+            raise AlpacaNotConfiguredError("Alpaca API keys niet geconfigureerd. Vul ALPACA_API_KEY en ALPACA_SECRET_KEY in .env in.")
+        live_enabled = get_runtime_value("live_trading_enabled", settings.live_trading_enabled)
+        if not live_enabled and mode != "paper":
             raise AlpacaAPIError("Live trading is uitgeschakeld.")
 
         payload: dict[str, Any] = {"symbol": symbol, "side": side, "type": order_type, "time_in_force": "day"}
