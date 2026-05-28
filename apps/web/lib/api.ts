@@ -117,6 +117,7 @@ export const api = {
 
   // ── Bot health ──────────────────────────────────────────────────────────
   getBotHealth: () => apiFetch('/api/health/bot'),
+  resumeAiGuard: () => apiFetch('/api/system/ai-guard/resume', { method: 'POST' }),
 
   // ── Pipeline ────────────────────────────────────────────────────────────
   getPipelineStatus: () => apiFetch('/api/pipeline/status'),

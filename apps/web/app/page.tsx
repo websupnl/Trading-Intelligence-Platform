@@ -16,9 +16,21 @@ import { CheckCircle, XCircle, AlertTriangle, Bot } from 'lucide-react';
 
 function BotStatusCard() {
   const { data, loading, reload: refetch } = useApi(() => api.getBotHealth(), []);
+  const [resuming, setResuming] = useState(false);
 
   const ready = data?.ready;
   const blockers: string[] = data?.blockers ?? [];
+  const isAiPaused = blockers.some((b) => b.startsWith('anthropic_api_paused_until'));
+
+  async function handleResumeAi() {
+    setResuming(true);
+    try {
+      await api.resumeAiGuard();
+      await refetch();
+    } finally {
+      setResuming(false);
+    }
+  }
 
   return (
     <Card className="md:col-span-3">
@@ -47,13 +59,22 @@ function BotStatusCard() {
 
             {/* Blockers */}
             {blockers.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 items-center">
                 {blockers.map((b) => (
                   <span key={b} className="flex items-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">
                     <AlertTriangle size={10} />
                     {b}
                   </span>
                 ))}
+                {isAiPaused && (
+                  <button
+                    onClick={handleResumeAi}
+                    disabled={resuming}
+                    className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 px-2 py-0.5 rounded disabled:opacity-50"
+                  >
+                    {resuming ? 'Bezig…' : 'AI pauze opheffen'}
+                  </button>
+                )}
               </div>
             )}
 
