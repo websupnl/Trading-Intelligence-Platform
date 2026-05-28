@@ -18,7 +18,7 @@ from app.services.notifications import NotificationService
 
 logger = logging.getLogger(__name__)
 
-MIN_CONFIDENCE_GENERATE = 0.55
+MIN_CONFIDENCE_GENERATE = 0.60
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
