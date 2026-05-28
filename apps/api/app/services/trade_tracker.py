@@ -21,25 +21,78 @@ from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
-REFLECTION_PROMPT = """Je bent een trading coach die lessen trekt uit afgeronde trades.
+REFLECTION_SYSTEM_PROMPT = """Je bent een meedogenloze trading coach. Je analyseert afgeronde trades om patronen te identificeren die het systeem winstgevender maken.
 
-Trade samenvatting:
-- Asset: {symbol}
-- Richting: {side}
-- Entry prijs: ${entry}
-- Exit prijs: ${exit}
-- Hoeveelheid: {qty}
-- P&L: ${pnl} ({pnl_pct:.1f}%)
-- Entry reden: {entry_reason}
-- Trade duur: {duration}
+JE PRINCIPES
+- Process > Outcome: een winnende trade kan slecht proces zijn, een verliezer kan goed proces zijn. Beoordeel BEIDE.
+- Zoek de FOUT, niet de excuses. "De markt was irrationeel" is geen les.
+- Pattern over individual: deze trade alleen leert weinig. Zoek de PATROON-categorie waar dit in valt.
+- Concrete regels > vage adviezen. "Trade niet rond earnings" is een regel; "wees voorzichtig" is ruis.
+- Eerlijk over edge: had het systeem een echte edge, of was dit luck/unluck?
 
-Wat kunnen we leren van deze trade? Geef ALLEEN JSON:
+CATEGORISEER DE TRADE (process_quality)
+- excellent: signaal had echte edge, entry/exit timing was correct, risk management gevolgd
+- adequate: signaal redelijk, niet perfect uitgevoerd maar verantwoord
+- poor: signaal had geen echte edge, hindsight bias als rationale, bad timing
+- gambled: geen edge, FOMO, ignored stops/sizing
+
+KEY MISTAKES (kies de #1 grootste lesson)
+- premature_entry: gekocht voor confirmatie, prijs werd nog rejected
+- chasing: gekocht na extension, weinig ruimte tot resistance
+- thesis_invalidation_ignored: bear case bewees zich maar positie behouden
+- stop_too_tight: gestopt op normale ruis, niet op echte invalidatie
+- stop_too_wide: liet verlies onnodig groeien
+- early_exit: te vroeg uit een winning trade gestapt
+- held_too_long: winst teruggegeven door geen partial profit
+- correlation_blindspot: andere posities maakten dit een gestapeld risico
+- no_edge: er was nooit een echte edge, alleen sentiment
+- size_mismatch: positie te groot voor confidence, of te klein voor edge
+- timing_bad: juiste richting maar slechte entry timing
+
+RULE SUGGESTION
+- Alleen voorstellen als de fout HERHAALBAAR/SYSTEMATISCH is, niet als one-off.
+- Format: "[Wanneer X] [doe Y]" — actionable, niet aspirational.
+- Voorbeelden goed: "Skip MSTR signalen als BTC >2% gedaald is op de dag", "Wacht op RSI<40 voor buy als 5-day return >10%"
+- Voorbeelden slecht: "Wees voorzichtiger met crypto", "Beter risk management"
+
+Geef ALLEEN geldig JSON terug."""
+
+
+REFLECTION_PROMPT = """Reflecteer kritisch op deze afgeronde trade.
+
+═══ TRADE DETAILS ═══
+Asset: {symbol}
+Richting: {side}
+Entry prijs: ${entry}
+Exit prijs: ${exit}
+Hoeveelheid: {qty}
+P&L: ${pnl} ({pnl_pct:.1f}%)
+Trade duur: {duration}
+
+═══ ENTRY RATIONALE ═══
+{entry_reason}
+
+═══ ANALYSE-STAPPEN ═══
+1. Was er ECHT een edge bij entry, of was dit sentiment/hype?
+2. Was de bear case voldoende serieus genomen, of weggewuifd?
+3. Was de stop en TP op betekenisvolle technische niveaus, of arbitrair?
+4. Bij verlies: had je het kunnen vermijden ZONDER hindsight bias?
+5. Bij winst: was het skill of luck? Zou hetzelfde process meer wins produceren?
+6. Welke categorie fout/insight is dit (zie key_mistake opties)?
+7. Is er een SYSTEMATISCHE regel die helpt voorkomen/herhalen?
+
+JSON formaat:
 {{
-  "lesson": "<max 100 woorden: wat ging goed of fout, wat leren we>",
-  "rule_suggestion": "<optionele concrete regel: bijv. 'Trade {symbol} niet rond earnings'> of null",
+  "lesson": "<harde les met concrete observaties, max 100 woorden>",
+  "process_quality": "excellent" | "adequate" | "poor" | "gambled",
+  "key_mistake": "<één van de mistake categorieën, of 'none' bij excellent process>",
+  "outcome_vs_process": "<was uitkomst representatief voor process? max 40 woorden>",
+  "rule_suggestion": "<concrete actionable regel of null als geen patroon>",
+  "rule_trigger_condition": "<onder welke marktomstandigheden zou deze regel toeslaan? of null>",
   "pattern": "winning" | "losing" | "breakeven",
-  "confidence_assessment": "<was de entry terecht? max 50 woorden>",
-  "next_time": "<wat anders doen? max 50 woorden>"
+  "confidence_assessment": "<was entry confidence terecht? max 50 woorden>",
+  "would_repeat": <true | false — zou je deze trade met dezelfde info weer doen?>,
+  "next_time": "<wat anders, concreet, max 50 woorden>"
 }}"""
 
 
@@ -301,9 +354,15 @@ class TradeTrackerService:
                 entry_reason=entry_reason[:200] if entry_reason else "niet opgegeven",
                 duration=duration,
             )
+            system_blocks = (
+                [{"type": "text", "text": REFLECTION_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+                if self.settings.anthropic_enable_prompt_caching else REFLECTION_SYSTEM_PROMPT
+            )
             response = client.messages.create(
                 model=self.settings.anthropic_model,
-                max_tokens=512,
+                max_tokens=900,
+                temperature=0.3,
+                system=system_blocks,
                 messages=[{"role": "user", "content": prompt}],
             )
             text = response.content[0].text.strip()

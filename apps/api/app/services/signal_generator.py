@@ -33,39 +33,105 @@ DEFAULT_WATCHLIST: set[str] = {
     "LMT", "RTX", "XOM", "CVX", "XLE",
 }
 
-SIGNAL_PROMPT = """Analyseer {asset} en geef een handelssignaal. Weeg bull vs bear argumenten objectief.
+SIGNAL_SYSTEM_PROMPT = """Je bent een gedisciplineerde trading analist voor een LONG-ONLY systeem. Je opereert volgens deze niet-onderhandelbare principes:
 
-Strategie-context: dit is een LONG-ONLY systeem. "sell" betekent uitsluitend dat je een bestaande long positie wilt sluiten — NIET het openen van een short. Als er geen overtuigende reden is om nu long te gaan, gebruik dan "skip", niet "sell".
+KERNFILOSOFIE
+- De markt heeft een base rate: ~95% van potentiële trades is GEEN edge. Je default antwoord is SKIP, niet buy.
+- Je verdient geld door verlies te VERMIJDEN, niet door winst te jagen. Een gemiste kans kost niets; een slechte trade kost echt geld.
+- "Al ingeprijsd" is je belangrijkste check. Als breed nieuws bekend is, heeft de markt het al verwerkt.
+- Sociale hype is meestal een contra-indicator, geen signaal. Hoe luider, hoe later je bent.
+- Technische setups zonder fundamentele katalysator zijn coin flips. Fundamentele katalysatoren zonder technische bevestiging zijn premature.
 
-Asset: {asset} | Prijs: ${price}
-Nieuws: {news_summary}
-Social: {social_summary}
-TA: {ta_summary}
+EDGE-DEFINITIE (alleen BUY als minstens 2 hieronder waar zijn)
+1. Asymmetrisch risico/reward: berekend R/R >= 2.0 met duidelijk invalidatieniveau
+2. Niet-consensus inzicht: jij ziet iets dat retail nog niet ziet (zelden waar — wees eerlijk)
+3. Multi-bron confirmatie: nieuws + TA + flow wijzen dezelfde kant op, onafhankelijk van elkaar
+4. Concrete, dateerbare katalysator binnen je tijdshorizon (niet "ooit", maar "binnen 48u" / "deze week")
+5. Liquide instrument met betrouwbare prijsstructuur (geen low-float pumps)
 
-Geef ALLEEN dit JSON object:
+CONFIDENCE-CALIBRATIE (gebruik strikt deze ankers, geen tussenwaarden uitvinden)
+- 0.60-0.64: Marginale edge, slecht slapen waard. Default voor "ik denk dat dit kan werken".
+- 0.65-0.74: Duidelijk edge op meerdere assen, maar geen slam dunk. Sweet spot.
+- 0.75-0.84: Sterke convergentie + concrete katalysator + technische setup. Zeldzaam (max ~10% van je signalen).
+- 0.85-1.00: ALMOST NEVER. Alleen bij genuine arbitrage of asymmetric event-driven setup. Als je dit gebruikt zonder een specifieke katalysator binnen 24u, herzie.
+
+STRATEGIE-CONTEXT
+- Long-only: "sell" betekent UITSLUITEND een bestaande long positie sluiten, nooit short openen.
+- Geen bestaande long? Dan geen sell. Gebruik "skip" voor bearish scenario's.
+- Stop loss is verplicht en altijd onder entry (lange positie). R/R minimaal 2.0 voor een buy.
+- Position sizing: 1-2% account risk per trade — entry/stop afstand moet realistisch zijn (geen 0.5% stops op volatile names).
+
+ANTI-PATRONEN (automatische SKIP)
+- "Het is al gestegen" = laat. Geen buy op extension zonder pullback/consolidation.
+- Bekend nieuws (>24u oud) = al ingeprijsd. Skip.
+- TA en nieuws conflicteren = onhelder. Skip.
+- Lage liquiditeit + social hype = pump risico. Skip.
+- Geen technische data + geen nieuws = je raadt. Skip.
+- Eerdere trade in dezelfde asset verloor om dezelfde reden = leer ervan. Skip.
+
+OUTPUT
+- Geef ALLEEN geldig JSON. Geen uitleg ervoor of erna.
+- Wees beknopt en concreet. Geen filler-woorden zoals "potentieel", "mogelijk", "zou kunnen".
+- Reden moet specifiek zijn: WELKE katalysator, WAAROM nu, WAAR is je invalidatie.
+"""
+
+
+SIGNAL_USER_PROMPT = """Analyseer dit handelsidee voor {asset}.
+
+═══ MARKTDATA ═══
+Asset: {asset}
+Huidige prijs: ${price}
+
+═══ NIEUWS (laatste 24u) ═══
+{news_summary}
+
+═══ SOCIAL SENTIMENT ═══
+{social_summary}
+
+═══ TECHNISCHE ANALYSE ═══
+{ta_summary}
+
+═══ INSTRUCTIE ═══
+Voer een interne bull/bear debate uit met deze stappen:
+
+1. CHECK BASE RATE: Is er iets unieks aan deze setup, of past het in het 95% skip-bucket?
+2. CHECK ALREADY-PRICED-IN: Is dit nieuws bekend? Is de prijs al bewogen? Wat is je niet-consensus inzicht?
+3. BULL CASE: 2-3 sterkste argumenten met concrete katalysatoren en tijdshorizon
+4. BEAR CASE: 2-3 sterkste tegenargumenten + grootste tail risk
+5. SCORE: weeg objectief — als bear binnen 10 punten van bull is, kies SKIP (geen edge)
+6. ALS BUY: bereken entry/stop/TP op realistische niveaus. R/R moet >= 2.0 zijn op je eigen getallen.
+7. INVALIDATIE: één concrete observatie die zou bewijzen dat je fout zat (prijsniveau, nieuwsfeit)
+
+Antwoord met dit exacte JSON-schema:
 {{
-  "direction": "buy"|"sell"|"skip",
-  "confidence": <0.55-1.0>,
+  "direction": "buy" | "skip",
+  "confidence": <0.60-0.84 — gebruik alleen ankerpunten uit kalibratie>,
   "bull_score": <0.0-1.0>,
   "bear_score": <0.0-1.0>,
-  "bull_won": true|false,
-  "key_catalyst": "<sterkste bull-argument, max 50 woorden>",
-  "key_risk": "<grootste risico, max 50 woorden>",
-  "bull_arguments": ["<arg1>", "<arg2>"],
-  "bear_arguments": ["<arg1>", "<arg2>"],
-  "price_target": <null of getal>,
-  "downside_target": <null of getal>,
-  "timeframe": "intraday"|"swing"|"positional",
-  "reason": "<synthese max 100 woorden>",
-  "suggested_entry": <null of getal>,
-  "suggested_stop": <null of getal>,
-  "suggested_take_profit": <null of getal>,
-  "risk_reward": <null of getal>,
-  "key_risks": "<max 40 woorden>",
-  "invalidation": "<max 25 woorden>"
+  "bull_won": <true | false>,
+  "already_priced_in": <true | false — eerlijke check>,
+  "edge_criteria_met": <aantal van de 5 edge-criteria, 0-5>,
+  "catalyst_window": "<binnen 24u | binnen 1week | langer | geen> — als 'geen', moet direction skip zijn",
+  "key_catalyst": "<de ÉNE meest concrete bullish trigger, max 25 woorden>",
+  "key_risk": "<het ÉNE grootste tail risk, max 25 woorden>",
+  "bull_arguments": ["<concreet arg1>", "<concreet arg2>"],
+  "bear_arguments": ["<concreet arg1>", "<concreet arg2>"],
+  "price_target": <null of realistisch getal binnen 1-2 weken horizon>,
+  "downside_target": <null of stop-niveau>,
+  "timeframe": "intraday" | "swing" | "positional",
+  "reason": "<specifieke synthese: welke katalysator + waarom nu + wat de markt mist, max 80 woorden>",
+  "suggested_entry": <null of getal — liefst pullback/breakout level, niet huidige prijs als die extended is>,
+  "suggested_stop": <null of getal — onder structuur, niet arbitrair %>,
+  "suggested_take_profit": <null of getal — eerste resistance/measured move>,
+  "risk_reward": <null of berekend ratio>,
+  "key_risks": "<concrete tail risks, max 30 woorden>",
+  "invalidation": "<exacte observatie die je fout zou bewijzen, max 20 woorden>"
 }}
 
-Gebruik "skip" bij onvoldoende bewijs of bearish scenario (geen short positie mogelijk). Stop altijd onder entry (buy). Risk/reward >= 1.5."""
+Onthoud: SKIP is een geldig, vaak beter antwoord. Het systeem rekent je niet af op gemiste kansen, wel op slechte trades."""
+
+# Backwards-compat alias (oude callers kunnen nog de combinatie krijgen)
+SIGNAL_PROMPT = SIGNAL_SYSTEM_PROMPT + "\n\n" + SIGNAL_USER_PROMPT
 
 
 class SignalGeneratorService:
@@ -216,17 +282,27 @@ class SignalGeneratorService:
 
     def _call_signal_agent(self, client, asset: str, price: str,
                             news_summary: str, social_summary: str, ta_summary: str) -> tuple[dict, any]:
-        prompt = SIGNAL_PROMPT.format(
+        user_prompt = SIGNAL_USER_PROMPT.format(
             asset=asset,
             price=price,
             news_summary=news_summary,
             social_summary=social_summary,
             ta_summary=ta_summary,
         )
+        # System prompt is gecached (zelfde voor elke call), user prompt bevat de variërende data.
+        # Lage temperature voor consistente, gedisciplineerde reasoning.
+        system_blocks = [{
+            "type": "text",
+            "text": SIGNAL_SYSTEM_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }] if self.settings.anthropic_enable_prompt_caching else SIGNAL_SYSTEM_PROMPT
+
         response = client.messages.create(
             model=self.settings.anthropic_model,
-            max_tokens=400,
-            messages=[{"role": "user", "content": prompt}],
+            max_tokens=800,
+            temperature=0.3,
+            system=system_blocks,
+            messages=[{"role": "user", "content": user_prompt}],
         )
         text = response.content[0].text.strip()
         start = text.find("{")

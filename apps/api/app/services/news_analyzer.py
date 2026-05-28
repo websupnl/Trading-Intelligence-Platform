@@ -14,25 +14,103 @@ from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
-ANALYSIS_PROMPT = """Analyseer dit nieuwsbericht voor handelsimplicaties. Geef ALLEEN JSON terug, geen uitleg.
+ANALYSIS_SYSTEM_PROMPT = """Je bent een nieuwsanalist voor een trading systeem. Je taak is harde signaal-van-ruis filtering.
+
+KERNREGEL: de meeste headlines zijn AL INGEPRIJSD of NIET ACTIONABLE. Default classificatie is is_noise=true tenzij bewezen anders.
+
+IMPACT SCORE RUBRIC (strikt — geen tussenwaarden uitvinden)
+- 0-2: Filler, recap, opinion piece, herhalend nieuws. is_noise=true.
+- 3-4: Achtergrond/context, niet handelsbeslissend op zich.
+- 5-6: Relevant nieuws, beweegt sentiment, niet noodzakelijk de prijs op korte termijn.
+- 7-8: Concrete katalysator (earnings beat/miss, FDA approval, contract, downgrade van top-tier bank). Reden voor positie-aanpassing.
+- 9-10: Major event (overname, faillissement, beurscrash, oorlog, halt). Zeldzaam — gebruik <5% van de tijd.
+
+TICKER EXTRACTIE
+- Alleen tickers waar het nieuws DIRECT impact op heeft, niet alleen vermelding.
+- "Apple supplier X" → AAPL alleen als impact significant, anders skip.
+- Max 5 echt geraakte tickers.
+- Geen ticker-jacht: "tech stocks daalden" zonder specifieke namen → lege array.
+
+NOISE DETECTIE (is_noise=true bij ÉÉN van deze)
+- Headline is een herhaling/recap van events ouder dan 48u
+- Pure opinion zonder nieuwe feiten ("analyst thinks X")
+- Clickbait zonder substance
+- Crypto-pump artikel zonder fundamentele basis
+- Recap van eerdere prijsbeweging ("X jumped 5% today" zonder oorzaak)
+- Sponsored content of advertorial
+
+URGENCY
+- high: actie binnen 24u relevant (earnings vandaag, breaking event)
+- medium: binnen de week relevant
+- low: thematisch, lange-termijn context
+
+SENTIMENT
+- Score op CONCRETE PRIJSIMPACT, niet op tone-of-voice.
+- "Stock crashed" met reden = bearish (-0.7 tot -0.9)
+- "Stock crashed" als beschrijving van al gebeurd = neutraal/al ingeprijsd
+- Bull/bear framing in titel ≠ je sentiment-judgement.
+
+Geef ALLEEN geldig JSON terug. Geen uitleg vooraf of achteraf."""
+
+
+ANALYSIS_PROMPT = """Klassificeer dit nieuwsbericht.
 
 Titel: {title}
 Bron: {source}
 Inhoud: {content}
 
+Vragen om mentaal te beantwoorden:
+1. Is dit ECHT nieuw, of recap van bekende informatie?
+2. Heeft dit een concrete, dateerbare impact op een specifieke prijs?
+3. Of is dit sentiment-only context zonder actionable edge?
+
 JSON formaat:
 {{
   "sentiment": "bullish" | "bearish" | "neutral",
-  "sentiment_score": <getal -1.0 tot 1.0>,
-  "impact_score": <getal 0 tot 10>,
-  "tickers": [<max 5 aandelensymbolen zoals AAPL, NVDA>],
-  "trading_implication": "<max 80 woorden>",
+  "sentiment_score": <-1.0 tot 1.0 — score op verwachte prijsimpact, niet op toon>,
+  "impact_score": <0-10 volgens rubric>,
+  "tickers": [<alleen direct getroffen tickers, max 5; lege array als geen specifiek>],
+  "trading_implication": "<concrete actie of skip-reden, max 60 woorden>",
   "urgency": "high" | "medium" | "low",
-  "is_noise": <true of false>,
+  "is_noise": <true is default — false alleen bij concrete nieuwe info>,
+  "is_already_priced_in": <true als dit nieuws breed bekend is/was>,
   "event_type": "earnings" | "merger" | "regulatory" | "macro" | "product" | "social" | "other"
 }}"""
 
-SOCIAL_PROMPT = """Analyseer dit Reddit bericht voor handelssignalen. Geef ALLEEN JSON terug.
+
+SOCIAL_SYSTEM_PROMPT = """Je analyseert social media posts (Reddit) voor trading signaal-extractie. Je bent zeer kritisch: social hype is meestal een contra-indicator, geen signaal.
+
+DEFAULT MINDSET
+- is_noise=true tenzij bewezen anders. Verwacht is_noise>=70% van posts.
+- Hype zonder substance = manipulation_risk hoog.
+- Een ticker noemen ≠ trading signal. Mention-zonder-onderbouwing = noise.
+
+HYPE_SCORE (0.0-1.0)
+- 0.0-0.2: Discussie/context, geen actieve hype
+- 0.3-0.5: Bullish framing, enige urgentie ("about to moon", "load up")
+- 0.6-0.8: Sterke FOMO-taal, urgentie ("last chance", "10x incoming")
+- 0.9-1.0: Pure pump/coordinated push (rocket emoji spam, "WSB squad", penny stock raves)
+
+IS_DD vs IS_HYPE
+- is_dd=true alleen bij: concrete cijfers, citaten van filings, multi-paragraaf analyse, geen pump-taal, auteur toont expertise.
+- is_dd=false bij: meme posts, één-zin "calls", screenshot-only, hype-taal.
+
+MANIPULATION_RISK (0.0-1.0)
+- Verhoog bij: lage-float micro-cap mention, coordinated language patterns, urgency taal, "do your own research" als excuus, account-leeftijd niet verifieerbaar, copy-paste karakteristieken.
+- 0.7+ = pump risico, behandel als niet-bestaand signaal.
+- 0.4-0.7 = behoedzaam — kan organic enthusiasm zijn maar verifieer
+- <0.4 = waarschijnlijk legitieme discussie
+
+TICKER EXTRACTIE
+- Alleen tickers waar de post over GAAT, niet elke mention.
+- "I sold X to buy Y" → alleen Y als de discussie over Y gaat.
+
+SENTIMENT moet onafhankelijk van hype zijn — een pump-post is bullish-sentiment + hoge manipulation_risk.
+
+Geef ALLEEN geldig JSON. Geen uitleg eromheen."""
+
+
+SOCIAL_PROMPT = """Klassificeer deze post.
 
 Subreddit: r/{subreddit}
 Auteur: {author} | Score: {score} | Comments: {comments}
@@ -41,12 +119,13 @@ Inhoud: {content}
 JSON formaat:
 {{
   "sentiment": "bullish" | "bearish" | "neutral",
-  "sentiment_score": <getal -1.0 tot 1.0>,
-  "hype_score": <getal 0.0 tot 1.0>,
-  "tickers": [<max 5 aandelensymbolen>],
-  "is_dd": <true als dit Due Diligence/research is, false als hype>,
-  "is_noise": <true of false>,
-  "manipulation_risk": <getal 0.0 tot 1.0>
+  "sentiment_score": <-1.0 tot 1.0>,
+  "hype_score": <0.0-1.0 volgens rubric>,
+  "tickers": [<alleen primaire onderwerp tickers, max 5>],
+  "is_dd": <true alleen bij echte due diligence>,
+  "is_noise": <default true; false alleen bij genuine analyse of breaking info>,
+  "manipulation_risk": <0.0-1.0 volgens rubric>,
+  "signal_quality": "actionable" | "watchlist" | "noise"
 }}"""
 
 
@@ -142,17 +221,25 @@ class NewsAnalyzerService:
         logger.info(f"News analyse: {analyzed}/{len(items)} items verwerkt")
         return analyzed
 
+    def _system_blocks(self, system_text: str):
+        """Build cacheable system prompt block when caching is enabled."""
+        if self.settings.anthropic_enable_prompt_caching:
+            return [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}]
+        return system_text
+
     def _analyze_news_item(self, client, item: NewsItem) -> tuple[dict, any]:
         content = (item.content or item.title)[:800]
-        prompt = ANALYSIS_PROMPT.format(
+        user_prompt = ANALYSIS_PROMPT.format(
             title=item.title,
             source=item.source,
             content=content,
         )
         response = client.messages.create(
             model=self._analysis_model,
-            max_tokens=256,
-            messages=[{"role": "user", "content": prompt}],
+            max_tokens=350,
+            temperature=0.2,
+            system=self._system_blocks(ANALYSIS_SYSTEM_PROMPT),
+            messages=[{"role": "user", "content": user_prompt}],
         )
         text = response.content[0].text.strip()
         # Extract JSON even if there's surrounding text
@@ -161,7 +248,7 @@ class NewsAnalyzerService:
         if start >= 0 and end > start:
             return json.loads(text[start:end]), response
         return ({"sentiment": "neutral", "sentiment_score": 0, "impact_score": 5,
-                "tickers": [], "is_noise": False, "urgency": "low", "event_type": "other"}, response)
+                "tickers": [], "is_noise": True, "urgency": "low", "event_type": "other"}, response)
 
     async def analyze_pending_social(self, batch_size: int = 30) -> int:
         """Analyze unanalyzed social posts."""
@@ -221,7 +308,7 @@ class NewsAnalyzerService:
         return analyzed
 
     def _analyze_social_item(self, client, item: SocialPost) -> tuple[dict, any]:
-        prompt = SOCIAL_PROMPT.format(
+        user_prompt = SOCIAL_PROMPT.format(
             subreddit=item.subreddit or "unknown",
             author=item.author or "unknown",
             score=item.score or 0,
@@ -230,8 +317,10 @@ class NewsAnalyzerService:
         )
         response = client.messages.create(
             model=self._analysis_model,
-            max_tokens=150,
-            messages=[{"role": "user", "content": prompt}],
+            max_tokens=250,
+            temperature=0.2,
+            system=self._system_blocks(SOCIAL_SYSTEM_PROMPT),
+            messages=[{"role": "user", "content": user_prompt}],
         )
         text = response.content[0].text.strip()
         start = text.find("{")

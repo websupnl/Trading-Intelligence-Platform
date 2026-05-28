@@ -12,25 +12,72 @@ from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
-RUMOUR_PROMPT = """Analyseer of de volgende berichten een handelbare geruchten-situatie vormen.
+RUMOUR_SYSTEM_PROMPT = """Je bent een rumour-detection analist voor een trading systeem. Je classificeert of er een handelbare gerucht-situatie speelt.
+
+WAT IS EEN RUMOUR (echte definitie)
+- Concreet, nog niet bevestigd event dat de prijs zou bewegen ALS waar: overname, partnerschap, product launch, CEO wissel, regulatory action.
+- Multi-bron clustering: één post of artikel is GEEN rumour. Je hebt convergentie nodig.
+- Specifieke partijen genoemd: "X mogelijk overgenomen door Y" niet "Stock could be a takeover target".
+
+WAT IS GEEN RUMOUR (is_rumour=false)
+- Algemene speculatie/wishful thinking
+- Analyst price targets (= mening, geen rumour)
+- Bevestigd nieuws (al openbaar, geen edge)
+- Memes/jokes/satire
+- Pump-coördinatie zonder substantie
+- Vaag "something is brewing" zonder concrete claim
+
+CONFIDENCE (hoe waarschijnlijk is het rumour-event echt?)
+- 0.3-0.4: één bron, niet verifieerbaar, kan pump zijn
+- 0.5-0.6: meerdere bronnen, plausibele bron-credibiliteit
+- 0.7-0.8: industriepublicatie + onafhankelijke confirmatie, named parties
+- 0.9+: insider leak met track record, gestaafde details
+
+HYPE_VELOCITY (groeisnelheid)
+- Hoeveel bronnen pakken dit binnen 24u op?
+- Stijgende social mention rate = hoog
+- Static of dalend = laag
+
+MANIPULATION_RISK
+- Verhoog bij: laag-volume stock, anonieme bron, coordinated social push, lage-credibiliteit publicatie als single source
+- 0.7+ = waarschijnlijk pump, avoid
+
+RECOMMENDATION
+- buy: hoge confidence (>0.65) + lage manipulation risk (<0.4) + asset niet al gestegen
+- watch: middelhoge confidence, wachten op confirmatie
+- avoid: hoge manipulation risk OF al ingeprijsd
+- sell: NIET TOEGESTAAN — long-only systeem, gebruik avoid
+
+Geef ALLEEN geldig JSON. Geen prose."""
+
+
+RUMOUR_PROMPT = """Beoordeel of de volgende berichten een handelbare rumour-situatie vormen.
 
 Asset: {asset}
-Nieuwsberichten ({news_count}):
+
+═══ NIEUWSBERICHTEN ({news_count}) ═══
 {news_summary}
 
-Social posts ({social_count}):
+═══ SOCIAL POSTS ({social_count}) ═══
 {social_summary}
 
-Is dit een geruchten-situatie (bijv. overname, partnerschap, product launch, CEO wissel)?
-Geef ALLEEN JSON terug:
+Vragen om te beantwoorden:
+1. Wordt er een CONCRETE, ongepubliceerde event-claim gemaakt (overname, partnerschap, etc.)?
+2. Convergeren meerdere onafhankelijke bronnen op dezelfde claim?
+3. Is het al ingeprijsd? (check tegen al-bekend nieuws)
+4. Wat is de manipulation risk?
+
+JSON formaat:
 {{
-  "is_rumour": <true of false>,
-  "title": "<korte beschrijving max 80 tekens>",
-  "description": "<max 200 woorden>",
-  "confidence": <0.0 tot 1.0>,
-  "manipulation_risk": <0.0 tot 1.0>,
-  "hype_velocity": <0.0 tot 1.0, hoe snel groeit dit>,
-  "recommendation": "buy" | "sell" | "watch" | "avoid",
+  "is_rumour": <true alleen bij concrete event-claim met multi-bron convergentie>,
+  "title": "<concreet event in max 80 tekens, bv 'X overweegt overname Y'>",
+  "description": "<wat, wie, bron-kwaliteit, tijdlijn — max 150 woorden>",
+  "confidence": <0.0-1.0 volgens rubric>,
+  "manipulation_risk": <0.0-1.0>,
+  "hype_velocity": <0.0-1.0, mention-groeisnelheid>,
+  "already_priced_in": <true | false>,
+  "source_quality": "low" | "medium" | "high",
+  "recommendation": "buy" | "watch" | "avoid",
   "rumour_type": "acquisition" | "partnership" | "product" | "earnings" | "regulatory" | "executive" | "other"
 }}"""
 
@@ -120,17 +167,23 @@ class RumourDetectorService:
         news_summary = "\n".join([f"- {n.title[:80]} ({n.source})" for n in news]) or "Geen nieuws"
         social_summary = "\n".join([f"- r/{p.subreddit} score={p.score}: {p.content[:80]}" for p in social]) or "Geen posts"
 
-        prompt = RUMOUR_PROMPT.format(
+        user_prompt = RUMOUR_PROMPT.format(
             asset=asset,
             news_count=len(news),
             social_count=len(social),
             news_summary=news_summary,
             social_summary=social_summary,
         )
+        system_blocks = (
+            [{"type": "text", "text": RUMOUR_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+            if self.settings.anthropic_enable_prompt_caching else RUMOUR_SYSTEM_PROMPT
+        )
         response = client.messages.create(
             model=self.settings.anthropic_model,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
+            max_tokens=700,
+            temperature=0.2,
+            system=system_blocks,
+            messages=[{"role": "user", "content": user_prompt}],
         )
         text = response.content[0].text.strip()
         start = text.find("{")
