@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
+import { useToast } from '@/contexts/toast';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,7 +25,9 @@ export default function SignalsPage() {
   const { data: signals, loading, reload } = useApi(() => api.getSignals(100), []);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'traded' | 'rejected'>('all');
+  const { toast } = useToast();
 
   async function handlePaperTrade(id: string) {
     setActing(id);
@@ -34,9 +37,10 @@ export default function SignalsPage() {
         if (!confirm('Risk check vereist bevestiging. Deze paper trade uitvoeren?')) return;
         result = await api.paperTradeSignal(id, true);
       }
+      toast('✅ Trade ingediend', 'success');
       reload();
     } catch (e: any) {
-      alert(e?.detail?.reasons?.join(', ') || e?.detail || 'Risk check mislukt');
+      toast(`❌ ${e?.detail?.reasons?.join(', ') || e?.detail || 'Risk check mislukt'}`, 'error');
     } finally {
       setActing(null);
     }
@@ -44,17 +48,25 @@ export default function SignalsPage() {
 
   async function handleReject(id: string) {
     setActing(id);
-    await api.rejectSignal(id).catch(() => null);
+    try {
+      await api.rejectSignal(id);
+      toast('Signal afgewezen', 'info');
+    } catch { /* ignore */ }
     reload();
     setActing(null);
   }
 
   async function handleGenerate() {
+    setGenerating(true);
     try {
       await api.triggerTask('generate_signals');
-      setTimeout(reload, 3000);
+      toast('⚡ Signal generatie gestart — duurt ~30s', 'info');
+      setTimeout(reload, 15000);
+      setTimeout(reload, 35000);
     } catch (e: any) {
-      alert(e?.detail || 'Fout');
+      toast(`❌ ${e?.detail || 'Generatie mislukt'}`, 'error');
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -79,7 +91,9 @@ export default function SignalsPage() {
         </h1>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={reload}>Vernieuwen</Button>
-          <Button variant="success" size="sm" onClick={handleGenerate}>⚡ Genereer</Button>
+          <Button variant="success" size="sm" onClick={handleGenerate} disabled={generating}>
+            {generating ? '⏳ Bezig...' : '⚡ Genereer'}
+          </Button>
         </div>
       </div>
 

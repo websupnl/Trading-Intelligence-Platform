@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
@@ -41,15 +41,22 @@ const mobileMenuItems = [
 ];
 
 export function TopBar() {
-  const { data: status } = useApi(() => api.apiStatus(), []);
-  const { data: risk } = useApi(() => api.getRiskStatus(), []);
+  const { data: status, reload: reloadStatus } = useApi(() => api.apiStatus(), []);
+  const { data: risk, reload: reloadRisk } = useApi(() => api.getRiskStatus(), []);
   const { data: notifications } = useApi(() => api.getNotifications(10), []);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Auto-refresh status every 30s so users see live bot state
+  useEffect(() => {
+    const t = setInterval(() => { reloadStatus(); reloadRisk(); }, 30000);
+    return () => clearInterval(t);
+  }, [reloadStatus, reloadRisk]);
 
   const killSwitch = risk?.kill_switch_enabled;
   const liveEnabled = risk?.live_trading_enabled;
   const alpacaOk = status?.configured_integrations?.alpaca;
   const aiOk = status?.configured_integrations?.anthropic;
+  const autoOn = !killSwitch && !risk?.require_manual_confirmation && !!status?.trading_mode;
   const recentAlerts = notifications?.filter((item: any) => item.status === 'sent').length ?? 0;
 
   return (
@@ -70,12 +77,14 @@ export function TopBar() {
 
         {/* Status pills (desktop only) */}
         <StatusPill
-          label={`${status?.trading_mode?.toUpperCase() ?? '...'}`}
-          ok={status?.trading_mode === 'paper'}
+          label={autoOn ? '🤖 AUTO: AAN' : '⏸ AUTO: UIT'}
+          ok={autoOn}
+          warn={!autoOn && !killSwitch}
         />
         <StatusPill
-          label={liveEnabled ? '🔴 LIVE' : 'paper'}
-          ok={!liveEnabled}
+          label={liveEnabled ? '🔴 LIVE' : `${status?.trading_mode?.toUpperCase() ?? '...'}`}
+          ok={!liveEnabled && !!status?.trading_mode}
+          warn={liveEnabled}
         />
         {killSwitch && <StatusPill label="🛑 KILL SWITCH" ok={false} />}
 

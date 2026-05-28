@@ -9,6 +9,7 @@ import { LoadingSpinner } from '@/components/ui/loading';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
 import { cn, fmtDate, fmtUSD } from '@/lib/utils';
+import { useToast } from '@/contexts/toast';
 
 function pct(value: number | null | undefined): string {
   if (value == null) return '-';
@@ -27,23 +28,36 @@ function StatCard({ label, value, tone }: { label: string; value: string; tone?:
 }
 
 export default function PerformancePage() {
-  const { data: realized, loading: realizedLoading } = useApi(() => api.getPerformance(), []);
+  const { data: realized, loading: realizedLoading, reload: reloadRealized } = useApi(() => api.getPerformance(), []);
   const { data: summary, loading: summaryLoading, reload: reloadSummary } = useApi(() => api.getOutcomeSummary(), []);
   const { data: outcomes, loading: outcomesLoading, reload: reloadOutcomes } = useApi(() => api.getSignalOutcomes(), []);
   const [evaluating, setEvaluating] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const { toast } = useToast();
 
   async function handleEvaluate() {
     setEvaluating(true);
-    setResult(null);
     try {
       const response = await api.evaluateOutcomes();
-      setResult(`${response.outcomes_updated} signalen gemeten, ${response.complete} volledig na 5 handelsdagen.`);
+      toast(`✅ ${response.outcomes_updated ?? 0} signalen bijgewerkt`, 'success');
       await Promise.all([reloadSummary(), reloadOutcomes()]);
     } catch (error: any) {
-      setResult(error?.detail || 'Outcome-evaluatie mislukt.');
+      toast(`❌ ${error?.detail || 'Outcome-evaluatie mislukt'}`, 'error');
     } finally {
       setEvaluating(false);
+    }
+  }
+
+  async function handleSyncTrades() {
+    setSyncing(true);
+    try {
+      const r = await api.syncTrades();
+      toast(`✅ Trade sync: ${r.created ?? 0} nieuw, ${r.closed ?? 0} gesloten`, 'success');
+      await reloadRealized();
+    } catch (e: any) {
+      toast(`❌ ${e?.detail || 'Sync mislukt'}`, 'error');
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -59,12 +73,16 @@ export default function PerformancePage() {
             Objectieve meting na 1 en 5 handelsdagen. Dit zijn signaaluitkomsten, geen uitgevoerde trades.
           </p>
         </div>
-        <Button variant="success" size="sm" onClick={handleEvaluate} disabled={evaluating}>
-          {evaluating ? 'Evalueren...' : 'Outcomes evalueren'}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleSyncTrades} disabled={syncing}>
+            {syncing ? '⏳ Syncing...' : '🔄 Sync Trades'}
+          </Button>
+          <Button variant="success" size="sm" onClick={handleEvaluate} disabled={evaluating}>
+            {evaluating ? '⏳ Evalueren...' : 'Outcomes evalueren'}
+          </Button>
+        </div>
       </div>
 
-      {result && <div className="rounded-md border border-border bg-card p-3 text-sm">{result}</div>}
 
       <div>
         <h2 className="mb-2 text-sm font-medium">Gerealiseerde trade P&amp;L</h2>
@@ -72,7 +90,9 @@ export default function PerformancePage() {
           Resultaten van daadwerkelijk uitgevoerde en gesloten trades uit Alpaca-sync.
         </p>
         {realizedLoading ? <LoadingSpinner /> : !realized?.total_trades ? (
-          <p className="text-xs text-muted-foreground py-2">Nog geen gesloten trades. Sync trades via de Portfolio pagina of wacht tot de bot een trade sluit.</p>
+          <div className="py-3 space-y-2">
+            <p className="text-xs text-muted-foreground">Nog geen gesloten trades zichtbaar. Klik <b>Sync Trades</b> om de laatste Alpaca data op te halen.</p>
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatCard label="Gesloten trades" value={`${realized?.total_trades ?? 0}`} />

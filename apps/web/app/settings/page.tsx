@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
+import { useToast } from '@/contexts/toast';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,19 +45,18 @@ export default function SettingsPage() {
   const { data: settings, loading, reload } = useApi(() => api.getSettings(), []);
   const { data: risk } = useApi(() => api.getRiskStatus(), []);
   const [saving, setSaving] = useState<string | null>(null);
-  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const { toast } = useToast();
 
   async function toggle(key: string, current: boolean) {
     setSaving(key);
     try {
       await api.updateRuntimeSettings({ [key]: !current });
-      setSaveMsg(`✅ ${key} bijgewerkt`);
+      toast(`✅ ${key.replace(/_/g, ' ')} bijgewerkt naar ${!current}`, 'success');
       await reload();
     } catch (e: any) {
-      setSaveMsg(`❌ ${e?.detail || 'Fout'}`);
+      toast(`❌ ${e?.detail || 'Instelling opslaan mislukt'}`, 'error');
     } finally {
       setSaving(null);
-      setTimeout(() => setSaveMsg(null), 4000);
     }
   }
 
@@ -65,13 +65,12 @@ export default function SettingsPage() {
     try {
       if (enable) await api.enableKillSwitch();
       else await api.disableKillSwitch();
-      setSaveMsg(enable ? '🛑 Kill switch geactiveerd' : '✅ Kill switch uitgeschakeld');
+      toast(enable ? '🛑 Kill switch geactiveerd — alle orders geblokkeerd' : '✅ Kill switch uitgeschakeld', enable ? 'warning' : 'success');
       await reload();
     } catch {
-      setSaveMsg('❌ Fout');
+      toast('❌ Kill switch actie mislukt', 'error');
     } finally {
       setSaving(null);
-      setTimeout(() => setSaveMsg(null), 4000);
     }
   }
 
@@ -80,9 +79,6 @@ export default function SettingsPage() {
       <h1 className="text-base font-semibold">Instellingen</h1>
 
       {loading && <LoadingSpinner />}
-      {saveMsg && (
-        <div className="p-3 rounded-md bg-card border border-border text-sm">{saveMsg}</div>
-      )}
 
       {settings && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

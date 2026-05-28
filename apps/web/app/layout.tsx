@@ -4,6 +4,7 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { TopBar } from '@/components/layout/TopBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PinGate } from '@/components/auth/PinGate';
+import { ToastProvider } from '@/contexts/toast';
 
 export const metadata: Metadata = {
   title: 'Trading OS',
@@ -20,14 +21,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="nl">
       <body className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
         <PinGate>
-          <TopBar />
-          <div className="flex flex-1 overflow-hidden">
-            <Sidebar />
-            <main className="flex-1 overflow-auto p-3 md:p-4 pb-20 md:pb-4">
-              {children}
-            </main>
-          </div>
-          <ChatPanel />
+          <ToastProvider>
+            <TopBar />
+            <div className="flex flex-1 overflow-hidden">
+              <Sidebar />
+              <main className="flex-1 overflow-auto p-3 md:p-4 pb-20 md:pb-4">
+                {children}
+              </main>
+            </div>
+            <ChatPanel />
+          </ToastProvider>
         </PinGate>
       </body>
     </html>
