@@ -45,9 +45,9 @@ def detect_rumours():
 
 @celery_app.task(name="app.tasks.analysis_tasks.fetch_market_data")
 def fetch_market_data():
-    """Fetch market data for tickers mentioned in recent news/signals. Skip outside market hours."""
-    if not _us_market_open():
-        return {"status": "skipped", "reason": "market_closed"}
+    """Fetch market data for tickers. Crypto runs 24/7; stocks only during market hours."""
+    from app.services.alpaca_broker import CRYPTO_SYMBOLS as _CRYPTO
+    market_open = _us_market_open()
     from app.services.market_data_service import MarketDataService
     from app.database import AsyncSessionLocal
     from app.models.news import NewsItem
@@ -78,6 +78,8 @@ def fetch_market_data():
                     tickers.add(row)
 
         valid = [t for t in tickers if 2 <= len(t) <= 5][:30]
+        if not market_open:
+            valid = [t for t in valid if t in _CRYPTO]
         if not valid:
             return 0
 
@@ -114,19 +116,13 @@ def evaluate_signal_outcomes():
 
 @celery_app.task(name="app.tasks.analysis_tasks.auto_trade")
 def auto_trade():
-    """Auto-execute high-confidence signals in paper/live mode."""
+    """Auto-execute high-confidence signals. Crypto runs 24/7; stocks only during market hours."""
     from app.services.auto_trader import AutoTraderService
-    from app.services.runtime_state import get_runtime_value
-    from app.config import get_settings
-    # Skip stock trading outside market hours; crypto runs 24/7 so we always
-    # proceed — the signal generator already filters crypto vs. stock separately.
-    if not _us_market_open():
-        logger.debug("Auto-trade overgeslagen: markt gesloten")
-        return {"status": "skipped", "reason": "market_closed"}
+    market_open = _us_market_open()
     try:
         svc = AutoTraderService()
-        count = asyncio.run(svc.process_pending_signals())
-        return {"status": "ok", "executed": count}
+        count = asyncio.run(svc.process_pending_signals(crypto_only=not market_open))
+        return {"status": "ok", "executed": count, "crypto_only": not market_open}
     except Exception as e:
         logger.error(f"Auto trade fout: {e}")
         return {"status": "error", "message": str(e)}
@@ -134,13 +130,12 @@ def auto_trade():
 
 @celery_app.task(name="app.tasks.analysis_tasks.monitor_positions")
 def monitor_positions():
-    """Monitor open trades and auto-close when stop-loss or take-profit is hit."""
+    """Monitor open trades. Crypto runs 24/7; stocks only during market hours."""
     from app.services.position_monitor import PositionMonitorService
-    if not _us_market_open():
-        return {"status": "skipped", "reason": "market_closed"}
+    market_open = _us_market_open()
     try:
         svc = PositionMonitorService()
-        count = asyncio.run(svc.monitor())
+        count = asyncio.run(svc.monitor(crypto_only=not market_open))
         if count:
             logger.info(f"Positie monitor: {count} posities gesloten")
         return {"status": "ok", "closed": count}

@@ -7,7 +7,7 @@ from app.database import AsyncSessionLocal
 from app.models.trades import Trade
 from app.models.audit import AuditLog
 from app.services.market_data_service import MarketDataService
-from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
+from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError, CRYPTO_SYMBOLS
 from app.services.notifications import NotificationService
 from app.services.runtime_state import get_runtime_value
 from app.config import get_settings
@@ -23,17 +23,17 @@ class PositionMonitorService:
         self.broker = AlpacaBroker()
         self.market = MarketDataService()
 
-    async def monitor(self) -> int:
-        """Check all open trades; close those that hit SL or TP. Returns count closed."""
+    async def monitor(self, crypto_only: bool = False) -> int:
+        """Check all open trades; close those that hit SL or TP. Returns count closed.
+        crypto_only=True monitors only crypto assets (for outside US market hours)."""
         if get_runtime_value("kill_switch_enabled", self.settings.kill_switch_enabled):
             return 0
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Trade).where(
-                    Trade.status == "open",
-                )
-            )
+            query = select(Trade).where(Trade.status == "open")
+            if crypto_only:
+                query = query.where(Trade.symbol.in_(CRYPTO_SYMBOLS))
+            result = await db.execute(query)
             trades = result.scalars().all()
 
         if not trades:

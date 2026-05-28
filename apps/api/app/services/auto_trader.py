@@ -7,7 +7,7 @@ from app.models.signals import Signal
 from app.models.trades import Trade
 from app.models.audit import AuditLog
 from app.services.risk_engine import RiskEngine
-from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
+from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError, CRYPTO_SYMBOLS
 from app.schemas.risk import RiskCheckRequest
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.order_recorder import record_submitted_order
@@ -26,8 +26,9 @@ class AutoTraderService:
         self.risk_engine = RiskEngine()
         self.broker = AlpacaBroker()
 
-    async def process_pending_signals(self) -> int:
-        """Auto-trade high-confidence signals. Returns count traded."""
+    async def process_pending_signals(self, crypto_only: bool = False) -> int:
+        """Auto-trade high-confidence signals. Returns count traded.
+        crypto_only=True filters to crypto assets (for outside US market hours)."""
         if get_runtime_value("kill_switch_enabled", self.settings.kill_switch_enabled):
             logger.info("Kill switch actief - auto trader gestopt")
             return 0
@@ -45,12 +46,15 @@ class AutoTraderService:
 
         now = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as db:
+            query = select(Signal).where(
+                Signal.status.in_(["pending", "broker_error"]),
+                Signal.confidence >= AUTO_TRADE_CONFIDENCE_THRESHOLD,
+                Signal.expires_at > now,
+            )
+            if crypto_only:
+                query = query.where(Signal.asset.in_(CRYPTO_SYMBOLS))
             result = await db.execute(
-                select(Signal).where(
-                    Signal.status.in_(["pending", "broker_error"]),
-                    Signal.confidence >= AUTO_TRADE_CONFIDENCE_THRESHOLD,
-                    Signal.expires_at > now,
-                ).order_by(Signal.confidence.desc()).limit(10)
+                query.order_by(Signal.confidence.desc()).limit(10)
             )
             signals = result.scalars().all()
 
