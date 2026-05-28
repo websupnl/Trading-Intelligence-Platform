@@ -66,6 +66,12 @@ celery_app.conf.update(
             "schedule": 300.0,
         },
 
+        # === POSITION MANAGEMENT ===
+        "monitor-positions-every-60sec": {
+            "task": "app.tasks.analysis_tasks.monitor_positions",
+            "schedule": 60.0,
+        },
+
         # === TRADE SYNC & LEARNING ===
         "sync-closed-trades-every-5min": {
             "task": "app.tasks.analysis_tasks.sync_closed_trades",

@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import select
+from datetime import datetime, timezone
+from sqlalchemy import select, func
 from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models.signals import Signal
@@ -9,7 +9,7 @@ from app.models.audit import AuditLog
 from app.services.risk_engine import RiskEngine
 from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
 from app.schemas.risk import RiskCheckRequest
-from app.services.runtime_state import get_runtime_value
+from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.order_recorder import record_submitted_order
 from app.services.notifications import NotificationService
 
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.60
 MAX_AUTO_NOTIONAL = 500.0
+MIN_NOTIONAL = 50.0
 
 
 class AutoTraderService:
@@ -38,6 +39,10 @@ class AutoTraderService:
             logger.info("Handmatige bevestiging vereist - auto trader gestopt")
             return 0
 
+        # Daily loss circuit breaker check
+        if await self._daily_loss_triggered(mode):
+            return 0
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Signal).where(
@@ -50,10 +55,11 @@ class AutoTraderService:
         if not signals:
             return 0
 
+        notional = await self._get_notional()
         executed = 0
         for signal in signals:
             try:
-                result = await self._execute_signal(signal)
+                result = await self._execute_signal(signal, notional)
                 if result:
                     executed += 1
             except Exception as e:
@@ -61,8 +67,77 @@ class AutoTraderService:
 
         return executed
 
-    async def _execute_signal(self, signal: Signal) -> bool:
-        mode = get_runtime_value("trading_mode", self.settings.trading_mode)  # "paper" or "live"
+    async def _daily_loss_triggered(self, mode: str) -> bool:
+        """Check daily P&L against circuit breaker threshold. Enables kill switch if exceeded."""
+        try:
+            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(func.sum(Trade.pnl)).where(
+                        Trade.status == "closed",
+                        Trade.mode == mode,
+                        Trade.pnl.isnot(None),
+                        Trade.closed_at >= today,
+                    )
+                )
+                daily_pnl = float(result.scalar() or 0)
+
+            if daily_pnl >= 0:
+                return False
+
+            # Get account equity for percentage calculation
+            equity = await self._get_equity()
+            if equity <= 0:
+                return False
+
+            loss_pct = abs(daily_pnl) / equity
+            max_loss = get_runtime_value("max_daily_loss_pct", self.settings.max_daily_loss_pct)
+
+            if loss_pct >= max_loss:
+                set_runtime_value("kill_switch_enabled", True)
+                logger.warning(
+                    f"Dagelijks verlies circuit breaker: verlies={loss_pct:.1%} > max={max_loss:.1%}. "
+                    "Kill switch ingeschakeld."
+                )
+                async with AsyncSessionLocal() as db:
+                    db.add(AuditLog(
+                        action="circuit_breaker_triggered",
+                        actor="auto_trader",
+                        details={"daily_pnl": daily_pnl, "equity": equity, "loss_pct": loss_pct},
+                        status="error",
+                        message=f"Dagelijks verlies {loss_pct:.1%} overschrijdt limiet {max_loss:.1%}. Kill switch aan.",
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    ))
+                    await db.commit()
+                return True
+
+        except Exception as e:
+            logger.error(f"Daily loss check fout: {e}")
+
+        return False
+
+    async def _get_equity(self) -> float:
+        """Get account equity from Alpaca, fallback to 10k."""
+        try:
+            account = await self.broker.get_account()
+            equity = float(account.get("equity") or account.get("portfolio_value") or 0)
+            return equity if equity > 0 else 10_000.0
+        except Exception:
+            return 10_000.0
+
+    async def _get_notional(self) -> float:
+        """Equity-based position sizing: position_size_pct % of account, capped at 5x MAX_AUTO_NOTIONAL."""
+        try:
+            equity = await self._get_equity()
+            pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
+            notional = equity * pct
+            return max(MIN_NOTIONAL, min(notional, MAX_AUTO_NOTIONAL * 5))
+        except Exception:
+            return MAX_AUTO_NOTIONAL
+
+    async def _execute_signal(self, signal: Signal, notional: float) -> bool:
+        mode = get_runtime_value("trading_mode", self.settings.trading_mode)
 
         risk_req = RiskCheckRequest(
             symbol=signal.asset,
@@ -71,7 +146,7 @@ class AutoTraderService:
             confidence=signal.confidence,
             stop_loss=signal.suggested_stop,
             mode=mode,
-            estimated_notional=MAX_AUTO_NOTIONAL,
+            estimated_notional=notional,
         )
         risk_result = self.risk_engine.check(risk_req)
 
@@ -104,27 +179,27 @@ class AutoTraderService:
                 order = await self.broker.submit_order(
                     symbol=signal.asset,
                     qty=None,
-                    notional=MAX_AUTO_NOTIONAL,
+                    notional=notional,
                     side=signal.direction,
                     stop_price=signal.suggested_stop,
+                    take_profit_price=signal.suggested_take_profit,
                 )
                 status_label = "paper_traded" if mode == "paper" else "live_traded"
                 db_signal.status = status_label
                 db_signal.risk_check_result = risk_result.model_dump()
 
-                # Create Trade record
                 alpaca_id = order.get("id") if isinstance(order, dict) else None
                 fill_price = None
                 if isinstance(order, dict):
                     fill_price = float(order.get("filled_avg_price") or order.get("limit_price") or 0) or None
 
-                fill_qty = float(order.get("qty") or order.get("notional") or 0) if isinstance(order, dict) else 0
+                fill_qty = float(order.get("qty") or 0) if isinstance(order, dict) else 0
                 trade = Trade(
                     signal_id=signal.id,
                     alpaca_order_id=alpaca_id,
                     symbol=signal.asset,
                     side=signal.direction,
-                    quantity=fill_qty or MAX_AUTO_NOTIONAL,
+                    quantity=fill_qty or notional,
                     entry_price=fill_price or signal.suggested_entry,
                     stop_loss=signal.suggested_stop,
                     take_profit=signal.suggested_take_profit,
@@ -138,7 +213,7 @@ class AutoTraderService:
                     symbol=signal.asset,
                     side=signal.direction,
                     quantity=None,
-                    notional=MAX_AUTO_NOTIONAL,
+                    notional=notional,
                     order_type="market",
                     mode=mode,
                     broker_response=order,
@@ -159,12 +234,13 @@ class AutoTraderService:
                         "direction": signal.direction,
                         "confidence": signal.confidence,
                         "mode": mode,
+                        "notional": notional,
                         "alpaca_order_id": alpaca_id,
                         "bull_score": signal.ai_analysis.get("bull_score") if signal.ai_analysis else None,
                         "bear_score": signal.ai_analysis.get("bear_score") if signal.ai_analysis else None,
                     },
                     status="success",
-                    message=f"{'📄 Paper' if mode == 'paper' else '💰 Live'} trade: {signal.asset} {signal.direction} @ confidence {signal.confidence:.0%}",
+                    message=f"{'📄 Paper' if mode == 'paper' else '💰 Live'} trade: {signal.asset} {signal.direction} @ ${notional:.0f} | confidence {signal.confidence:.0%}",
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
                 ))
@@ -173,12 +249,12 @@ class AutoTraderService:
                 await NotificationService(db).send(
                     "auto_trade_executed",
                     f"Trading OS - Auto {mode} trade: {signal.asset} {signal.direction.upper()}",
-                    f"Confidence: {signal.confidence:.0%}. Order is door risk checks goedgekeurd.",
+                    f"Notional: ${notional:.0f} | Confidence: {signal.confidence:.0%} | SL: {signal.suggested_stop} | TP: {signal.suggested_take_profit}",
                     severity="warning" if mode == "paper" else "critical",
                     entity_type="signal",
                     entity_id=signal.id,
                 )
-                logger.info(f"Auto {mode} trade uitgevoerd: {signal.asset} {signal.direction}")
+                logger.info(f"Auto {mode} trade uitgevoerd: {signal.asset} {signal.direction} ${notional:.0f}")
                 return True
 
             except AlpacaNotConfiguredError:

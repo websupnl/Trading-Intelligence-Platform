@@ -22,6 +22,16 @@ MIN_CONFIDENCE_GENERATE = 0.55
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
+# Always-monitored assets — generate signals even without news/social data
+DEFAULT_WATCHLIST: set[str] = {
+    # Crypto
+    "BTC", "ETH", "SOL", "DOGE", "AVAX",
+    # US equities & ETFs
+    "SPY", "QQQ", "NVDA", "TSLA", "META", "AAPL", "MSFT", "MSTR", "AMZN", "GOOGL",
+    # Defense / Energy
+    "LMT", "RTX", "XOM", "CVX", "XLE",
+}
+
 BULL_PROMPT = """Je bent een bullish trading analyst. Zoek naar de STERKSTE argumenten VOOR een buy op {asset}.
 
 Prijs: ${price}
@@ -116,6 +126,12 @@ class SignalGeneratorService:
             social_posts = social_result.scalars().all()
 
         ticker_data = self._aggregate_by_ticker(news_items, social_posts)
+
+        # Always include watchlist tickers (TA-only if no news/social)
+        for ticker in DEFAULT_WATCHLIST:
+            if ticker not in ticker_data:
+                ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0}
+
         if not ticker_data:
             logger.info("Geen tickers met voldoende data voor signaal generatie")
             return 0

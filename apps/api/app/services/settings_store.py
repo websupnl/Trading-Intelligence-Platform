@@ -15,6 +15,8 @@ RUNTIME_SETTING_KEYS = {
     "live_trading_enabled",
     "require_manual_confirmation",
     "trading_mode",
+    "position_size_pct",
+    "max_daily_loss_pct",
 }
 
 

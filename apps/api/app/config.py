@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     live_trading_enabled: bool = False
     require_manual_confirmation: bool = True
     kill_switch_enabled: bool = False
+    position_size_pct: float = 0.02   # 2% of account equity per trade
+    max_daily_loss_pct: float = 0.05  # 5% daily loss triggers circuit breaker
 
     # Alpaca
     alpaca_api_key: str = ""

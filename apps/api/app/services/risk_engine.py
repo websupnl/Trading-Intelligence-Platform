@@ -86,4 +86,5 @@ class RiskEngine:
             "max_trades_per_day": MAX_TRADES_PER_DAY,
             "min_confidence_for_auto": MIN_CONFIDENCE_FOR_AUTO,
             "auto_trade_threshold": 0.60,
+            "position_size_pct": get_runtime_value("position_size_pct", settings.position_size_pct),
         }
