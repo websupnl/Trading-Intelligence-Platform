@@ -8,7 +8,7 @@ from app.models.audit import AuditLog
 from app.models.notifications import Notification
 from app.models.signals import Signal
 from app.models.trades import Trade
-from app.services.ai_guard import ai_pause_status, resume_ai
+from app.services.ai_guard import ai_pause_status, manual_pause_ai, resume_ai
 from app.services.notifications import NotificationService
 
 router = APIRouter(prefix="/api/system")
@@ -17,6 +17,29 @@ router = APIRouter(prefix="/api/system")
 @router.get("/ai-guard")
 async def get_ai_guard():
     return ai_pause_status()
+
+
+@router.post("/ai-guard/pause")
+async def pause_ai_guard(
+    minutes: int = Query(360, ge=1, le=1440),
+    reason: str = Query("Handmatige AI stop door gebruiker"),
+    db: AsyncSession = Depends(get_db),
+):
+    await manual_pause_ai("user", reason, minutes=minutes)
+    guard = ai_pause_status()
+    db.add(AuditLog(
+        action="ai_provider_paused",
+        actor="user",
+        entity_type="ai_provider",
+        entity_id="anthropic",
+        details={"until": guard.get("until"), "minutes": minutes, "reason": reason},
+        status="skipped",
+        message=reason[:500],
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    ))
+    await db.commit()
+    return {"status": "paused", "ai_guard": guard}
 
 
 @router.post("/ai-guard/resume")

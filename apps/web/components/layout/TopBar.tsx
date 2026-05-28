@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Shield, TrendingUp, Brain, Wifi, Menu, X, Bell } from 'lucide-react';
+import { Shield, TrendingUp, Brain, Wifi, Menu, X, Bell, StopCircle, PlayCircle } from 'lucide-react';
 import {
   LayoutDashboard, Zap, ShoppingCart, Cpu, Settings, Database, Activity,
   Radio, Newspaper, MessageSquare, BarChart3, Moon, ScrollText
@@ -45,8 +45,10 @@ const mobileMenuItems = [
 export function TopBar() {
   const { data: status, reload: reloadStatus } = useApi(() => api.apiStatus(), []);
   const { data: risk, reload: reloadRisk } = useApi(() => api.getRiskStatus(), []);
+  const { data: botHealth, reload: reloadBotHealth } = useApi(() => api.getBotHealth(), [], { pollIntervalMs: 10000 });
   const { data: notifications } = useApi(() => api.getNotifications(10), []);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
 
   // Auto-refresh status every 30s so users see live bot state
   useEffect(() => {
@@ -59,8 +61,23 @@ export function TopBar() {
   const alpacaOk = status?.configured_integrations?.alpaca;
   const aiOk = status?.configured_integrations?.anthropic;
   const cryptoOnly = status?.market_session?.crypto_only;
+  const aiPaused = !!botHealth?.ai_guard?.paused;
   const autoOn = !killSwitch && !risk?.require_manual_confirmation && !!status?.trading_mode;
   const recentAlerts = notifications?.filter((item: any) => item.status === 'sent').length ?? 0;
+
+  async function handleAiToggle() {
+    setAiBusy(true);
+    try {
+      if (aiPaused) {
+        await api.resumeAiGuard();
+      } else {
+        await api.pauseAiGuard(360, 'Handmatige AI stop via topbar');
+      }
+      await reloadBotHealth();
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   return (
     <>
@@ -95,8 +112,24 @@ export function TopBar() {
           warn={liveEnabled}
         />
         {killSwitch && <StatusPill label="🛑 KILL SWITCH" ok={false} />}
+        {aiPaused && <StatusPill label="AI STOP" ok={false} />}
 
         <div className="hidden md:block h-4 border-l border-border mx-1" />
+
+        <button
+          onClick={handleAiToggle}
+          disabled={aiBusy}
+          title={aiPaused ? 'AI-analyse hervatten' : 'AI-analyse direct stoppen'}
+          className={cn(
+            'hidden md:inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors disabled:opacity-50',
+            aiPaused
+              ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
+              : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
+          )}
+        >
+          {aiPaused ? <PlayCircle size={13} /> : <StopCircle size={13} />}
+          {aiPaused ? 'AI hervatten' : 'Stop AI'}
+        </button>
 
         <Link href="/notifications" className="hidden md:flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <Bell size={12} />
@@ -127,6 +160,14 @@ export function TopBar() {
         {/* Mobile: compact status */}
         <div className="flex md:hidden items-center gap-2 text-xs">
           {killSwitch && <span className="text-red-400">🛑</span>}
+          {aiPaused && <span className="text-amber-500">AI</span>}
+          <button
+            onClick={handleAiToggle}
+            disabled={aiBusy}
+            className={cn('rounded border px-1.5 py-0.5', aiPaused ? 'border-green-200 text-green-700' : 'border-red-200 text-red-700')}
+          >
+            {aiPaused ? 'Start AI' : 'Stop AI'}
+          </button>
           <span className={cn(alpacaOk ? 'text-green-400' : 'text-muted-foreground')}>
             {alpacaOk ? '●' : '○'}
           </span>
@@ -162,6 +203,9 @@ export function TopBar() {
               <div className="flex gap-2">
                 <span className={cn(killSwitch ? 'text-red-400' : 'text-green-400')}>
                   Kill Switch: {killSwitch ? 'AAN' : 'UIT'}
+                </span>
+                <span className={cn(aiPaused ? 'text-amber-600' : 'text-green-600')}>
+                  AI: {aiPaused ? 'STOP' : 'AAN'}
                 </span>
               </div>
               <p className="mt-1">v1.1.0</p>

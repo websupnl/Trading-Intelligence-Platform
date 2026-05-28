@@ -1,7 +1,7 @@
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import anthropic
 from sqlalchemy import select
 from app.config import get_settings
@@ -142,16 +142,58 @@ class NewsAnalyzerService:
     def _analysis_model(self) -> str:
         return self.settings.anthropic_analysis_model
 
+    async def _mark_stale_news(self, older_than: datetime) -> int:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(NewsItem).where(
+                    NewsItem.status == "new",
+                    NewsItem.published_at < older_than,
+                ).limit(100)
+            )
+            items = result.scalars().all()
+            for item in items:
+                item.ai_analyzed = True
+                item.status = "stale"
+                item.ai_analysis = {"skipped": True, "reason": "Artikel te oud voor trading-context"}
+            if items:
+                await db.commit()
+            return len(items)
+
+    async def _mark_stale_social(self, older_than: datetime) -> int:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(SocialPost).where(
+                    SocialPost.ai_analyzed == False,
+                    SocialPost.posted_at < older_than,
+                ).limit(100)
+            )
+            items = result.scalars().all()
+            for item in items:
+                item.ai_analyzed = True
+                item.ai_analysis = {"skipped": True, "reason": "Post te oud voor trading-context"}
+            if items:
+                await db.commit()
+            return len(items)
+
     async def analyze_pending_news(self, batch_size: int = 20) -> int:
         """Analyze unanalyzed news items. Returns count analyzed."""
         if is_ai_paused():
             logger.warning("AI analyse gepauzeerd - news analyse overgeslagen")
             return 0
 
+        fresh_after = datetime.now(timezone.utc) - timedelta(hours=36)
+        stale_count = await self._mark_stale_news(fresh_after)
+        if stale_count:
+            logger.info("News analyse: %s oude items zonder AI gemarkeerd als stale", stale_count)
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(NewsItem)
-                .where(NewsItem.ai_analyzed == False, NewsItem.status == "new")
+                .where(
+                    NewsItem.ai_analyzed == False,
+                    NewsItem.status == "new",
+                    NewsItem.published_at >= fresh_after,
+                )
                 .order_by(NewsItem.published_at.desc())
                 .limit(batch_size)
             )
@@ -164,6 +206,9 @@ class NewsAnalyzerService:
         analyzed = 0
 
         for item in items:
+            if is_ai_paused():
+                logger.warning("AI analyse tijdens news batch gepauzeerd - resterende items overgeslagen")
+                break
             try:
                 analysis, resp = self._analyze_news_item(client, item)
 
@@ -256,10 +301,15 @@ class NewsAnalyzerService:
             logger.warning("AI analyse gepauzeerd - social analyse overgeslagen")
             return 0
 
+        fresh_after = datetime.now(timezone.utc) - timedelta(hours=36)
+        stale_count = await self._mark_stale_social(fresh_after)
+        if stale_count:
+            logger.info("Social analyse: %s oude posts zonder AI gemarkeerd als stale", stale_count)
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(SocialPost)
-                .where(SocialPost.ai_analyzed == False)
+                .where(SocialPost.ai_analyzed == False, SocialPost.posted_at >= fresh_after)
                 .order_by(SocialPost.posted_at.desc())
                 .limit(batch_size)
             )
@@ -272,6 +322,9 @@ class NewsAnalyzerService:
         analyzed = 0
 
         for item in items:
+            if is_ai_paused():
+                logger.warning("AI analyse tijdens social batch gepauzeerd - resterende items overgeslagen")
+                break
             try:
                 analysis, resp = self._analyze_social_item(client, item)
 

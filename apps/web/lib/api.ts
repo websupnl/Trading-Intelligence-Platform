@@ -120,6 +120,8 @@ export const api = {
 
   // ── Bot health ──────────────────────────────────────────────────────────
   getBotHealth: () => apiFetch('/api/health/bot'),
+  pauseAiGuard: (minutes = 360, reason = 'Handmatige AI stop door gebruiker') =>
+    apiFetch(`/api/system/ai-guard/pause?minutes=${minutes}&reason=${encodeURIComponent(reason)}`, { method: 'POST' }),
   resumeAiGuard: () => apiFetch('/api/system/ai-guard/resume', { method: 'POST' }),
 
   // ── Pipeline ────────────────────────────────────────────────────────────

@@ -191,6 +191,9 @@ class SignalGeneratorService:
         generated = 0
 
         for asset, data in list(ticker_data.items())[:15]:
+            if is_ai_paused():
+                logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")
+                break
             try:
                 if await self._recent_signal_exists(asset):
                     continue
@@ -201,6 +204,20 @@ class SignalGeneratorService:
 
                 # Skip watchlist-only tickers without TA data — nothing to analyse
                 if data.get("_watchlist_only") and ta_result is None:
+                    continue
+
+                if self._context_is_stale(data, hours=8):
+                    await self._log_signal_skip(
+                        asset,
+                        "Context te oud voor nieuwe AI-call",
+                        {
+                            "direction": "skip",
+                            "confidence": 0,
+                            "reason": "Geen verse nieuws/social katalysator binnen 8 uur; AI-call overgeslagen om oude context en tokenkosten te vermijden.",
+                        },
+                        data,
+                        ta_result,
+                    )
                     continue
 
                 # Fetch memory lessons for this asset
@@ -281,6 +298,21 @@ class SignalGeneratorService:
                     break
 
         return generated
+
+    def _context_is_stale(self, data: dict, hours: int = 8) -> bool:
+        if data.get("_watchlist_only"):
+            return True
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        timestamps = []
+        for item in data.get("news_items", []):
+            if item.published_at:
+                timestamps.append(item.published_at)
+        for item in data.get("social_posts", []):
+            if item.posted_at:
+                timestamps.append(item.posted_at)
+        if not timestamps:
+            return True
+        return max(timestamps) < cutoff
 
     async def _log_signal_skip(self, asset: str, reason: str, signal_data: dict, agg_data: dict, ta_result) -> None:
         async with AsyncSessionLocal() as db:

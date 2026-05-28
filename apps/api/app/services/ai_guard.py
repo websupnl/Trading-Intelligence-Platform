@@ -73,12 +73,29 @@ async def pause_ai(source: str, exc: Exception, *, minutes: int | None = None) -
     minutes = minutes or pause_minutes_for_error(exc)
     until = _now() + timedelta(minutes=minutes)
     reason = str(exc)[:900]
+    await _set_ai_pause(source, reason, until, minutes, status="error", notify=True)
+
+
+async def manual_pause_ai(source: str, reason: str, *, minutes: int = 360) -> None:
+    until = _now() + timedelta(minutes=minutes)
+    await _set_ai_pause(source, reason[:900], until, minutes, status="skipped", notify=False)
+
+
+async def _set_ai_pause(
+    source: str,
+    reason: str,
+    until: datetime,
+    minutes: int,
+    *,
+    status: str,
+    notify: bool,
+) -> None:
     set_runtime_value(PAUSE_KEY, until.isoformat())
     set_runtime_value(REASON_KEY, reason)
 
     logger.error("AI provider paused by %s until %s: %s", source, until.isoformat(), reason)
 
-    should_alert = True
+    should_alert = notify
     last_alert = _parse_dt(get_runtime_value(LAST_ALERT_KEY, None))
     if last_alert and (_now() - last_alert) < timedelta(minutes=55):
         should_alert = False
@@ -90,7 +107,7 @@ async def pause_ai(source: str, exc: Exception, *, minutes: int | None = None) -
             entity_type="ai_provider",
             entity_id="anthropic",
             details={"until": until.isoformat(), "minutes": minutes, "reason": reason},
-            status="error",
+            status=status,
             message=reason[:500],
             created_at=_now(),
             updated_at=_now(),

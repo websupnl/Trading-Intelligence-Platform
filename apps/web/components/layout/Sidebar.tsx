@@ -45,6 +45,7 @@ export function Sidebar() {
   const { data: botHealth } = useApi(() => api.getBotHealth(), []);
 
   const marketSession = status?.market_session || botHealth?.market_session;
+  const aiPaused = !!botHealth?.ai_guard?.paused;
   const blockers: string[] = botHealth?.blockers ?? [];
   const autoBlocked = blockers.length > 0 || !!status?.require_manual_confirmation || !!status?.kill_switch_enabled;
 
@@ -73,6 +74,15 @@ export function Sidebar() {
               </span>
               <span className={cn('font-medium', autoBlocked ? 'text-amber-700' : 'text-green-700')}>
                 {autoBlocked ? 'Uit' : 'Klaar'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 px-2 py-1.5">
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Brain size={12} />
+                AI
+              </span>
+              <span className={cn('font-medium', aiPaused ? 'text-red-700' : 'text-green-700')}>
+                {aiPaused ? 'Stop' : 'Actief'}
               </span>
             </div>
           </div>
