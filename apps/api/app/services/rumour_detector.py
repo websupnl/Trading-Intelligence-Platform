@@ -193,11 +193,13 @@ class RumourDetectorService:
         return {"is_rumour": False}
 
     async def _rumour_exists(self, asset: str) -> bool:
+        from sqlalchemy import cast, func
+        from sqlalchemy.dialects.postgresql import JSONB
         since = datetime.now(timezone.utc) - timedelta(hours=24)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(Rumour).where(
-                    Rumour.related_assets.contains([asset]),
+                    cast(Rumour.related_assets, JSONB).contains([asset]),
                     Rumour.created_at >= since,
                     Rumour.status == "active",
                 ).limit(1)
