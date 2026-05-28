@@ -41,7 +41,7 @@ def detect_rumours():
 @celery_app.task(name="app.tasks.analysis_tasks.fetch_market_data")
 def fetch_market_data():
     """Fetch market data for tickers. Crypto runs 24/7; stocks only during market hours."""
-    from app.services.alpaca_broker import CRYPTO_SYMBOLS as _CRYPTO
+    from app.services.alpaca_broker import CRYPTO_SYMBOLS as _CRYPTO, is_crypto
     market_open = _us_market_open()
     from app.services.market_data_service import MarketDataService
     from app.database import AsyncSessionLocal
@@ -53,7 +53,8 @@ def fetch_market_data():
     async def _run():
         from app.services.signal_generator import DEFAULT_WATCHLIST
         since = datetime.now(timezone.utc) - timedelta(hours=48)
-        tickers = set(DEFAULT_WATCHLIST)  # Always fetch for watchlist
+        ordered_tickers = sorted(DEFAULT_WATCHLIST) + sorted(_CRYPTO)
+        tickers = set(ordered_tickers)  # Always fetch watchlist + crypto universe
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -64,6 +65,7 @@ def fetch_market_data():
             )
             for row in result.scalars():
                 tickers.update(row or [])
+                ordered_tickers.extend(row or [])
 
             result = await db.execute(
                 select(Signal.asset).where(Signal.created_at >= since - timedelta(days=30))
@@ -71,10 +73,20 @@ def fetch_market_data():
             for row in result.scalars():
                 if row:
                     tickers.add(row)
+                    ordered_tickers.append(row)
 
-        valid = [t for t in tickers if 2 <= len(t) <= 5][:30]
+        valid = []
+        seen = set()
+        for raw in ordered_tickers + sorted(tickers):
+            symbol = (raw or "").upper().split("/")[0]
+            if symbol in seen:
+                continue
+            if symbol in _CRYPTO or (2 <= len(symbol) <= 5 and symbol.isalnum()):
+                valid.append(symbol)
+                seen.add(symbol)
+
         if not market_open:
-            valid = [t for t in valid if t in _CRYPTO]
+            valid = [t for t in valid if is_crypto(t)]
         if not valid:
             return 0
 

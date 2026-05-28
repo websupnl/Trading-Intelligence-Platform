@@ -10,6 +10,10 @@ from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
 logger = logging.getLogger(__name__)
 
 
+def _chunks(items: list[str], size: int) -> list[list[str]]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
 def _normalize_symbol(symbol: str) -> str:
     """Strip '/USD' suffix from crypto symbols so they're stored as 'BTC' not 'BTC/USD'."""
     return symbol.split("/")[0].upper()
@@ -76,8 +80,16 @@ class MarketDataService:
             return 0
 
         # Split into stocks vs crypto — they use different Alpaca endpoints
-        crypto = [s.upper() for s in symbols if is_crypto(s)]
-        stocks = [s.upper() for s in symbols if not is_crypto(s)]
+        normalized = []
+        seen = set()
+        for raw in symbols:
+            symbol = _normalize_symbol(raw) if is_crypto(raw) else raw.upper()
+            if symbol and symbol not in seen:
+                normalized.append(symbol)
+                seen.add(symbol)
+
+        crypto = [s for s in normalized if s in CRYPTO_SYMBOLS]
+        stocks = [s for s in normalized if s not in CRYPTO_SYMBOLS]
         saved = 0
         # Alpaca can return only the latest grouped daily bar without an explicit
         # historical window. TA needs enough bars, so always request a lookback.
@@ -87,50 +99,52 @@ class MarketDataService:
         async with httpx.AsyncClient(timeout=30) as client:
             # ── Stocks ────────────────────────────────────────────────────────
             if stocks:
-                try:
-                    resp = await client.get(
-                        f"{self.settings.alpaca_data_url}/v2/stocks/bars",
-                        headers=self._data_headers(),
-                        params={
-                            "symbols": ",".join(stocks[:50]),
-                            "timeframe": timeframe,
-                            "limit": limit,
-                            "start": start.isoformat(),
-                            "end": end.isoformat(),
-                            "adjustment": "raw",
-                            "feed": "iex",
-                        },
-                    )
-                    if resp.status_code == 200:
-                        saved += await self._save_bars(resp.json().get("bars", {}), timeframe, normalize=False)
-                    else:
-                        logger.warning(f"Stocks market data error: {resp.status_code}")
-                except Exception as e:
-                    logger.error(f"Stocks fetch fout: {e}")
+                for batch in _chunks(stocks, 50):
+                    try:
+                        resp = await client.get(
+                            f"{self.settings.alpaca_data_url}/v2/stocks/bars",
+                            headers=self._data_headers(),
+                            params={
+                                "symbols": ",".join(batch),
+                                "timeframe": timeframe,
+                                "limit": limit,
+                                "start": start.isoformat(),
+                                "end": end.isoformat(),
+                                "adjustment": "raw",
+                                "feed": "iex",
+                            },
+                        )
+                        if resp.status_code == 200:
+                            saved += await self._save_bars(resp.json().get("bars", {}), timeframe, normalize=False)
+                        else:
+                            logger.warning(f"Stocks market data error: {resp.status_code} — {resp.text[:200]}")
+                    except Exception as e:
+                        logger.error(f"Stocks fetch fout: {e}")
 
             # ── Crypto ────────────────────────────────────────────────────────
             if crypto:
-                # Alpaca crypto endpoint uses "BTC/USD" format
+                # Alpaca crypto market data uses v1beta3 with a location segment.
                 crypto_pairs = [f"{s}/USD" for s in crypto]
-                try:
-                    resp = await client.get(
-                        f"{self.settings.alpaca_data_url}/v2/crypto/bars",
-                        headers=self._data_headers(),
-                        params={
-                            "symbols": ",".join(crypto_pairs[:50]),
-                            "timeframe": timeframe,
-                            "limit": limit,
-                            "start": start.isoformat(),
-                            "end": end.isoformat(),
-                        },
-                    )
-                    if resp.status_code == 200:
-                        # normalize=True strips '/USD' so stored as 'BTC', 'ETH', etc.
-                        saved += await self._save_bars(resp.json().get("bars", {}), timeframe, normalize=True)
-                    else:
-                        logger.warning(f"Crypto market data error: {resp.status_code} — {resp.text[:200]}")
-                except Exception as e:
-                    logger.error(f"Crypto fetch fout: {e}")
+                for batch in _chunks(crypto_pairs, 50):
+                    try:
+                        resp = await client.get(
+                            f"{self.settings.alpaca_data_url}/v1beta3/crypto/us/bars",
+                            headers=self._data_headers(),
+                            params={
+                                "symbols": ",".join(batch),
+                                "timeframe": timeframe,
+                                "limit": limit,
+                                "start": start.isoformat(),
+                                "end": end.isoformat(),
+                            },
+                        )
+                        if resp.status_code == 200:
+                            # normalize=True strips '/USD' so stored as 'BTC', 'ETH', etc.
+                            saved += await self._save_bars(resp.json().get("bars", {}), timeframe, normalize=True)
+                        else:
+                            logger.warning(f"Crypto market data error: {resp.status_code} — {resp.text[:200]}")
+                    except Exception as e:
+                        logger.error(f"Crypto fetch fout: {e}")
 
         return saved
 
@@ -154,7 +168,7 @@ class MarketDataService:
                 if is_crypto(symbol):
                     pair = f"{_normalize_symbol(symbol)}/USD"
                     resp = await client.get(
-                        f"{self.settings.alpaca_data_url}/v2/crypto/latest/bars",
+                        f"{self.settings.alpaca_data_url}/v1beta3/crypto/us/latest/bars",
                         headers=self._data_headers(),
                         params={"symbols": pair},
                     )
