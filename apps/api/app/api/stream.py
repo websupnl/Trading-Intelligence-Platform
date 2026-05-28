@@ -110,7 +110,7 @@ async def _get_pending_signals() -> list:
         return []
 
 
-async def _get_recent_activity(since_seconds: int = 30) -> list:
+async def _get_recent_activity(since_seconds: int = 30, limit: int = 10) -> list:
     """Get recent audit events (AI actions)."""
     try:
         since = datetime.now(timezone.utc) - timedelta(seconds=since_seconds)
@@ -119,7 +119,7 @@ async def _get_recent_activity(since_seconds: int = 30) -> list:
                 select(AuditLog)
                 .where(AuditLog.created_at >= since)
                 .order_by(desc(AuditLog.created_at))
-                .limit(5)
+                .limit(limit)
             )
             logs = result.scalars().all()
             return [
@@ -167,18 +167,18 @@ async def session_stream(symbols: list[str]) -> AsyncGenerator[str, None]:
     """
     Main SSE generator. Yields events every ~4 seconds.
     """
-    # Initial burst: send chart data for all symbols
-    for symbol in symbols[:3]:
-        candles = await _get_candles_for_chart(symbol)
+    # Initial burst: send sparkline candles for all symbols
+    for symbol in symbols:
+        candles = await _get_candles_for_chart(symbol, "1Day", 20)
         if candles:
             yield _event("chart_data", {"symbol": symbol, "candles": candles})
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.05)
 
     # Initial signals + activity
     signals = await _get_pending_signals()
     yield _event("signals", {"signals": signals})
 
-    activity = await _get_recent_activity(since_seconds=3600)
+    activity = await _get_recent_activity(since_seconds=3600, limit=30)
     if activity:
         yield _event("activity_batch", {"events": activity})
 
@@ -214,7 +214,7 @@ async def session_stream(symbols: list[str]) -> AsyncGenerator[str, None]:
 
             # Every 5 ticks (~20s): recent activity
             if tick % 5 == 0:
-                activity = await _get_recent_activity(since_seconds=25)
+                activity = await _get_recent_activity(since_seconds=25, limit=15)
                 if activity:
                     yield _event("activity_batch", {"events": activity})
 
@@ -224,12 +224,13 @@ async def session_stream(symbols: list[str]) -> AsyncGenerator[str, None]:
                 if portfolio:
                     yield _event("portfolio", portfolio)
 
-            # Every 15 ticks (~60s): refresh chart candles
+            # Every 15 ticks (~60s): refresh sparkline candles for all symbols
             if tick % 15 == 0:
-                for sym in symbols[:2]:
-                    candles = await _get_candles_for_chart(sym)
+                for sym in symbols:
+                    candles = await _get_candles_for_chart(sym, "1Day", 20)
                     if candles:
                         yield _event("chart_data", {"symbol": sym, "candles": candles})
+                    await asyncio.sleep(0.05)
 
             # Heartbeat
             yield _event("heartbeat", {"tick": tick})
@@ -245,10 +246,10 @@ async def session_stream(symbols: list[str]) -> AsyncGenerator[str, None]:
 
 @router.get("/session")
 async def live_session(
-    symbols: str = Query("AAPL,NVDA,TSLA", description="Komma-gescheiden symbolen"),
+    symbols: str = Query("BTC,ETH,SOL,DOGE,AVAX,LINK,LTC,BCH,UNI,AAVE,ALGO", description="Komma-gescheiden symbolen"),
 ):
     """SSE endpoint voor Live Session pagina."""
-    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:5]
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:15]
     if not symbol_list:
         symbol_list = ["AAPL"]
 
