@@ -63,6 +63,9 @@ export const api = {
   getPnlSummary: () => apiFetch('/api/trading/pnl-summary'),
   syncTrades: () => apiFetch('/api/trading/sync-trades', { method: 'POST' }),
 
+  // ── System ──────────────────────────────────────────────────────────────
+  resetTradeData: () => apiFetch('/api/system/reset-trade-data', { method: 'POST' }),
+
   // ── Risk ────────────────────────────────────────────────────────────────
   getRiskStatus: () => apiFetch('/api/risk/status'),
   checkRisk: (data: any) => apiFetch('/api/risk/check', { method: 'POST', body: JSON.stringify(data) }),

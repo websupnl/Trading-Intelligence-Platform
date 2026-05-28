@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, select, or_, func
+from sqlalchemy import desc, select, or_, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -79,6 +79,42 @@ async def get_activity(limit: int = Query(100, ge=1, le=500), db: AsyncSession =
         events.append({"kind": "notification", "type": item.event_type, "severity": item.severity, "title": item.title, "message": item.message, "created_at": item.created_at})
     events.sort(key=lambda x: x["created_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     return events[:limit]
+
+
+_RESET_TABLES = [
+    "signal_outcomes", "orders", "trades", "signals", "positions",
+    "notifications", "risk_events", "audit_logs", "ai_agent_runs",
+    "strategy_performance", "token_usage",
+]
+
+
+@router.post("/reset-trade-data")
+async def reset_trade_data(db: AsyncSession = Depends(get_db)):
+    """Wis alle trade/signal data voor een schone teststart. Bewaart news, candles, memory."""
+    deleted = {}
+    for table in _RESET_TABLES:
+        try:
+            result = await db.execute(text(f"DELETE FROM {table}"))
+            deleted[table] = result.rowcount
+        except Exception as e:
+            deleted[table] = f"error: {e}"
+    for table in _RESET_TABLES:
+        try:
+            await db.execute(text(f"ALTER SEQUENCE IF EXISTS {table}_id_seq RESTART WITH 1"))
+        except Exception:
+            pass
+    await db.commit()
+    db.add(AuditLog(
+        action="trade_data_reset",
+        actor="user",
+        entity_type="system",
+        status="success",
+        message="Trade data gewist voor schone teststart",
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    ))
+    await db.commit()
+    return {"status": "ok", "deleted": deleted}
 
 
 @router.get("/summary")

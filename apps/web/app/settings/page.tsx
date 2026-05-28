@@ -45,7 +45,22 @@ export default function SettingsPage() {
   const { data: settings, loading, reload } = useApi(() => api.getSettings(), []);
   const { data: risk } = useApi(() => api.getRiskStatus(), []);
   const [saving, setSaving] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
   const { toast } = useToast();
+
+  async function handleResetTradeData() {
+    if (!confirm('Weet je zeker dat je alle trade- en signaaldata wilt wissen? Dit kan niet ongedaan worden gemaakt.\n\nNews, candles en memory blijven bewaard.')) return;
+    setResetting(true);
+    try {
+      const result = await api.resetTradeData();
+      toast('✅ Trade data gewist — schone lei', 'success');
+      reload();
+    } catch (e: any) {
+      toast(`❌ ${e?.detail || 'Reset mislukt'}`, 'error');
+    } finally {
+      setResetting(false);
+    }
+  }
 
   async function toggle(key: string, current: boolean) {
     setSaving(key);
@@ -161,7 +176,7 @@ export default function SettingsPage() {
                     ['Max Positiegrootte', `$${risk.max_position_size_usd?.toLocaleString()}`],
                     ['Max Trades/Dag', String(risk.max_trades_per_day)],
                     ['Max Open Posities', String(risk.max_open_positions)],
-                    ['Auto Trade Threshold', `${(risk.auto_trade_threshold * 100).toFixed(0)}% confidence`],
+                    ['Auto Trade Threshold', risk.auto_trade_threshold != null ? `${(risk.auto_trade_threshold * 100).toFixed(0)}% confidence` : `${(risk.min_confidence_for_auto * 100 || 60).toFixed(0)}% confidence`],
                   ].map(([label, value]) => (
                     <div key={label} className="flex justify-between text-sm border-b border-border last:border-0 py-2">
                       <span className="text-muted-foreground">{label}</span>
@@ -202,6 +217,31 @@ export default function SettingsPage() {
           </Card>
         </div>
       )}
+
+      {/* Gevaarzone */}
+      <Card className="border-red-500/30">
+        <CardHeader><CardTitle className="text-red-400">⚠️ Gevaarzone</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Trade data wissen</p>
+              <p className="text-xs text-muted-foreground">Wist trades, signals, orders, posities en audit logs. News, candles en memory blijven bewaard.</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-red-500/50 text-red-400 hover:bg-red-500/10 shrink-0"
+              onClick={handleResetTradeData}
+              disabled={resetting}
+            >
+              {resetting ? '⏳ Wissen...' : '🗑️ Reset Trade Data'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Reset ook je Alpaca paper account via <span className="font-mono">paper.alpaca.markets</span> → Account → Reset om open posities te sluiten.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
