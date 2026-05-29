@@ -125,6 +125,86 @@
 
 ---
 
+## 🔥 Volgende sessie — Stap 1: Crypto Live Micro-Trading
+
+### Doel
+De gebruiker kan een live sessie starten met een vast budget en de bot handelt continu en agressief terwijl je meekijkt.
+
+### Wat bouwen
+- [ ] **Signaal frequentie omhoog tijdens actieve sessie**: elke 2 min i.p.v. 5 min
+- [ ] **Confidence drempel naar 50%** voor crypto 24/7 mode (nu 55%) — meer gokkend, meer leren
+- [ ] **Micro-trade sizing**: budget per sessie instellen (bijv. $100), max per trade automatisch = budget / max_trades (bijv. $100 / 10 = $10/trade)
+- [ ] **Sessie budget UI**: slider of invoer voor totaalbudget per sessie op Crypto Sessie pagina
+- [ ] **Live P&L teller**: running total tijdens sessie, hoeveel trades open, hoeveel gesloten
+- [ ] **Auto-stop bij verlies**: sessie stopt automatisch als budget voor X% verloren (bijv. -20%)
+- [ ] **Snellere signal generator in crypto mode**: watchlist versmallen naar top 5 meest actieve coins, minder tokens, snellere cyclus
+
+---
+
+## 🚀 Volgende sessie — Stap 2: Polymarket Voorspellingsmarkt Pagina
+
+### Doel & visie
+Een volledig nieuwe pagina in de Trading OS waarop de AI automatisch handelt op **Polymarket voorspellingsmarkten** — met name snel aflopende crypto markten (5-min, 15-min, uur). De AI vergelijkt zijn eigen inschatting van de kans met de marktprijs. Als de markt onderprijs heeft (bijv. markt zegt 40% kans op BTC stijging, AI denkt 65%) → koop YES tokens. Als overprijs → koop NO tokens. Dit is puur kansarbitrage met AI als voorsprong.
+
+### Hoe Polymarket werkt (technisch)
+- **Platform**: gedecentraliseerde voorspellingsmarkt op Polygon blockchain
+- **Tokens**: YES/NO shares, prijs tussen $0.00 en $1.00 = implied probability
+- **Collateral**: pUSD (USDC op Polygon, 1:1 backed)
+- **Resolutie**: UMA oracle, automatisch na afloop
+- **Winstmodel**: koop YES @ $0.40 → event treedt in → win $1.00 per share (150% rendement)
+- **5-min markten**: "Wordt BTC hoger dan $X om 14:05?" — spawnt cyclisch, ideaal voor AI
+
+### Wat de AI doet
+1. **Markt discovery**: haalt elke 5 min actieve markten op via Gamma API (gefilterd op: crypto, aflooptijd < 2u, volume > $1000)
+2. **Kansanalyse**: Claude analyseert voor elke markt: huidige prijs, recent nieuws, TA (RSI/MACD/trend), momentum → geeft eigen kansinschatting (0-100%)
+3. **Edge detectie**: als eigen inschatting > marktprijs + drempel (bijv. 10% verschil) → er is een edge → order plaatsen
+4. **Order**: koop YES of NO shares via CLOB API voor een vast bedrag (bijv. $5-25 per trade)
+5. **Positie tracking**: open posities tonen met huidige marktwaarde en winst/verlies
+6. **Auto-resolutie**: na afloop resoluteert Polymarket automatisch, winnende shares = $1.00
+
+### Technische stack
+- **Backend services**:
+  - `polymarket_service.py`: markt discovery (Gamma API), prijzen ophalen (CLOB API), orders plaatsen
+  - `polymarket_analyzer.py`: Claude analyseert markt + geeft kansinschatting
+  - `polymarket_tasks.py`: Celery task elke 5 min — scan markten, analyseer, handel bij edge
+  - Wallet management: Polygon EOA private key in `.env`, pUSD balance checken
+- **Database**: nieuwe tabel `polymarket_positions` (condition_id, token_id, side, shares, avg_price, status, pnl)
+- **API endpoints**:
+  - `GET /api/polymarket/markets` — actieve markten met AI kans + markt kans
+  - `GET /api/polymarket/positions` — open posities
+  - `POST /api/polymarket/trade` — handmatig traden
+  - `GET /api/polymarket/history` — gesloten posities + P&L
+- **Frontend pagina `/polymarket`**:
+  - Live overzicht actieve markten: vraag, aflooptijd, marktprijs (implied %), AI inschatting (%), edge (verschil), volume
+  - Kleurcodering: groen = AI denkt YES hogere kans dan markt, rood = NO kans onderschat
+  - Open posities met live waarde (Polymarket WebSocket voor real-time prijzen)
+  - Trade knoppen: handmatig YES/NO kopen per markt
+  - Sessie controls: auto-trading aan/uit, max budget, min edge drempel
+  - P&L overzicht: gerealiseerd + ongerealiseerd
+  - AI reasoning: uitklapbaar per markt — waarom denkt de AI X%?
+
+### Wat je nodig hebt om te starten
+1. **Polygon wallet**: genereer een nieuw EOA wallet (MetaMask of `eth_account` Python)
+2. **pUSD**: koop USDC, bridge naar Polygon via Polymarket onramp (min ~$30)
+3. **Env vars**: `POLYMARKET_PRIVATE_KEY`, `POLYMARKET_FUNDER_ADDRESS`, `POLYGON_RPC_URL`
+4. **Installatie**: `pip install py-clob-client-v2 web3`
+
+### Verwacht resultaat
+- Real-time dashboard met 10-20 actieve markten
+- AI handelt automatisch wanneer edge > drempel
+- Per sessie $50-200 inzetten op 5-15 markten
+- Leermoment: zie precies waar AI goed/fout zit in kansberekening
+- Potentieel: 5-min crypto markten zijn notoir mispriced rond volatiele momenten
+
+### Volgorde implementatie
+1. Polymarket service + wallet setup (1 sessie)
+2. AI analyzer + edge detectie (1 sessie)  
+3. Celery task + DB model (1 sessie)
+4. Frontend pagina (1-2 sessies)
+5. Testing met kleine bedragen ($1-5 per trade)
+
+---
+
 ## 🟡 Prioriteit 2 — Functionaliteit
 
 ### 5. Watchlist beheer
