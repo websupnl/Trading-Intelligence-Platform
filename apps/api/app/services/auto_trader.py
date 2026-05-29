@@ -347,13 +347,17 @@ class AutoTraderService:
                 if isinstance(order, dict):
                     fill_price = float(order.get("filled_avg_price") or order.get("limit_price") or 0) or None
 
-                fill_qty = float(order.get("qty") or 0) if isinstance(order, dict) else 0
+                # filled_qty = daadwerkelijk gevulde hoeveelheid (kan 0 zijn vlak na order)
+                fill_qty = float(order.get("filled_qty") or order.get("qty") or 0) if isinstance(order, dict) else 0
+                # Voor notional orders: sla coins op, niet dollars (anders toont portfolio $40k voor $20 ETH order)
+                if fill_qty == 0 and order_notional and signal.suggested_entry:
+                    fill_qty = round(float(order_notional) / float(signal.suggested_entry), 8)
                 trade = Trade(
                     signal_id=signal.id,
                     alpaca_order_id=alpaca_id,
                     symbol=signal.asset,
                     side=signal.direction,
-                    quantity=fill_qty or order_qty or notional,
+                    quantity=fill_qty or order_qty or order_notional,
                     entry_price=fill_price or signal.suggested_entry,
                     stop_loss=signal.suggested_stop,
                     take_profit=signal.suggested_take_profit,

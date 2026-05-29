@@ -122,6 +122,7 @@ export default function PortfolioPage() {
   const equityChange = useMemo(() => {
     if (equityData.length < 2) return null;
     const first = equityData[0].equity, last = equityData[equityData.length - 1].equity;
+    if (!first) return null;
     return { abs: last - first, pct: ((last - first) / first) * 100 };
   }, [equityData]);
 

@@ -503,12 +503,11 @@ export default function CryptoPage() {
 
   const handleSignals = useCallback((data: Record<string, unknown>) => {
     const sigs = data.signals as SignalData[];
-    if (Array.isArray(sigs)) {
-      const cryptoSigs = sigs.filter(s =>
-        CRYPTO_SYMBOLS.some(k => (s.asset ?? '').toUpperCase().includes(k))
-      );
-      setSignals(cryptoSigs);
-    }
+    if (!Array.isArray(sigs) || sigs.length === 0) return;
+    const cryptoSigs = sigs.filter(s =>
+      CRYPTO_SYMBOLS.some(k => (s.asset ?? '').toUpperCase().includes(k))
+    );
+    if (cryptoSigs.length > 0) setSignals(cryptoSigs);
   }, []);
 
   const handleNewSignal = useCallback((data: Record<string, unknown>) => {
