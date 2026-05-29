@@ -1,25 +1,47 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import {
-  createChart, IChartApi, CandlestickData, Time, SeriesMarker,
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  CandlestickData,
+  Time,
+  SeriesMarker,
 } from 'lightweight-charts';
 
-interface OHLCVCandle { time: number; open: number; high: number; low: number; close: number; volume: number; }
-interface ChartSignal { time: number; direction: 'long' | 'short'; symbol: string; }
+interface OHLCVCandle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
 
-interface Props {
+interface ChartSignal {
+  time: number;
+  direction: 'long' | 'short';
+  symbol: string;
+}
+
+interface CandlestickChartProps {
   candles: OHLCVCandle[];
-  signals?: ChartSignal[];
+  signals: ChartSignal[];
+  /** Override height in px. Defaults to filling parent container. */
   height?: number;
 }
 
-export function CandlestickChart({ candles, signals = [], height = 380 }: Props) {
+export function CandlestickChart({ candles, signals, height }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candleRef = useRef<any>(null);
-  const emaRef = useRef<any>(null);
-  const volRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const candleSeriesRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const emaSeriesRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const volumeSeriesRef = useRef<any>(null);
 
+  // Create chart once
   useEffect(() => {
     if (!containerRef.current || chartRef.current) return;
 
@@ -57,6 +79,7 @@ export function CandlestickChart({ candles, signals = [], height = 380 }: Props)
 
     chartRef.current = chart;
 
+    // Candlestick series (v4 API)
     const candleSeries = chart.addCandlestickSeries({
       upColor: '#22c55e',
       downColor: '#ef4444',
@@ -64,8 +87,9 @@ export function CandlestickChart({ candles, signals = [], height = 380 }: Props)
       wickUpColor: '#22c55e',
       wickDownColor: '#ef4444',
     });
-    candleRef.current = candleSeries;
+    candleSeriesRef.current = candleSeries;
 
+    // EMA-20 line
     const emaSeries = chart.addLineSeries({
       color: 'rgba(251,191,36,0.7)',
       lineWidth: 1,
@@ -73,19 +97,26 @@ export function CandlestickChart({ candles, signals = [], height = 380 }: Props)
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
-    emaRef.current = emaSeries;
+    emaSeriesRef.current = emaSeries;
 
+    // Volume histogram (lower pane via price scale)
     const volSeries = chart.addHistogramSeries({
       color: 'rgba(100,116,139,0.3)',
       priceScaleId: 'vol',
       priceFormat: { type: 'volume' },
     });
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    volRef.current = volSeries;
+    chart.priceScale('vol').applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+    });
+    volumeSeriesRef.current = volSeries;
 
+    // Resize observer
     const ro = new ResizeObserver(() => {
       if (containerRef.current && chartRef.current) {
-        chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+        chartRef.current.resize(
+          containerRef.current.clientWidth,
+          containerRef.current.clientHeight
+        );
       }
     });
     ro.observe(containerRef.current);
@@ -94,60 +125,75 @@ export function CandlestickChart({ candles, signals = [], height = 380 }: Props)
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
-      candleRef.current = null;
-      emaRef.current = null;
-      volRef.current = null;
+      candleSeriesRef.current = null;
+      emaSeriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
   }, []);
 
+  // Update candles & EMA when data changes
   useEffect(() => {
-    if (!candleRef.current || !candles.length) return;
+    if (!candleSeriesRef.current || !candles.length) return;
+
     const sorted = [...candles].sort((a, b) => a.time - b.time);
 
-    candleRef.current.setData(
-      sorted.map(c => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }))
-    );
+    const ohlcv: CandlestickData[] = sorted.map((c) => ({
+      time: c.time as Time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+    candleSeriesRef.current.setData(ohlcv);
 
-    if (volRef.current) {
-      volRef.current.setData(sorted.map(c => ({
-        time: c.time as Time,
-        value: c.volume,
-        color: c.close >= c.open ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)',
-      })));
+    // Volume
+    if (volumeSeriesRef.current) {
+      volumeSeriesRef.current.setData(
+        sorted.map((c) => ({
+          time: c.time as Time,
+          value: c.volume,
+          color: c.close >= c.open ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)',
+        }))
+      );
     }
 
-    if (emaRef.current && sorted.length >= 2) {
+    // Calculate EMA-20
+    if (emaSeriesRef.current && sorted.length >= 2) {
       const k = 2 / (20 + 1);
       let ema = sorted[0].close;
-      emaRef.current.setData(sorted.map(c => {
+      const emaData = sorted.map((c) => {
         ema = c.close * k + ema * (1 - k);
         return { time: c.time as Time, value: Math.round(ema * 100) / 100 };
-      }));
+      });
+      emaSeriesRef.current.setData(emaData);
     }
 
     chartRef.current?.timeScale().fitContent();
   }, [candles]);
 
+  // Update signal markers
   useEffect(() => {
-    if (!candleRef.current) return;
+    if (!candleSeriesRef.current) return;
+
     const markers: SeriesMarker<Time>[] = signals
       .sort((a, b) => a.time - b.time)
-      .map(s => ({
+      .map((s) => ({
         time: s.time as Time,
         position: s.direction === 'long' ? 'belowBar' : 'aboveBar',
         color: s.direction === 'long' ? '#22c55e' : '#ef4444',
         shape: s.direction === 'long' ? 'arrowUp' : 'arrowDown',
-        text: s.direction === 'long' ? '▲ BUY' : '▼ SELL',
-        size: 1,
+        text: s.direction === 'long' ? 'BUY' : 'SELL',
+        size: 1.5,
       }));
-    candleRef.current.setMarkers(markers);
+
+    candleSeriesRef.current.setMarkers(markers);
   }, [signals]);
 
   return (
     <div
       ref={containerRef}
-      style={{ width: '100%', height: `${height}px` }}
-      className="rounded-lg overflow-hidden"
+      style={{ width: '100%', height: height != null ? `${height}px` : '100%' }}
+      className="rounded overflow-hidden"
     />
   );
 }

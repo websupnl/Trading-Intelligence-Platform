@@ -73,12 +73,6 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
-    # Polymarket (data-only — geen trading, alleen marktintelligentie)
-    polymarket_api_key: str = ""
-    polymarket_secret: str = ""
-    polymarket_passphrase: str = ""
-    polymarket_min_edge: float = 0.10  # alert drempel voor UI highlight
-
     # Feeds
     news_feeds: str = ""
     crypto_news_feeds: str = ""

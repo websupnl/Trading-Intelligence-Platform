@@ -13,10 +13,8 @@ DEFAULT_SESSION = {
     "started_at": None,
     "expires_at": None,
     "duration_minutes": 0,
-    "session_budget": 0.0,
     "max_notional_per_trade": 0.0,
     "max_trades": 0,
-    "stop_loss_pct": 0.20,
     "note": None,
 }
 
@@ -49,27 +47,22 @@ def get_crypto_session() -> dict[str, Any]:
 
 def start_crypto_session(
     duration_minutes: int = 120,
-    session_budget: float = 100.0,
-    max_trades: int = 10,
-    stop_loss_pct: float = 0.20,
+    max_notional_per_trade: float = 250.0,
+    max_trades: int = 5,
     note: str | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     duration = max(15, min(int(duration_minutes), 480))
-    budget = max(10.0, min(float(session_budget), 10000.0))
-    trades = max(1, min(int(max_trades), 50))
-    stop_pct = max(0.05, min(float(stop_loss_pct), 0.80))
-    notional_per_trade = round(budget / trades, 2)
+    notional = max(25.0, min(float(max_notional_per_trade), 2500.0))
+    trades = max(1, min(int(max_trades), 25))
     session = {
         "active": True,
         "session_id": uuid4().hex,
         "started_at": now.isoformat(),
         "expires_at": (now + timedelta(minutes=duration)).isoformat(),
         "duration_minutes": duration,
-        "session_budget": budget,
-        "max_notional_per_trade": notional_per_trade,
+        "max_notional_per_trade": notional,
         "max_trades": trades,
-        "stop_loss_pct": stop_pct,
         "note": note,
         "stop_reason": None,
     }

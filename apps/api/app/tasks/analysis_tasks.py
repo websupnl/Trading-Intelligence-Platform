@@ -91,11 +91,7 @@ def fetch_market_data():
             return 0
 
         svc = MarketDataService()
-        daily_count = await svc.fetch_bars(valid, "1Day", 60)
-        # Also fetch 1H bars for crypto — gives fresh RSI/MACD for intraday signals
-        crypto_symbols = [s for s in valid if is_crypto(s)]
-        hourly_count = await svc.fetch_bars(crypto_symbols, "1Hour", 72) if crypto_symbols else 0
-        return daily_count + hourly_count
+        return await svc.fetch_bars(valid, "1Day", 60)
 
     try:
         count = asyncio.run(_run())

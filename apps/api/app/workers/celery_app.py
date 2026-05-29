@@ -13,7 +13,6 @@ celery_app = Celery(
         "app.tasks.signal_tasks",
         "app.tasks.social_tasks",
         "app.tasks.analysis_tasks",
-        "app.tasks.polymarket_tasks",
     ],
 )
 
@@ -63,11 +62,6 @@ celery_app.conf.update(
             "task": "app.tasks.signal_tasks.generate_signals",
             "schedule": 300.0,
         },
-        # Every 2 min: fast signal cycle — only runs during active timed crypto session
-        "generate-signals-crypto-fast-every-2min": {
-            "task": "app.tasks.signal_tasks.generate_signals_crypto_fast",
-            "schedule": 120.0,
-        },
         # Every 2 min: fallback sweep for any unexecuted pending signals
         "auto-trade-every-2min": {
             "task": "app.tasks.analysis_tasks.auto_trade",
@@ -90,18 +84,6 @@ celery_app.conf.update(
         "daily-summary-after-close": {
             "task": "app.tasks.analysis_tasks.send_activity_summary",
             "schedule": crontab(hour=21, minute=30),
-        },
-
-        # === POLYMARKET (data-only intelligence) ===
-        # Fetch + cache crypto markets every 5 min for signal enrichment
-        "polymarket-fetch-every-5min": {
-            "task": "app.tasks.polymarket_tasks.fetch_polymarket_data",
-            "schedule": 300.0,
-        },
-        # Update open simulated position prices every 15 min
-        "polymarket-update-prices-every-15min": {
-            "task": "app.tasks.polymarket_tasks.update_position_prices",
-            "schedule": 900.0,
         },
     },
 )

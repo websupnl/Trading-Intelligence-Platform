@@ -134,19 +134,6 @@ export const api = {
   startCryptoSession: (data: any) => apiFetch('/api/crypto-session/start', { method: 'POST', body: JSON.stringify(data) }),
   stopCryptoSession: () => apiFetch('/api/crypto-session/stop', { method: 'POST' }),
 
-  // ── Polymarket ──────────────────────────────────────────────────────────
-  getPolymarkets: (cryptoOnly = true, maxHours = 24, minVolume = 500, withAnalysis = false) =>
-    apiFetch(`/api/polymarket/markets?crypto_only=${cryptoOnly}&max_hours=${maxHours}&min_volume=${minVolume}&with_analysis=${withAnalysis}`),
-  analyzePolymarket: (conditionId: string, marketData: any) =>
-    apiFetch(`/api/polymarket/analyze/${conditionId}`, { method: 'POST', body: JSON.stringify(marketData) }),
-  polymarketTrade: (data: any) => apiFetch('/api/polymarket/trade', { method: 'POST', body: JSON.stringify(data) }),
-  getPolyPositions: () => apiFetch('/api/polymarket/positions'),
-  getPolyHistory: (limit = 30) => apiFetch(`/api/polymarket/history?limit=${limit}`),
-  closePolyPosition: (id: string) => apiFetch(`/api/polymarket/positions/${id}/close`, { method: 'POST' }),
-  getPolySettings: () => apiFetch('/api/polymarket/settings'),
-  updatePolySettings: (data: any) => apiFetch('/api/polymarket/settings', { method: 'PATCH', body: JSON.stringify(data) }),
-  triggerPolyScan: () => apiFetch('/api/polymarket/scan', { method: 'POST' }),
-
   // ── Chat (SSE) ───────────────────────────────────────────────────────────
   chatStream: async (messages: {role: string; content: string}[], context?: string): Promise<Response> => {
     const pin = getPin();

@@ -312,15 +312,13 @@ function ActivityFeed({ events, connected, tick }: { events: ActivityEvent[]; co
 
 function SessionControls({ session, settings: cfg, botHealth, onToggle24_7, onStart, onStop, busy }: {
   session: any; settings: any; botHealth: any;
-  onToggle24_7: () => void; onStart: (d: number, budget: number, t: number, stopLoss: number) => void; onStop: () => void;
+  onToggle24_7: () => void; onStart: (d: number, n: number, t: number) => void; onStop: () => void;
   busy: string | null;
 }) {
   const [duration, setDuration] = useState(120);
-  const [budget, setBudget] = useState(100);
-  const [maxTrades, setMaxTrades] = useState(10);
-  const [stopLoss, setStopLoss] = useState(20);
+  const [notional, setNotional] = useState(250);
+  const [maxTrades, setMaxTrades] = useState(5);
   const [expanded, setExpanded] = useState(false);
-  const perTrade = budget > 0 && maxTrades > 0 ? (budget / maxTrades).toFixed(2) : '0.00';
 
   const active = !!session?.active;
   const crypto24_7 = !!(cfg?.crypto_24_7_enabled ?? session?.crypto_24_7_enabled);
@@ -360,7 +358,7 @@ function SessionControls({ session, settings: cfg, botHealth, onToggle24_7, onSt
         {crypto24_7 && (
           <p className="mt-2 text-[10px] text-green-600 font-mono flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            Signalen ≥ 50% confidence worden automatisch uitgevoerd
+            Signalen ≥ 55% confidence worden automatisch uitgevoerd
           </p>
         )}
       </div>
@@ -381,7 +379,7 @@ function SessionControls({ session, settings: cfg, botHealth, onToggle24_7, onSt
 
         {expanded && (
           <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <label className="text-[11px]">
                 <span className="text-muted-foreground block mb-1">Duur</span>
                 <select value={duration} onChange={e => setDuration(+e.target.value)} className="w-full h-8 rounded-md border border-border bg-card px-2 text-xs">
@@ -392,53 +390,23 @@ function SessionControls({ session, settings: cfg, botHealth, onToggle24_7, onSt
                 </select>
               </label>
               <label className="text-[11px]">
-                <span className="text-muted-foreground block mb-1">Sessie budget ($)</span>
-                <input type="number" min={10} max={10000} step={10} value={budget} onChange={e => setBudget(+e.target.value)}
+                <span className="text-muted-foreground block mb-1">$/Trade</span>
+                <input type="number" min={25} max={2500} value={notional} onChange={e => setNotional(+e.target.value)}
                   className="w-full h-8 rounded-md border border-border bg-card px-2 text-xs" />
               </label>
               <label className="text-[11px]">
-                <span className="text-muted-foreground block mb-1">Max trades</span>
-                <input type="number" min={1} max={50} value={maxTrades} onChange={e => setMaxTrades(+e.target.value)}
-                  className="w-full h-8 rounded-md border border-border bg-card px-2 text-xs" />
-              </label>
-              <label className="text-[11px]">
-                <span className="text-muted-foreground block mb-1">Stop-loss (%)</span>
-                <input type="number" min={5} max={80} step={5} value={stopLoss} onChange={e => setStopLoss(+e.target.value)}
+                <span className="text-muted-foreground block mb-1">Trades</span>
+                <input type="number" min={1} max={25} value={maxTrades} onChange={e => setMaxTrades(+e.target.value)}
                   className="w-full h-8 rounded-md border border-border bg-card px-2 text-xs" />
               </label>
             </div>
-            <div className="flex items-center justify-between text-[10px] font-mono bg-muted/30 rounded-lg px-3 py-2">
-              <span className="text-muted-foreground">Per trade</span>
-              <span className="font-bold text-amber-400">${perTrade}</span>
-              <span className="text-muted-foreground">Auto-stop bij</span>
-              <span className="font-bold text-red-400">-${(budget * stopLoss / 100).toFixed(2)}</span>
-            </div>
-            {/* Live session stats when active */}
-            {active && (
-              <div className="grid grid-cols-3 gap-1 text-[10px] font-mono">
-                <div className="bg-muted/30 rounded px-2 py-1.5 text-center">
-                  <p className="text-muted-foreground text-[9px]">Open</p>
-                  <p className="font-bold">{session?.trades_open ?? 0}</p>
-                </div>
-                <div className="bg-muted/30 rounded px-2 py-1.5 text-center">
-                  <p className="text-muted-foreground text-[9px]">Gesloten</p>
-                  <p className="font-bold">{session?.trades_closed ?? 0}</p>
-                </div>
-                <div className={cn('rounded px-2 py-1.5 text-center', (session?.realized_pnl ?? 0) >= 0 ? 'bg-green-500/10' : 'bg-red-500/10')}>
-                  <p className="text-muted-foreground text-[9px]">P&L</p>
-                  <p className={cn('font-bold tabular-nums', (session?.realized_pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-400')}>
-                    {(session?.realized_pnl ?? 0) >= 0 ? '+' : ''}${(session?.realized_pnl ?? 0).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            )}
             {blockers.length > 0 && (
               <div className="text-[10px] text-amber-500 bg-amber-500/5 border border-amber-500/20 rounded-lg px-3 py-2">
                 {blockers.map((b, i) => <p key={i}>{b}</p>)}
               </div>
             )}
             <div className="flex gap-2">
-              <Button size="sm" className="flex-1 gap-1.5" onClick={() => onStart(duration, budget, maxTrades, stopLoss / 100)} disabled={busy === 'start'}>
+              <Button size="sm" className="flex-1 gap-1.5" onClick={() => onStart(duration, notional, maxTrades)} disabled={busy === 'start'}>
                 {busy === 'start' ? <Zap size={11} className="animate-spin" /> : <Play size={11} />} Start
               </Button>
               <Button size="sm" variant="outline" className="gap-1.5" onClick={onStop} disabled={!active || busy === 'stop'}>
@@ -598,10 +566,10 @@ export default function CryptoPage() {
     finally { setBusy(null); }
   }
 
-  async function startSession(d: number, budget: number, t: number, stopLoss: number) {
+  async function startSession(d: number, n: number, t: number) {
     setBusy('start');
     try {
-      await api.startCryptoSession({ duration_minutes: d, session_budget: budget, max_trades: t, stop_loss_pct: stopLoss, note: 'Micro-trading sessie' });
+      await api.startCryptoSession({ duration_minutes: d, max_notional_per_trade: n, max_trades: t, note: 'Away-mode' });
       await reloadSession();
       toast('Sessie gestart', 'success');
     } catch (e: any) { toast(e?.detail || 'Start mislukt', 'error'); }
@@ -680,13 +648,6 @@ export default function CryptoPage() {
               P&L {totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}
             </span>
           )}
-          {session?.active && (
-            <span className="text-muted-foreground">
-              Sessie P&L <span className={cn('font-bold tabular-nums', (session?.realized_pnl ?? 0) >= 0 ? 'text-green-500' : 'text-red-400')}>
-                {(session?.realized_pnl ?? 0) >= 0 ? '+' : ''}${(session?.realized_pnl ?? 0).toFixed(2)}
-              </span>
-            </span>
-          )}
           {pendingSignals.length > 0 && (
             <span className="text-amber-400 font-bold animate-pulse">{pendingSignals.length} signalen</span>
           )}
@@ -718,7 +679,7 @@ export default function CryptoPage() {
             settings={settings}
             botHealth={botHealth}
             onToggle24_7={toggle24_7}
-            onStart={(d, budget, t, stopLoss) => startSession(d, budget, t, stopLoss)}
+            onStart={startSession}
             onStop={stopSession}
             busy={busy}
           />
