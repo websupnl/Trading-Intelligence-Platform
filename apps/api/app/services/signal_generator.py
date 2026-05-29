@@ -245,6 +245,8 @@ class SignalGeneratorService:
             try:
                 if await self._recent_signal_exists(asset):
                     continue
+                if self._is_skip_cooldown(asset):
+                    continue
 
                 candles = await self._get_candles(asset)
                 ta_result = ta_analyze(candles) if candles else None
@@ -256,7 +258,7 @@ class SignalGeneratorService:
                 if data.get("_watchlist_only") and ta_result is None and price is None:
                     continue  # Truly no data at all
 
-                if self._context_is_stale(data, hours=8, crypto_session_mode=crypto_session_mode, asset=asset):
+                if self._context_is_stale(data, hours=8, crypto_session_mode=crypto_session_mode, asset=asset, has_ta=ta_result is not None):
                     await self._log_signal_skip(
                         asset,
                         "Context te oud voor nieuwe AI-call",
@@ -316,12 +318,16 @@ class SignalGeneratorService:
 
                 if signal_data.get("direction") == "skip":
                     await self._log_signal_skip(asset, "AI koos SKIP", signal_data, data, ta_result)
+                    bear = float(signal_data.get("bear_score") or 0)
+                    bull = float(signal_data.get("bull_score") or 0)
+                    self._mark_skip_cooldown(asset, 4.0 if (bear - bull) > 0.35 else 2.0)
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
                 min_confidence = MIN_CONFIDENCE_CRYPTO_SESSION if crypto_session_mode and is_crypto(asset) else MIN_CONFIDENCE_GENERATE
                 if confidence < min_confidence:
                     await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
+                    self._mark_skip_cooldown(asset, 1.5)
                     continue
 
                 # Build bull_data / bear_data from combined response for _save_signal compatibility
@@ -354,11 +360,29 @@ class SignalGeneratorService:
 
         return generated
 
-    def _context_is_stale(self, data: dict, hours: int = 8, crypto_session_mode: bool = False, asset: str | None = None) -> bool:
+    def _mark_skip_cooldown(self, asset: str, hours: float = 2.0) -> None:
+        try:
+            import redis as redis_lib
+            r = redis_lib.from_url(self.settings.redis_url, decode_responses=True)
+            r.setex(f"skip_cooldown:{asset}", int(hours * 3600), "1")
+        except Exception:
+            pass
+
+    def _is_skip_cooldown(self, asset: str) -> bool:
+        try:
+            import redis as redis_lib
+            r = redis_lib.from_url(self.settings.redis_url, decode_responses=True)
+            return bool(r.exists(f"skip_cooldown:{asset}"))
+        except Exception:
+            return False
+
+    def _context_is_stale(self, data: dict, hours: int = 8, crypto_session_mode: bool = False, asset: str | None = None, has_ta: bool = True) -> bool:
         if crypto_session_mode and asset and is_crypto(asset):
             return False
         if data.get("_watchlist_only"):
-            return True
+            # Watchlist-only assets (no news/social match) are still valid if TA is available.
+            # Only skip if TA is also missing — pure guess without any data.
+            return not has_ta
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         timestamps = []
         for item in data.get("news_items", []):
@@ -482,6 +506,10 @@ class SignalGeneratorService:
     async def _get_candles(self, symbol: str) -> list:
         from app.services.market_data_service import MarketDataService
         svc = MarketDataService()
+        if is_crypto(symbol):
+            candles = await svc.get_candles(symbol, "1Hour", 72)
+            if candles:
+                return candles
         return await svc.get_candles(symbol, "1Day", 50)
 
     async def _get_memory_lessons(self, asset: str, limit: int = 6) -> list[str]:
