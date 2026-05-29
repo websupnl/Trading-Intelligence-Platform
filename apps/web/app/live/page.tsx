@@ -73,6 +73,10 @@ function actionMeta(action: string) {
   return { icon: '🔄', color: 'text-muted-foreground' };
 }
 
+function formatAction(action: string): string {
+  return action.replace(/_/g, ' ');
+}
+
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 
 function Sparkline({ candles, width = 80, height = 34, uid }: {
@@ -123,29 +127,29 @@ function SessionHeader({ connected, tick, portfolio }: {
   const buyingPower = portfolio?.buying_power ?? null;
 
   return (
-    <div className="flex items-center justify-between px-4 h-10 border-b border-border shrink-0 bg-card/60 gap-4 overflow-x-auto">
-      <div className="flex items-center gap-3 text-[11px] font-mono shrink-0">
+    <div className="flex items-center justify-between px-4 h-11 border-b border-border shrink-0 bg-card/60 gap-4 overflow-x-auto">
+      <div className="flex items-center gap-3 text-xs font-mono shrink-0">
         <div className={cn('flex items-center gap-1.5 font-bold', connected ? 'text-green-400' : 'text-red-400')}>
-          <span className={cn('w-1.5 h-1.5 rounded-full', connected ? 'bg-green-400 animate-pulse' : 'bg-red-400')} />
+          <span className={cn('w-2 h-2 rounded-full', connected ? 'bg-green-400 animate-pulse' : 'bg-red-400')} />
           {connected ? `LIVE · ${tick}` : 'OFFLINE'}
         </div>
         <span className="text-muted-foreground tabular-nums">{now.toLocaleTimeString('nl-NL')}</span>
       </div>
-      <div className="flex items-center gap-4 text-[11px] font-mono">
+      <div className="flex items-center gap-4 text-xs font-mono">
         {equity !== null && (
-          <div className="flex items-center gap-1">
-            <span className="text-muted-foreground">Equity</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-muted-foreground">Waarde</span>
             <span className="font-bold text-foreground tabular-nums">{fmtUSD(equity)}</span>
           </div>
         )}
         {buyingPower !== null && (
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden md:flex items-center gap-1.5">
             <span className="text-muted-foreground">Beschikbaar</span>
             <span className="font-bold text-foreground tabular-nums">{fmtUSD(buyingPower)}</span>
           </div>
         )}
         {pnl !== null && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground">Vandaag</span>
             <span className={cn('font-bold tabular-nums', pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
               {pnl >= 0 ? '+' : ''}{fmtUSD(pnl)}
@@ -153,7 +157,7 @@ function SessionHeader({ connected, tick, portfolio }: {
           </div>
         )}
       </div>
-      <span className="text-[10px] font-mono text-amber-400 shrink-0 hidden sm:block">🤖 AI actief</span>
+      <span className="text-xs font-mono text-amber-400 shrink-0 hidden sm:block">AI actief</span>
     </div>
   );
 }
@@ -167,7 +171,6 @@ function AssetTile({ symbol, price, candles, signal, selected, onClick, onTrade,
 }) {
   const pct = price ? ((price.price - price.open) / price.open) * 100 : null;
   const hasBuy = signal?.direction === 'buy';
-  const hasSell = signal?.direction === 'sell';
   const hasSignal = !!signal;
   const canAct = isPending(signal);
 
@@ -192,10 +195,10 @@ function AssetTile({ symbol, price, candles, signal, selected, onClick, onTrade,
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-1.5">
             <span className="font-mono font-bold text-sm">{symbol}</span>
-            <span className="text-[9px] text-muted-foreground hidden sm:inline">{CRYPTO_NAMES[symbol] ?? symbol}</span>
+            <span className="text-xs text-muted-foreground hidden sm:inline">{CRYPTO_NAMES[symbol] ?? symbol}</span>
           </div>
           {pct !== null && (
-            <span className={cn('text-[10px] font-mono font-bold tabular-nums', pct >= 0 ? 'text-green-400' : 'text-red-400')}>
+            <span className={cn('text-xs font-mono font-bold tabular-nums', pct >= 0 ? 'text-green-400' : 'text-red-400')}>
               {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
             </span>
           )}
@@ -214,34 +217,34 @@ function AssetTile({ symbol, price, candles, signal, selected, onClick, onTrade,
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <span className={cn(
-                'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded',
+                'text-xs font-mono font-bold px-1.5 py-0.5 rounded',
                 hasBuy ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400',
               )}>
-                {hasBuy ? '▲ BUY' : '▼ SELL'}
+                {hasBuy ? '▲ KOOP' : '▼ VERKOOP'}
               </span>
               <div className="flex items-center gap-1.5 flex-1">
-                <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                   <div
                     className={cn('h-full rounded-full', hasBuy ? 'bg-green-500' : 'bg-red-500')}
                     style={{ width: `${(signal.confidence * 100).toFixed(0)}%` }}
                   />
                 </div>
-                <span className="text-[10px] font-mono text-muted-foreground tabular-nums w-7 text-right">
+                <span className="text-xs font-mono text-muted-foreground tabular-nums w-8 text-right">
                   {(signal.confidence * 100).toFixed(0)}%
                 </span>
               </div>
             </div>
 
             {(signal.suggested_entry || signal.suggested_stop || signal.suggested_take_profit) && (
-              <div className="grid grid-cols-3 gap-1 text-[9px] font-mono">
+              <div className="grid grid-cols-3 gap-1 text-xs font-mono">
                 {signal.suggested_entry && (
-                  <div><span className="text-muted-foreground block">Entry</span><span className="text-foreground">${fmtPrice(signal.suggested_entry)}</span></div>
+                  <div><span className="text-muted-foreground block text-[11px]">Entry</span><span className="text-foreground">${fmtPrice(signal.suggested_entry)}</span></div>
                 )}
                 {signal.suggested_stop && (
-                  <div><span className="text-muted-foreground block">Stop</span><span className="text-red-400">${fmtPrice(signal.suggested_stop)}</span></div>
+                  <div><span className="text-muted-foreground block text-[11px]">Stop</span><span className="text-red-400">${fmtPrice(signal.suggested_stop)}</span></div>
                 )}
                 {signal.suggested_take_profit && (
-                  <div><span className="text-muted-foreground block">Target</span><span className="text-green-400">${fmtPrice(signal.suggested_take_profit)}</span></div>
+                  <div><span className="text-muted-foreground block text-[11px]">Doel</span><span className="text-green-400">${fmtPrice(signal.suggested_take_profit)}</span></div>
                 )}
               </div>
             )}
@@ -251,14 +254,14 @@ function AssetTile({ symbol, price, candles, signal, selected, onClick, onTrade,
                 <button
                   onClick={() => onTrade(signal.id)}
                   disabled={acting === signal.id}
-                  className="flex-1 h-7 text-[10px] font-mono font-bold rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  className="flex-1 h-8 text-xs font-mono font-bold rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  {acting === signal.id ? '…' : '📄 Trade'}
+                  {acting === signal.id ? '…' : 'Trade'}
                 </button>
                 <button
                   onClick={() => onReject(signal.id)}
                   disabled={acting === signal.id}
-                  className="w-8 h-7 text-[10px] rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  className="w-9 h-8 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
                 >
                   ✕
                 </button>
@@ -290,20 +293,20 @@ function ChartPanel({ symbol, price, candles, signal, onClose, onTrade, onReject
   return (
     <div className="border-b border-border bg-card shrink-0">
       {/* Header */}
-      <div className="flex items-center gap-3 px-3 h-9 border-b border-border/50">
+      <div className="flex items-center gap-3 px-3 h-10 border-b border-border/50">
         <span className="font-mono font-bold text-sm">{symbol}</span>
-        <span className="text-[10px] text-muted-foreground hidden sm:block">{CRYPTO_NAMES[symbol] ?? ''}</span>
-        {price && <span className="font-mono font-bold text-foreground">${fmtPrice(price.price)}</span>}
+        <span className="text-xs text-muted-foreground hidden sm:block">{CRYPTO_NAMES[symbol] ?? ''}</span>
+        {price && <span className="font-mono font-bold text-foreground text-sm">${fmtPrice(price.price)}</span>}
         {pct !== null && (
-          <span className={cn('text-[10px] font-mono font-bold', pct >= 0 ? 'text-green-400' : 'text-red-400')}>
+          <span className={cn('text-xs font-mono font-bold', pct >= 0 ? 'text-green-400' : 'text-red-400')}>
             {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
           </span>
         )}
         <button
           onClick={onClose}
-          className="ml-auto w-6 h-6 flex items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+          className="ml-auto w-7 h-7 flex items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground"
         >
-          <X size={12} />
+          <X size={14} />
         </button>
       </div>
 
@@ -314,20 +317,20 @@ function ChartPanel({ symbol, price, candles, signal, onClose, onTrade, onReject
 
       {/* Signal detail */}
       {signal && (
-        <div className="px-3 py-2 border-t border-border/50 space-y-1.5">
+        <div className="px-3 py-2.5 border-t border-border/50 space-y-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className={cn(
-                'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded',
+                'text-xs font-mono font-bold px-2 py-0.5 rounded',
                 signal.direction === 'buy' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400',
               )}>
-                {signal.direction === 'buy' ? '▲ BUY' : '▼ SELL'}
+                {signal.direction === 'buy' ? '▲ KOOP' : '▼ VERKOOP'}
               </span>
-              <span className="text-[10px] text-muted-foreground font-mono">
-                {(signal.confidence * 100).toFixed(0)}% confidence
+              <span className="text-xs text-muted-foreground font-mono">
+                {(signal.confidence * 100).toFixed(0)}% vertrouwen
               </span>
               {signal.risk_reward && (
-                <span className="text-[10px] text-muted-foreground font-mono">R/R {signal.risk_reward.toFixed(2)}</span>
+                <span className="text-xs text-muted-foreground font-mono">R/R {signal.risk_reward.toFixed(2)}</span>
               )}
             </div>
             {canAct && (
@@ -335,50 +338,50 @@ function ChartPanel({ symbol, price, candles, signal, onClose, onTrade, onReject
                 <button
                   onClick={() => onTrade(signal.id)}
                   disabled={acting === signal.id}
-                  className="h-7 px-3 text-xs font-mono font-bold rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  className="h-8 px-3 text-xs font-mono font-bold rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
-                  {acting === signal.id ? '…' : '📄 Trade'}
+                  {acting === signal.id ? '…' : 'Trade'}
                 </button>
                 <button
                   onClick={() => onReject(signal.id)}
                   disabled={acting === signal.id}
-                  className="h-7 px-2.5 text-xs font-mono rounded border border-border text-muted-foreground hover:text-foreground"
+                  className="h-8 px-3 text-xs font-mono rounded border border-border text-muted-foreground hover:text-foreground"
                 >
-                  ✕ Afwijzen
+                  Afwijzen
                 </button>
               </div>
             )}
           </div>
 
           {(signal.suggested_entry || signal.suggested_stop || signal.suggested_take_profit) && (
-            <div className="flex gap-4 text-[10px] font-mono flex-wrap">
+            <div className="flex gap-4 text-xs font-mono flex-wrap">
               {signal.suggested_entry && <span className="text-muted-foreground">Entry: <span className="text-foreground font-medium">${fmtPrice(signal.suggested_entry)}</span></span>}
               {signal.suggested_stop && <span className="text-muted-foreground">Stop: <span className="text-red-400 font-medium">${fmtPrice(signal.suggested_stop)}</span></span>}
-              {signal.suggested_take_profit && <span className="text-muted-foreground">Target: <span className="text-green-400 font-medium">${fmtPrice(signal.suggested_take_profit)}</span></span>}
+              {signal.suggested_take_profit && <span className="text-muted-foreground">Doel: <span className="text-green-400 font-medium">${fmtPrice(signal.suggested_take_profit)}</span></span>}
             </div>
           )}
 
           {signal.reason && (
-            <p className="text-[10px] text-muted-foreground font-mono leading-snug line-clamp-2">{signal.reason}</p>
+            <p className="text-xs text-muted-foreground font-mono leading-snug line-clamp-2">{signal.reason}</p>
           )}
 
           {ai?.bull_score !== undefined && ai?.bear_score !== undefined && (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-green-400 font-mono shrink-0">🐂 {(ai.bull_score * 100).toFixed(0)}%</span>
+              <span className="text-xs text-green-400 font-mono shrink-0">🐂 {(ai.bull_score * 100).toFixed(0)}%</span>
               <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-muted">
                 <div className="bg-green-500" style={{ width: `${((ai.bull_score / ((ai.bull_score + ai.bear_score) || 1)) * 100).toFixed(0)}%` }} />
                 <div className="bg-red-500 flex-1" />
               </div>
-              <span className="text-[10px] text-red-400 font-mono shrink-0">🐻 {(ai.bear_score * 100).toFixed(0)}%</span>
+              <span className="text-xs text-red-400 font-mono shrink-0">🐻 {(ai.bear_score * 100).toFixed(0)}%</span>
             </div>
           )}
 
           {(ai?.ta_rsi !== undefined || ai?.ta_trend) && (
-            <div className="flex gap-3 text-[10px] text-muted-foreground font-mono flex-wrap">
+            <div className="flex gap-3 text-xs text-muted-foreground font-mono flex-wrap">
               {ai?.ta_rsi !== undefined && <span>RSI {ai.ta_rsi.toFixed(0)}</span>}
               {ai?.ta_trend && <span>Trend: {ai.ta_trend}</span>}
               {ai?.ta_macd && <span>MACD: {ai.ta_macd}</span>}
-              {ai?.news_count !== undefined && <span>{ai.news_count} nieuws</span>}
+              {ai?.news_count !== undefined && <span>{ai.news_count} nieuwsitems</span>}
             </div>
           )}
         </div>
@@ -401,33 +404,33 @@ function PositionCard({ pos, onClose, closing }: {
 
   return (
     <div className={cn(
-      'flex items-center gap-3 px-3 py-2.5 border-b border-border last:border-0',
+      'flex items-center gap-3 px-3 py-3 border-b border-border last:border-0',
       pnl >= 0 ? 'bg-green-500/[0.03]' : 'bg-red-500/[0.03]',
     )}>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-mono font-bold text-sm">{sym}</span>
           <span className={cn(
-            'text-[9px] font-mono font-bold px-1 py-0.5 rounded',
+            'text-xs font-mono font-bold px-1.5 py-0.5 rounded',
             isLong ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400',
           )}>
             {isLong ? 'LONG' : 'SHORT'}
           </span>
         </div>
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[10px] text-muted-foreground font-mono">
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs text-muted-foreground font-mono">
             {qty < 1 ? qty.toFixed(4) : qty.toFixed(2)} @ ${fmtPrice(entry)}
           </span>
           <span className={cn('text-xs font-mono font-bold tabular-nums', pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
             {pnl >= 0 ? '+' : ''}{fmtUSD(pnl)}
-            <span className="font-normal text-[10px] ml-1">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span>
+            <span className="font-normal ml-1">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span>
           </span>
         </div>
       </div>
       <button
         onClick={() => onClose(sym)}
         disabled={closing === sym}
-        className="h-7 px-2 text-[10px] font-mono rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/40 transition-colors disabled:opacity-40 shrink-0"
+        className="h-8 px-2.5 text-xs font-mono rounded border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/40 transition-colors disabled:opacity-40 shrink-0"
       >
         {closing === sym ? '…' : 'Sluit'}
       </button>
@@ -453,7 +456,7 @@ function ActivityItem({ event, highlight }: { event: ActivityEvent; highlight: b
   const direction = details.direction as string | undefined;
   const text = event.message
     ? event.message.slice(0, 100)
-    : `${asset ? `${asset}: ` : ''}${event.action.replace(/_/g, ' ')}`;
+    : `${asset ? `${asset}: ` : ''}${formatAction(event.action)}`;
   const hasDetail = confidence !== undefined || (bull !== undefined && bear !== undefined) || (reasons && reasons.length > 0);
 
   return (
@@ -466,19 +469,19 @@ function ActivityItem({ event, highlight }: { event: ActivityEvent; highlight: b
       onClick={() => hasDetail && setOpen(o => !o)}
     >
       <div className="flex items-start gap-2 px-3 py-2">
-        <span className="text-[10px] text-muted-foreground font-mono w-9 shrink-0 tabular-nums pt-0.5">{time}</span>
-        <span className="text-base shrink-0 leading-none mt-px">{icon}</span>
+        <span className="text-xs text-muted-foreground font-mono w-10 shrink-0 tabular-nums pt-0.5">{time}</span>
+        <span className="text-sm shrink-0 leading-none mt-px">{icon}</span>
         <div className="flex-1 min-w-0">
           <p className={cn('text-xs font-mono leading-snug', color)}>{text}</p>
           {asset && direction && (
-            <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-              {direction.toUpperCase()} {asset}{notional ? ` · $${notional.toFixed(0)}` : ''}
+            <p className="text-xs text-muted-foreground font-mono mt-0.5">
+              {direction === 'buy' ? 'Koop' : 'Verkoop'} {asset}{notional ? ` · $${notional.toFixed(0)}` : ''}
             </p>
           )}
         </div>
         {hasDetail && (
           <span className="text-muted-foreground/50 shrink-0 pt-1">
-            {open ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+            {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </span>
         )}
       </div>
@@ -486,28 +489,28 @@ function ActivityItem({ event, highlight }: { event: ActivityEvent; highlight: b
         <div className="px-3 pb-3 pt-1 space-y-2 border-t border-border/30 bg-card/40">
           {confidence !== undefined && (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-muted-foreground font-mono w-20 shrink-0">Confidence</span>
+              <span className="text-xs text-muted-foreground font-mono w-20 shrink-0">Vertrouwen</span>
               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                 <div className="h-full bg-amber-400 rounded-full" style={{ width: `${(confidence * 100).toFixed(0)}%` }} />
               </div>
-              <span className="text-[10px] text-amber-400 font-mono tabular-nums shrink-0">{(confidence * 100).toFixed(0)}%</span>
+              <span className="text-xs text-amber-400 font-mono tabular-nums shrink-0">{(confidence * 100).toFixed(0)}%</span>
             </div>
           )}
           {bull !== undefined && bear !== undefined && (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-green-400 font-mono shrink-0 w-16">🐂 {(bull * 100).toFixed(0)}%</span>
+              <span className="text-xs text-green-400 font-mono shrink-0 w-16">🐂 {(bull * 100).toFixed(0)}%</span>
               <div className="flex-1 flex h-1.5 rounded-full overflow-hidden bg-muted">
                 <div className="bg-green-500" style={{ width: `${((bull / ((bull + bear) || 1)) * 100).toFixed(0)}%` }} />
                 <div className="bg-red-500 flex-1" />
               </div>
-              <span className="text-[10px] text-red-400 font-mono shrink-0 w-16 text-right">🐻 {(bear * 100).toFixed(0)}%</span>
+              <span className="text-xs text-red-400 font-mono shrink-0 w-16 text-right">🐻 {(bear * 100).toFixed(0)}%</span>
             </div>
           )}
           {reasons && reasons.length > 0 && (
-            <p className="text-[10px] text-muted-foreground font-mono leading-relaxed">{reasons.slice(0, 3).join(' · ')}</p>
+            <p className="text-xs text-muted-foreground font-mono leading-relaxed">{reasons.slice(0, 3).join(' · ')}</p>
           )}
           {event.message && event.message.length > 100 && (
-            <p className="text-[10px] text-foreground/60 font-mono leading-relaxed">{event.message}</p>
+            <p className="text-xs text-foreground/60 font-mono leading-relaxed">{event.message}</p>
           )}
         </div>
       )}
@@ -531,7 +534,6 @@ export default function LiveSessionPage() {
   const [acting, setActing] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
 
-  // Pre-populate from REST so the page isn't empty while SSE connects
   const { data: initialAudit } = useApi(() => api.getAuditLogs(40), []);
   const { data: initialSignals } = useApi(() => api.getSignals(50), []);
   useEffect(() => {
@@ -543,20 +545,18 @@ export default function LiveSessionPage() {
   const [filterMode, setFilterMode] = useState<'all' | 'signals'>('all');
   const { toast } = useToast();
 
-  // Positions polling
   useEffect(() => {
     const load = async () => {
       try {
         const data = await api.getPositions() as AlpacaPosition[];
         setPositions(Array.isArray(data) ? data : []);
-      } catch { /* Alpaca might not be configured */ }
+      } catch { /* Alpaca mogelijk niet geconfigureerd */ }
     };
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
   }, []);
 
-  // Signal map: latest per asset, pending wins
   const signalMap = useMemo((): Record<string, SignalData> => {
     const map: Record<string, SignalData> = {};
     [...signals].reverse().forEach(s => { map[s.asset] = s; });
@@ -564,7 +564,6 @@ export default function LiveSessionPage() {
     return map;
   }, [signals]);
 
-  // Grid symbols: crypto base + stocks from signals
   const gridSymbols = useMemo(() => {
     const extraStocks = signals
       .map(s => s.asset)
@@ -579,14 +578,12 @@ export default function LiveSessionPage() {
     });
   }, [signals, signalMap, filterMode]);
 
-  // Counts for filter bar
   const allCount = useMemo(() => {
     const extras = signals.map(s => s.asset).filter(a => !CRYPTO_SYMBOLS.includes(a));
     return [...new Set([...CRYPTO_SYMBOLS, ...extras])].length;
   }, [signals]);
   const signalCount = useMemo(() => new Set(signals.map(s => s.asset)).size, [signals]);
 
-  // SSE handlers
   const handlePrice = useCallback((data: Record<string, unknown>) => {
     const pd = data as unknown as PriceData;
     if (pd.symbol) setPrices(prev => ({ ...prev, [pd.symbol]: pd }));
@@ -597,7 +594,6 @@ export default function LiveSessionPage() {
     const cs = data.candles as OHLCVCandle[];
     if (sym && Array.isArray(cs)) {
       setCandles(prev => ({ ...prev, [sym]: cs }));
-      // Extract price from last candle so tiles show immediately (before per-symbol price ticks arrive)
       const last = cs[cs.length - 1];
       if (last) {
         setPrices(prev => prev[sym] ? prev : { ...prev, [sym]: { symbol: sym, price: last.close, open: cs[0]?.open ?? last.open, high: last.high, low: last.low, volume: last.volume } });
@@ -643,7 +639,6 @@ export default function LiveSessionPage() {
     { onConnected: () => setConnected(true), onDisconnected: () => setConnected(false) },
   );
 
-  // Actions
   async function handleTrade(id: string) {
     setActing(id);
     try {
@@ -652,11 +647,11 @@ export default function LiveSessionPage() {
         if (!confirm('Risk check vereist bevestiging. Doorgaan?')) { setActing(null); return; }
         result = await api.paperTradeSignal(id, true);
       }
-      toast('✅ Trade ingediend', 'success');
+      toast('Trade ingediend', 'success');
       const sigs = await api.getSignals(100);
       if (Array.isArray(sigs)) setSignals(sigs);
     } catch (e: any) {
-      toast(`❌ ${e?.detail?.reasons?.join(', ') || e?.detail || 'Risk check mislukt'}`, 'error');
+      toast(`Risk check mislukt: ${e?.detail?.reasons?.join(', ') || e?.detail || 'Onbekende fout'}`, 'error');
     } finally {
       setActing(null);
     }
@@ -666,10 +661,10 @@ export default function LiveSessionPage() {
     setActing(id);
     try {
       await api.rejectSignal(id);
-      toast('Signal afgewezen', 'info');
+      toast('Signaal afgewezen', 'info');
       const sigs = await api.getSignals(100);
       if (Array.isArray(sigs)) setSignals(sigs);
-    } catch { /* ignore */ }
+    } catch { /* negeer */ }
     setActing(null);
   }
 
@@ -677,11 +672,11 @@ export default function LiveSessionPage() {
     setClosing(sym);
     try {
       await api.closePosition(sym);
-      toast(`📤 ${sym} positie gesloten`, 'success');
+      toast(`${sym} positie gesloten`, 'success');
       const data = await api.getPositions() as AlpacaPosition[];
       setPositions(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      toast(`❌ Sluiten mislukt: ${e?.detail || 'Onbekende fout'}`, 'error');
+      toast(`Sluiten mislukt: ${e?.detail || 'Onbekende fout'}`, 'error');
     } finally {
       setClosing(null);
     }
@@ -694,10 +689,9 @@ export default function LiveSessionPage() {
 
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
 
-        {/* ── Left: Asset grid ──────────────────────────────────────────── */}
+        {/* ── Links: Asset grid ──────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden border-b md:border-b-0 md:border-r border-border">
 
-          {/* Chart panel */}
           {selectedSymbol && (
             <ChartPanel
               symbol={selectedSymbol}
@@ -711,9 +705,9 @@ export default function LiveSessionPage() {
             />
           )}
 
-          {/* Filter bar */}
-          <div className="flex items-center gap-1 px-3 h-8 border-b border-border shrink-0 bg-card/40">
-            <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider mr-2">Assets</span>
+          {/* Filterbalk */}
+          <div className="flex items-center gap-1 px-3 h-9 border-b border-border shrink-0 bg-card/40">
+            <span className="text-xs font-mono text-muted-foreground uppercase tracking-wider mr-2">Assets</span>
             {([
               { key: 'all', label: `Alle (${allCount})` },
               { key: 'signals', label: `Signalen (${signalCount})` },
@@ -722,7 +716,7 @@ export default function LiveSessionPage() {
                 key={key}
                 onClick={() => setFilterMode(key)}
                 className={cn(
-                  'px-2.5 py-1 text-[10px] font-mono rounded transition-colors',
+                  'px-3 py-1 text-xs font-mono rounded transition-colors',
                   filterMode === key ? 'bg-accent text-foreground font-bold' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
@@ -759,21 +753,21 @@ export default function LiveSessionPage() {
           </div>
         </div>
 
-        {/* ── Right: Positions + AI feed ────────────────────────────────── */}
+        {/* ── Rechts: Posities + AI feed ────────────────────────────────── */}
         <div className="w-full md:w-80 xl:w-96 flex flex-col shrink-0 overflow-hidden">
 
-          {/* Positions section */}
+          {/* Posities */}
           <div className="shrink-0 border-b border-border">
-            <div className="flex items-center justify-between px-3 h-8 bg-card/60 border-b border-border/50">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-foreground">
+            <div className="flex items-center justify-between px-3 h-9 bg-card/60 border-b border-border/50">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-foreground">
                 Open Posities
               </span>
-              <span className={cn('text-[10px] font-mono', positions.length > 0 ? 'text-foreground font-bold' : 'text-muted-foreground')}>
+              <span className={cn('text-xs font-mono', positions.length > 0 ? 'text-foreground font-bold' : 'text-muted-foreground')}>
                 {positions.length}
               </span>
             </div>
             {positions.length === 0 ? (
-              <div className="px-3 py-2 text-[11px] text-muted-foreground font-mono">Geen open posities</div>
+              <div className="px-3 py-3 text-xs text-muted-foreground font-mono">Geen open posities</div>
             ) : (
               <div className="max-h-44 overflow-y-auto">
                 {positions.map((pos, i) => (
@@ -785,11 +779,11 @@ export default function LiveSessionPage() {
 
           {/* AI Brain feed */}
           <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-            <div className="flex items-center justify-between px-3 h-8 border-b border-border shrink-0 bg-card/60">
-              <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider">🧠 AI Brain</span>
+            <div className="flex items-center justify-between px-3 h-9 border-b border-border shrink-0 bg-card/60">
+              <span className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">🧠 AI Activiteit</span>
               {connected && (
-                <div className="flex items-center gap-1 text-[9px] font-mono text-green-400">
-                  <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse" />
+                <div className="flex items-center gap-1.5 text-xs font-mono text-green-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                   LIVE
                 </div>
               )}

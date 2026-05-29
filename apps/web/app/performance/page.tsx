@@ -75,10 +75,10 @@ export default function PerformancePage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleSyncTrades} disabled={syncing}>
-            {syncing ? '⏳ Syncing...' : '🔄 Sync Trades'}
+            {syncing ? 'Syncing...' : 'Sync Trades'}
           </Button>
           <Button variant="success" size="sm" onClick={handleEvaluate} disabled={evaluating}>
-            {evaluating ? '⏳ Evalueren...' : 'Outcomes evalueren'}
+            {evaluating ? 'Evalueren...' : 'Uitkomsten evalueren'}
           </Button>
         </div>
       </div>

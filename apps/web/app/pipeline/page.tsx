@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { AlertTriangle, Bot, Clock, Database, Play, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
+import { OperationsFlow } from '@/components/dashboard/OperationsFlow';
 
 const categoryColor: Record<string, string> = {
   data: 'text-blue-400',
@@ -73,9 +74,13 @@ export default function PipelinePage() {
 
   return (
     <div className="space-y-4 pb-20 md:pb-4">
+      <div className="grid grid-cols-1">
+        <OperationsFlow />
+      </div>
+
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-base font-semibold">Pipeline Control</h1>
+          <h1 className="text-base font-semibold">Pipeline Taken</h1>
           <p className="text-xs text-muted-foreground mt-1">
             Handmatig starten zet Celery-taken in de queue; order-uitvoering blijft door risk checks en manual confirmation heen gaan.
           </p>
@@ -173,7 +178,7 @@ export default function PipelinePage() {
       {['data', 'ai', 'trading'].map(cat => {
         const catTasks = byCategory[cat] || [];
         if (!catTasks.length) return null;
-        const catLabels: Record<string, string> = { data: '📊 Data Ingestie', ai: '🤖 AI Analyse', trading: '💹 Trading & Leren' };
+        const catLabels: Record<string, string> = { data: 'Data Ingestie', ai: 'AI Analyse', trading: 'Trading & Leren' };
         return (
           <Card key={cat}>
             <CardHeader>

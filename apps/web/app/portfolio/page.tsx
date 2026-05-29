@@ -63,7 +63,7 @@ function PositionCard({ pos, onClose, closing }: { pos: any; onClose: (s: string
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-mono font-bold text-sm">{sym}</span>
-          <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded font-mono',
+          <span className={cn('text-xs font-bold px-1.5 py-0.5 rounded font-mono',
             pos.side === 'long' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-500'
           )}>{(pos.side ?? 'LONG').toUpperCase()}</span>
         </div>
@@ -77,14 +77,14 @@ function PositionCard({ pos, onClose, closing }: { pos: any; onClose: (s: string
           {isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
           {isUp ? '+' : ''}{fmtUSD(pnl)}
         </div>
-        <p className={cn('text-[10px] font-mono tabular-nums', isUp ? 'text-green-400' : 'text-red-400')}>
+        <p className={cn('text-xs font-mono tabular-nums', isUp ? 'text-green-400' : 'text-red-400')}>
           {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
         </p>
       </div>
       <button
         onClick={() => onClose(sym)}
         disabled={closing === sym}
-        className="h-7 px-2.5 text-[10px] font-mono rounded border border-border text-muted-foreground hover:border-red-400/60 hover:text-red-400 transition-colors disabled:opacity-40 shrink-0"
+        className="h-7 px-2.5 text-xs font-mono rounded border border-border text-muted-foreground hover:border-red-400/60 hover:text-red-400 transition-colors disabled:opacity-40 shrink-0"
       >
         {closing === sym ? '…' : 'Sluit'}
       </button>
@@ -188,9 +188,9 @@ export default function PortfolioPage() {
                 { label: 'Cash', value: fmtUSD(parseFloat(account.cash)) },
               ].map(item => (
                 <div key={item.label} className="px-4 py-3">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.label}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>
                   <p className={cn('text-lg font-bold font-mono mt-0.5 tabular-nums', item.color ?? 'text-foreground')}>{item.value}</p>
-                  {item.sub && <p className={cn('text-[10px] font-mono', item.color ?? 'text-muted-foreground')}>{item.sub}</p>}
+                  {item.sub && <p className={cn('text-xs font-mono', item.color ?? 'text-muted-foreground')}>{item.sub}</p>}
                 </div>
               ))}
             </div>
@@ -219,9 +219,9 @@ export default function PortfolioPage() {
                 { label: 'Profit Factor', value: perf.profit_factor?.toFixed(2) ?? '—', color: perf.profit_factor >= 1 ? 'text-green-500' : 'text-red-400' },
               ].map(item => (
                 <div key={item.label} className="bg-muted/30 rounded-lg px-3 py-2.5">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.label}</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>
                   <p className={cn('text-lg font-bold font-mono mt-0.5', item.color)}>{item.value}</p>
-                  {item.sub && <p className="text-[10px] text-muted-foreground font-mono">{item.sub}</p>}
+                  {item.sub && <p className="text-xs text-muted-foreground font-mono">{item.sub}</p>}
                 </div>
               ))}
             </div>
@@ -242,7 +242,7 @@ export default function PortfolioPage() {
               const color = isUp ? '#22c55e' : '#ef4444';
               return (
                 <div className="mt-4">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">Cumulatief P&L ({series.length} trades)</p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5">Cumulatief P&L ({series.length} trades)</p>
                   <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block rounded overflow-hidden">
                     <defs>
                       <linearGradient id="pnl-grad" x1="0" y1="0" x2="0" y2="1">

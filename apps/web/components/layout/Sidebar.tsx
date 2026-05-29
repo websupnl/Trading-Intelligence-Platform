@@ -10,33 +10,52 @@ import {
 import { api, clearPin } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 
-const nav = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/live', label: 'Live Session', icon: MonitorPlay },
-  { href: '/crypto-session', label: 'Crypto Sessie', icon: Moon },
-  { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
-  { href: '/orders', label: 'Orders', icon: ShoppingCart },
-  { href: '/signals', label: 'Signals', icon: Zap },
-  { href: '/performance', label: 'Performance', icon: BarChart3 },
-  { href: '/notifications', label: 'Alerts', icon: Bell },
-  { href: '/activity-log', label: 'Live Log', icon: ScrollText },
-  { href: '/rumour-radar', label: 'Rumour Radar', icon: Radio },
-  { href: '/news', label: 'Nieuws', icon: Newspaper },
-  { href: '/social', label: 'Social', icon: MessageSquare },
-  { href: '/ai-war-room', label: 'AI War Room', icon: Brain },
-  { href: '/pipeline', label: 'Pipeline', icon: Cpu },
-  { href: '/memory', label: 'Memory', icon: Database },
-  { href: '/audit', label: 'Audit', icon: Activity },
-  { href: '/settings', label: 'Instellingen', icon: Settings },
+const navGroups = [
+  {
+    label: 'Handelen',
+    items: [
+      { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/live', label: 'Live Sessie', icon: MonitorPlay },
+      { href: '/crypto-session', label: 'Crypto Sessie', icon: Moon },
+      { href: '/signals', label: 'Signalen', icon: Zap },
+      { href: '/orders', label: 'Orders', icon: ShoppingCart },
+      { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
+    ],
+  },
+  {
+    label: 'Monitoring',
+    items: [
+      { href: '/performance', label: 'Prestaties', icon: BarChart3 },
+      { href: '/notifications', label: 'Meldingen', icon: Bell },
+      { href: '/activity-log', label: 'Live Log', icon: ScrollText },
+    ],
+  },
+  {
+    label: 'Informatie',
+    items: [
+      { href: '/rumour-radar', label: 'Geruchten Radar', icon: Radio },
+      { href: '/news', label: 'Nieuws', icon: Newspaper },
+      { href: '/social', label: 'Social Media', icon: MessageSquare },
+      { href: '/ai-war-room', label: 'AI War Room', icon: Brain },
+    ],
+  },
+  {
+    label: 'Systeem',
+    items: [
+      { href: '/pipeline', label: 'Pipeline', icon: Cpu },
+      { href: '/memory', label: 'Geheugen', icon: Database },
+      { href: '/audit', label: 'Audit', icon: Activity },
+      { href: '/settings', label: 'Instellingen', icon: Settings },
+    ],
+  },
 ];
 
-// Mobile: show only most important pages
 const mobileNav = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/live', label: 'Live', icon: MonitorPlay },
-  { href: '/crypto-session', label: 'Sessie', icon: Moon },
+  { href: '/signals', label: 'Signalen', icon: Zap },
   { href: '/activity-log', label: 'Log', icon: ScrollText },
-  { href: '/signals', label: 'Signals', icon: Zap },
+  { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
 ];
 
 export function Sidebar() {
@@ -62,18 +81,18 @@ export function Sidebar() {
           <span className="text-sm font-bold tracking-widest text-foreground/80 uppercase">Trading OS</span>
           <div className="mt-3 space-y-2 text-xs">
             <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 px-2 py-1.5">
-              <span className="text-muted-foreground">Market</span>
+              <span className="text-muted-foreground">Markt</span>
               <span className={cn('font-medium', marketSession?.crypto_only ? 'text-amber-700' : 'text-green-700')}>
-                {marketSession?.crypto_only ? 'Crypto' : 'Open'}
+                {marketSession?.crypto_only ? 'Crypto' : 'Aandelen'}
               </span>
             </div>
             <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 px-2 py-1.5">
               <span className="flex items-center gap-1 text-muted-foreground">
                 <ShieldCheck size={12} />
-                Auto
+                Auto-trade
               </span>
               <span className={cn('font-medium', autoBlocked ? 'text-amber-700' : 'text-green-700')}>
-                {autoBlocked ? 'Uit' : 'Klaar'}
+                {autoBlocked ? 'Geblokkeerd' : 'Actief'}
               </span>
             </div>
             <div className="flex items-center justify-between rounded-md border border-border bg-muted/35 px-2 py-1.5">
@@ -82,28 +101,39 @@ export function Sidebar() {
                 AI
               </span>
               <span className={cn('font-medium', aiPaused ? 'text-red-700' : 'text-green-700')}>
-                {aiPaused ? 'Stop' : 'Actief'}
+                {aiPaused ? 'Gepauzeerd' : 'Actief'}
               </span>
             </div>
           </div>
         </div>
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {nav.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
-                pathname === href
-                  ? 'bg-accent text-primary font-medium'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-              )}
-            >
-              <Icon size={16} />
-              {label}
-            </Link>
+
+        <nav className="flex-1 py-3 px-2 overflow-y-auto">
+          {navGroups.map((group) => (
+            <div key={group.label} className="mb-4">
+              <p className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/55">
+                {group.label}
+              </p>
+              <div className="space-y-0.5">
+                {group.items.map(({ href, label, icon: Icon }) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors',
+                      pathname === href
+                        ? 'bg-accent text-primary font-medium'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    )}
+                  >
+                    <Icon size={16} />
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
+
         <div className="px-4 py-3 border-t border-border space-y-2">
           <button
             onClick={handleLogout}
@@ -112,7 +142,7 @@ export function Sidebar() {
             <LogOut size={12} />
             Uitloggen
           </button>
-          <p className="text-xs text-muted-foreground">v1.1.0 • Paper Mode</p>
+          <p className="text-xs text-muted-foreground">v1.1.0 · Paper Mode</p>
         </div>
       </aside>
 
@@ -123,14 +153,14 @@ export function Sidebar() {
             key={href}
             href={href}
             className={cn(
-              'flex-1 flex flex-col items-center justify-center py-2 gap-1 text-xs transition-colors',
+              'flex-1 flex flex-col items-center justify-center py-2 gap-1 transition-colors',
               pathname === href
                 ? 'text-primary'
                 : 'text-muted-foreground'
             )}
           >
             <Icon size={18} />
-            <span className="text-[10px]">{label}</span>
+            <span className="text-[11px]">{label}</span>
           </Link>
         ))}
       </nav>

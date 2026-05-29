@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
+import { Bot, Cpu, Plug, Settings, Shield, Trash2, AlertTriangle } from 'lucide-react';
 
 function Toggle({
   label, value, description, onToggle, loading
@@ -22,13 +23,13 @@ function Toggle({
     <div className="flex items-center justify-between py-3 border-b border-border last:border-0">
       <div>
         <p className="text-sm font-medium">{label}</p>
-        {description && <p className="text-xs text-muted-foreground">{description}</p>}
+        {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
       </div>
       <button
         onClick={onToggle}
         disabled={loading}
         className={cn(
-          'relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50',
+          'relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 shrink-0 ml-4',
           value ? 'bg-green-500' : 'bg-muted'
         )}
       >
@@ -49,14 +50,14 @@ export default function SettingsPage() {
   const { toast } = useToast();
 
   async function handleResetTradeData() {
-    if (!confirm('Weet je zeker dat je alle trade- en signaaldata wilt wissen? Dit kan niet ongedaan worden gemaakt.\n\nNews, candles en memory blijven bewaard.')) return;
+    if (!confirm('Weet je zeker dat je alle trade- en signaaldata wilt wissen? Dit kan niet ongedaan worden gemaakt.\n\nNieuws, candles en geheugen blijven bewaard.')) return;
     setResetting(true);
     try {
-      const result = await api.resetTradeData();
-      toast('✅ Trade data gewist — schone lei', 'success');
+      await api.resetTradeData();
+      toast('Trade data gewist — schone lei', 'success');
       reload();
     } catch (e: any) {
-      toast(`❌ ${e?.detail || 'Reset mislukt'}`, 'error');
+      toast(`Reset mislukt: ${e?.detail || 'Onbekende fout'}`, 'error');
     } finally {
       setResetting(false);
     }
@@ -66,10 +67,10 @@ export default function SettingsPage() {
     setSaving(key);
     try {
       await api.updateRuntimeSettings({ [key]: !current });
-      toast(`✅ ${key.replace(/_/g, ' ')} bijgewerkt naar ${!current}`, 'success');
+      toast(`Instelling bijgewerkt`, 'success');
       await reload();
     } catch (e: any) {
-      toast(`❌ ${e?.detail || 'Instelling opslaan mislukt'}`, 'error');
+      toast(`Opslaan mislukt: ${e?.detail || 'Onbekende fout'}`, 'error');
     } finally {
       setSaving(null);
     }
@@ -80,10 +81,13 @@ export default function SettingsPage() {
     try {
       if (enable) await api.enableKillSwitch();
       else await api.disableKillSwitch();
-      toast(enable ? '🛑 Kill switch geactiveerd — alle orders geblokkeerd' : '✅ Kill switch uitgeschakeld', enable ? 'warning' : 'success');
+      toast(
+        enable ? 'Kill switch geactiveerd — alle orders geblokkeerd' : 'Kill switch uitgeschakeld',
+        enable ? 'warning' : 'success'
+      );
       await reload();
     } catch {
-      toast('❌ Kill switch actie mislukt', 'error');
+      toast('Kill switch actie mislukt', 'error');
     } finally {
       setSaving(null);
     }
@@ -97,43 +101,48 @@ export default function SettingsPage() {
 
       {settings && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
           {/* Trading veiligheid */}
           <Card>
-            <CardHeader><CardTitle>⚙️ Trading Veiligheid</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Shield size={15} />
+                <CardTitle>Trading Veiligheid</CardTitle>
+              </div>
+            </CardHeader>
             <CardContent>
               <Toggle
                 label="Kill Switch"
                 value={settings.kill_switch_enabled}
-                description="Blokkeert alle orders direct"
+                description="Blokkeert alle orders direct — noodstop"
                 onToggle={() => handleKillSwitch(!settings.kill_switch_enabled)}
                 loading={saving === 'kill_switch'}
               />
               <Toggle
                 label="Live Trading"
                 value={settings.live_trading_enabled}
-                description="Schakel live orders in (gevaarlijk!)"
+                description="Schakel echte live orders in (gevaarlijk!)"
                 onToggle={() => toggle('live_trading_enabled', settings.live_trading_enabled)}
                 loading={saving === 'live_trading_enabled'}
               />
               <Toggle
                 label="Handmatige Bevestiging"
                 value={settings.require_manual_confirmation}
-                description="Vereist je goedkeuring voor elke order"
+                description="Vereist jouw goedkeuring voor elke order"
                 onToggle={() => toggle('require_manual_confirmation', settings.require_manual_confirmation)}
                 loading={saving === 'require_manual_confirmation'}
               />
 
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Trading Mode:</span>
+              <div className="mt-4 flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Trading Modus:</span>
                 <Badge variant={settings.trading_mode === 'paper' ? 'warning' : 'danger'}>
-                  {settings.trading_mode}
+                  {settings.trading_mode === 'paper' ? 'Paper (gesimuleerd)' : settings.trading_mode}
                 </Badge>
               </div>
 
               {settings.runtime_overrides?.length > 0 && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Safety-instellingen actief: {settings.runtime_overrides.join(', ')}
-                  <br />Opgeslagen in de database en gedeeld met workers via Redis.
+                <p className="text-xs text-muted-foreground mt-3 bg-muted/40 rounded p-2">
+                  Actieve veiligheidsregels: {settings.runtime_overrides.join(', ')}
                 </p>
               )}
             </CardContent>
@@ -141,51 +150,57 @@ export default function SettingsPage() {
 
           {/* Integraties */}
           <Card>
-            <CardHeader><CardTitle>🔌 Integraties</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Plug size={15} />
+                <CardTitle>Gekoppelde Diensten</CardTitle>
+              </div>
+            </CardHeader>
             <CardContent>
               {[
-                { label: 'Alpaca', ok: settings.alpaca_configured },
-                { label: 'Anthropic Claude', ok: settings.anthropic_configured },
+                { label: 'Alpaca (broker)', ok: settings.alpaca_configured },
+                { label: 'Anthropic Claude (AI)', ok: settings.anthropic_configured },
                 { label: 'OpenAI', ok: settings.openai_configured },
                 { label: 'Reddit', ok: settings.reddit_configured },
-                { label: 'X/Twitter', ok: settings.x_configured },
-                { label: 'Telegram Alerts', ok: settings.telegram_configured },
+                { label: 'X / Twitter', ok: settings.x_configured },
+                { label: 'Telegram Meldingen', ok: settings.telegram_configured },
               ].map(({ label, ok }) => (
-                <div key={label} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                <div key={label} className="flex items-center justify-between py-2.5 border-b border-border last:border-0">
                   <span className="text-sm text-muted-foreground">{label}</span>
-                  <Badge variant={ok ? 'success' : 'muted'}>{ok ? 'Geconfigureerd' : 'Niet ingesteld'}</Badge>
+                  <Badge variant={ok ? 'success' : 'muted'}>{ok ? 'Gekoppeld' : 'Niet ingesteld'}</Badge>
                 </div>
               ))}
-              <div className="flex items-center justify-between py-2">
+              <div className="flex items-center justify-between py-2.5">
                 <span className="text-sm text-muted-foreground">AI Model</span>
                 <span className="text-sm font-medium">{settings.anthropic_model}</span>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                API keys aanpassen: update .env en herstart.
-              </p>
             </CardContent>
           </Card>
 
           {/* Risk limieten */}
           <Card>
-            <CardHeader><CardTitle>🛡️ Risk Limieten</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Settings size={15} />
+                <CardTitle>Risicolimieten</CardTitle>
+              </div>
+            </CardHeader>
             <CardContent>
               {risk && (
-                <div className="space-y-2">
+                <div className="space-y-0">
                   {[
-                    ['Max Positiegrootte', `$${risk.max_position_size_usd?.toLocaleString()}`],
-                    ['Max Trades/Dag', String(risk.max_trades_per_day)],
-                    ['Max Open Posities', String(risk.max_open_positions)],
-                    ['Auto Trade Threshold', risk.auto_trade_threshold != null ? `${(risk.auto_trade_threshold * 100).toFixed(0)}% confidence` : `${(risk.min_confidence_for_auto * 100 || 60).toFixed(0)}% confidence`],
+                    ['Max positiegrootte', `$${risk.max_position_size_usd?.toLocaleString()}`],
+                    ['Max trades per dag', String(risk.max_trades_per_day)],
+                    ['Max open posities', String(risk.max_open_positions)],
+                    ['Auto-trade drempel', risk.auto_trade_threshold != null
+                      ? `${(risk.auto_trade_threshold * 100).toFixed(0)}% vertrouwen`
+                      : `${(risk.min_confidence_for_auto * 100 || 60).toFixed(0)}% vertrouwen`],
                   ].map(([label, value]) => (
-                    <div key={label} className="flex justify-between text-sm border-b border-border last:border-0 py-2">
+                    <div key={label} className="flex justify-between text-sm border-b border-border last:border-0 py-2.5">
                       <span className="text-muted-foreground">{label}</span>
                       <span className="font-medium">{value}</span>
                     </div>
                   ))}
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Limieten aanpassen: update risk_engine.py of voeg SystemSettings DB toe.
-                  </p>
                 </div>
               )}
             </CardContent>
@@ -193,23 +208,28 @@ export default function SettingsPage() {
 
           {/* AI instellingen */}
           <Card>
-            <CardHeader><CardTitle>🤖 AI Instellingen</CardTitle></CardHeader>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Bot size={15} />
+                <CardTitle>AI Configuratie</CardTitle>
+              </div>
+            </CardHeader>
             <CardContent>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between border-b border-border py-2">
+              <div className="space-y-0 text-sm">
+                <div className="flex justify-between border-b border-border py-2.5">
                   <span className="text-muted-foreground">Provider</span>
                   <span>{settings.default_ai_provider}</span>
                 </div>
-                <div className="flex justify-between border-b border-border py-2">
+                <div className="flex justify-between border-b border-border py-2.5">
                   <span className="text-muted-foreground">Model</span>
                   <span>{settings.anthropic_model}</span>
                 </div>
-                <div className="flex justify-between border-b border-border py-2">
-                  <span className="text-muted-foreground">Nieuws Feeds</span>
+                <div className="flex justify-between border-b border-border py-2.5">
+                  <span className="text-muted-foreground">Nieuwsfeeds</span>
                   <span>{settings.news_feed_count} feeds</span>
                 </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-muted-foreground">Crypto Feeds</span>
+                <div className="flex justify-between py-2.5">
+                  <span className="text-muted-foreground">Crypto feeds</span>
                   <span>{settings.crypto_feed_count} feeds</span>
                 </div>
               </div>
@@ -219,26 +239,34 @@ export default function SettingsPage() {
       )}
 
       {/* Gevaarzone */}
-      <Card className="border-red-500/30">
-        <CardHeader><CardTitle className="text-red-400">⚠️ Gevaarzone</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between">
+      <Card className="border-red-300/50">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={15} className="text-red-500" />
+            <CardTitle className="text-red-500">Gevaarzone</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium">Trade data wissen</p>
-              <p className="text-xs text-muted-foreground">Wist trades, signals, orders, posities en audit logs. News, candles en memory blijven bewaard.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Wist alle trades, signalen, orders, posities en auditlogs. Nieuws, candles en geheugen blijven bewaard.
+              </p>
             </div>
             <Button
               variant="outline"
               size="sm"
-              className="border-red-500/50 text-red-400 hover:bg-red-500/10 shrink-0"
+              className="border-red-300 text-red-500 hover:bg-red-50 shrink-0"
               onClick={handleResetTradeData}
               disabled={resetting}
             >
-              {resetting ? '⏳ Wissen...' : '🗑️ Reset Trade Data'}
+              <Trash2 size={13} />
+              {resetting ? 'Wissen...' : 'Wis Trade Data'}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Reset ook je Alpaca paper account via <span className="font-mono">paper.alpaca.markets</span> → Account → Reset om open posities te sluiten.
+          <p className="text-xs text-muted-foreground border-t border-border pt-3">
+            Reset ook je Alpaca paper account via <span className="font-mono text-foreground">paper.alpaca.markets</span> om open posities te sluiten.
           </p>
         </CardContent>
       </Card>

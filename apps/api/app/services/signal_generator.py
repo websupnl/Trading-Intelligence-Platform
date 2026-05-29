@@ -215,13 +215,22 @@ class SignalGeneratorService:
             )
             social_posts = social_result.scalars().all()
 
-        ticker_data = self._aggregate_by_ticker(news_items, social_posts)
+        ticker_data_from_news = self._aggregate_by_ticker(news_items, social_posts)
 
         watchlist = sorted(CRYPTO_SYMBOLS) if crypto_session_mode else DEFAULT_WATCHLIST
-        # Add watchlist tickers only when we have TA data for them (avoids wasting tokens on data-less tickers)
+
+        # Build final ticker_data with watchlist FIRST so they're never crowded out by random news tickers.
+        # Within watchlist: tickers that also have news/social data come first (highest signal quality).
+        ticker_data: dict = {}
         for ticker in watchlist:
-            if ticker not in ticker_data:
+            if ticker in ticker_data_from_news:
+                ticker_data[ticker] = ticker_data_from_news[ticker]
+            else:
                 ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0, "_watchlist_only": True}
+        # Add any news-mentioned tickers NOT in watchlist (keep them, just lower priority)
+        for ticker, data in ticker_data_from_news.items():
+            if ticker not in ticker_data:
+                ticker_data[ticker] = data
 
         if crypto_session_mode:
             ticker_data = {ticker: data for ticker, data in ticker_data.items() if is_crypto(ticker)}
@@ -237,7 +246,7 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        limit = 10 if crypto_session_mode else 15
+        limit = 10 if crypto_session_mode else 20
         for asset, data in list(ticker_data.items())[:limit]:
             if is_ai_paused():
                 logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")

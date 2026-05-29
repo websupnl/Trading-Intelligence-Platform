@@ -32,6 +32,16 @@
   ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
 }
 
+/* Leesbaarheid op licht thema: standaard Tailwind groen/rood is te licht */
+.text-green-400 { color: #15803d; }
+.text-green-300 { color: #15803d; }
+.text-red-400   { color: #b91c1c; }
+.text-red-300   { color: #b91c1c; }
+.text-amber-400, .text-yellow-400, .text-orange-400 { color: #a16207; }
+.text-purple-400 { color: #6d28d9; }
+.text-blue-400   { color: #1d4ed8; }
+
+/* Operations flow animaties */
 @keyframes flow-pulse-ring {
   0%, 100% { box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.22); }
   50% { box-shadow: 0 0 0 6px rgba(21, 128, 61, 0); }
@@ -66,21 +76,7 @@
   animation: flow-pulse-ring 1.7s ease-in-out infinite;
 }
 
-/* Readable status tones for the light research-desk theme. */
-.text-green-400 { color: #15803d; }
-.text-green-300 { color: #15803d; }
-.text-red-400 { color: #b91c1c; }
-.text-red-300 { color: #b91c1c; }
-.text-yellow-400, .text-amber-400, .text-orange-400 { color: #a16207; }
-.text-purple-400 { color: #6d28d9; }
-.text-blue-400 { color: #1d4ed8; }
-
-/* Mobile safe area for bottom nav */
+/* Mobile safe area voor bottom nav */
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-/* Touch-friendly tap targets on mobile */
-@media (max-width: 768px) {
-  button, a { min-height: 36px; }
 }

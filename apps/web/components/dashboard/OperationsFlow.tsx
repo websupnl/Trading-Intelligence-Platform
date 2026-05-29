@@ -253,7 +253,13 @@ export function OperationsFlow() {
 
         {blockers.length > 0 && (
           <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            <span className="font-medium">Waarom auto-trade nu niets doet:</span> {blockers.join(' | ')}
+            <span className="font-medium">Auto-trade geblokkeerd door:</span>{' '}
+            {blockers.map(b => {
+              if (b.startsWith('anthropic_api_paused_until')) return 'AI-analyse tijdelijk gepauzeerd';
+              if (b === 'require_manual_confirmation') return 'Handmatige goedkeuring vereist';
+              if (b === 'kill_switch_enabled') return 'Kill switch actief';
+              return b.replace(/_/g, ' ');
+            }).join(' · ')}
           </div>
         )}
       </CardContent>

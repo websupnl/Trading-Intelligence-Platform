@@ -7,7 +7,10 @@ import { PinGate } from '@/components/auth/PinGate';
 import { ToastProvider } from '@/contexts/toast';
 
 export const metadata: Metadata = {
-  title: 'Trading OS',
+  title: {
+    default: 'Trading OS',
+    template: '%s · Trading OS',
+  },
   description: 'Trading Intelligence Platform',
 };
 

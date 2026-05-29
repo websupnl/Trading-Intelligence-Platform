@@ -151,21 +151,21 @@ export default function ActivityLogPage() {
                 className={cn('border-b border-border last:border-0', hasDetails && 'cursor-pointer hover:bg-muted/25')}
                 onClick={() => hasDetails && setExpanded(isExpanded ? null : item.id)}
               >
-                <div className="grid grid-cols-[88px_86px_1fr_auto] gap-2 px-3 py-2.5 items-start text-xs">
-                  <span className="text-muted-foreground tabular-nums">{fmtDate(item.created_at)}</span>
-                  <div className="flex flex-col gap-1">
+                <div className="flex items-start gap-2 px-3 py-2.5 text-xs">
+                  <span className="text-muted-foreground tabular-nums shrink-0 w-28">{fmtDate(item.created_at)}</span>
+                  <div className="flex flex-col gap-1 shrink-0 w-20">
                     <Badge variant={tone(item.status) as any}>{item.status || 'event'}</Badge>
-                    <span className="text-[10px] text-muted-foreground">{mod}</span>
+                    <span className="text-xs text-muted-foreground">{mod}</span>
                   </div>
-                  <div className="min-w-0">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium">{item.action}</span>
+                      <span className="font-medium">{item.action.replace(/_/g, ' ')}</span>
                       {item.actor && <span className="text-muted-foreground">door {item.actor}</span>}
                       {summary && <span className="text-muted-foreground">{summary}</span>}
                     </div>
                     {item.message && <p className="mt-0.5 text-muted-foreground line-clamp-2">{item.message}</p>}
                   </div>
-                  {hasDetails && <span className="text-muted-foreground">{isExpanded ? '▲' : '▼'}</span>}
+                  {hasDetails && <span className="text-muted-foreground shrink-0">{isExpanded ? '▲' : '▼'}</span>}
                 </div>
                 {isExpanded && hasDetails && (
                   <div className="px-3 pb-3">

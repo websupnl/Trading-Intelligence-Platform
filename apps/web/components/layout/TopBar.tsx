@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { Shield, TrendingUp, Brain, Wifi, Menu, X, Bell, StopCircle, PlayCircle } from 'lucide-react';
+import { Brain, Wifi, Menu, X, Bell, StopCircle, PlayCircle, AlertTriangle } from 'lucide-react';
 import {
-  LayoutDashboard, Zap, ShoppingCart, Cpu, Settings, Database, Activity,
-  Radio, Newspaper, MessageSquare, BarChart3, Moon, ScrollText
+  LayoutDashboard, Zap, ShoppingCart, TrendingUp, Cpu, Settings, Database, Activity,
+  Radio, Newspaper, MessageSquare, BarChart3, Moon, ScrollText, MonitorPlay
 } from 'lucide-react';
 
 function StatusPill({ label, ok, warn }: { label: string; ok: boolean; warn?: boolean }) {
@@ -24,23 +24,26 @@ function StatusPill({ label, ok, warn }: { label: string; ok: boolean; warn?: bo
 }
 
 const mobileMenuItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/signals', label: 'Signals', icon: Zap },
-  { href: '/crypto-session', label: 'Crypto Sessie', icon: Moon },
-  { href: '/portfolio', label: 'Portfolio', icon: TrendingUp },
-  { href: '/performance', label: 'Performance', icon: BarChart3 },
-  { href: '/notifications', label: 'Alerts', icon: Bell },
-  { href: '/activity-log', label: 'Live Log', icon: ScrollText },
-  { href: '/orders', label: 'Orders', icon: ShoppingCart },
-  { href: '/pipeline', label: 'Pipeline', icon: Cpu },
-  { href: '/ai-war-room', label: 'AI War Room', icon: Brain },
-  { href: '/rumour-radar', label: 'Rumour Radar', icon: Radio },
-  { href: '/news', label: 'Nieuws', icon: Newspaper },
-  { href: '/social', label: 'Social', icon: MessageSquare },
-  { href: '/memory', label: 'Memory', icon: Database },
-  { href: '/audit', label: 'Audit', icon: Activity },
-  { href: '/settings', label: 'Instellingen', icon: Settings },
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard, group: 'Handelen' },
+  { href: '/live', label: 'Live Sessie', icon: MonitorPlay, group: 'Handelen' },
+  { href: '/crypto-session', label: 'Crypto Sessie', icon: Moon, group: 'Handelen' },
+  { href: '/signals', label: 'Signalen', icon: Zap, group: 'Handelen' },
+  { href: '/orders', label: 'Orders', icon: ShoppingCart, group: 'Handelen' },
+  { href: '/portfolio', label: 'Portfolio', icon: TrendingUp, group: 'Handelen' },
+  { href: '/performance', label: 'Prestaties', icon: BarChart3, group: 'Monitoring' },
+  { href: '/notifications', label: 'Meldingen', icon: Bell, group: 'Monitoring' },
+  { href: '/activity-log', label: 'Live Log', icon: ScrollText, group: 'Monitoring' },
+  { href: '/rumour-radar', label: 'Geruchten Radar', icon: Radio, group: 'Informatie' },
+  { href: '/news', label: 'Nieuws', icon: Newspaper, group: 'Informatie' },
+  { href: '/social', label: 'Social Media', icon: MessageSquare, group: 'Informatie' },
+  { href: '/ai-war-room', label: 'AI War Room', icon: Brain, group: 'Informatie' },
+  { href: '/pipeline', label: 'Pipeline', icon: Cpu, group: 'Systeem' },
+  { href: '/memory', label: 'Geheugen', icon: Database, group: 'Systeem' },
+  { href: '/audit', label: 'Audit', icon: Activity, group: 'Systeem' },
+  { href: '/settings', label: 'Instellingen', icon: Settings, group: 'Systeem' },
 ];
+
+const menuGroups = ['Handelen', 'Monitoring', 'Informatie', 'Systeem'] as const;
 
 export function TopBar() {
   const { data: status, reload: reloadStatus } = useApi(() => api.apiStatus(), []);
@@ -50,7 +53,6 @@ export function TopBar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
 
-  // Auto-refresh status every 30s so users see live bot state
   useEffect(() => {
     const t = setInterval(() => { reloadStatus(); reloadRisk(); }, 30000);
     return () => clearInterval(t);
@@ -58,8 +60,6 @@ export function TopBar() {
 
   const killSwitch = risk?.kill_switch_enabled;
   const liveEnabled = risk?.live_trading_enabled;
-  const alpacaOk = status?.configured_integrations?.alpaca;
-  const aiOk = status?.configured_integrations?.anthropic;
   const cryptoOnly = status?.market_session?.crypto_only;
   const aiPaused = !!botHealth?.ai_guard?.paused;
   const autoOn = !killSwitch && !risk?.require_manual_confirmation && !!status?.trading_mode;
@@ -92,34 +92,44 @@ export function TopBar() {
 
         <div className="flex items-center gap-2 mr-auto text-xs text-muted-foreground">
           <Wifi size={12} />
-          <span className="font-medium">Trading OS</span>
+          <span className="font-semibold text-foreground/80 tracking-wider uppercase">Trading OS</span>
         </div>
 
+        {/* Kill switch alert — always visible when active */}
+        {killSwitch && (
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 border border-red-300">
+            <AlertTriangle size={11} />
+            Kill Switch
+          </span>
+        )}
+
         {/* Status pills (desktop only) */}
+        {!killSwitch && (
+          <StatusPill
+            label={autoOn ? 'Auto: Aan' : 'Auto: Uit'}
+            ok={autoOn}
+            warn={!autoOn}
+          />
+        )}
         <StatusPill
-          label={autoOn ? '🤖 AUTO: AAN' : '⏸ AUTO: UIT'}
-          ok={autoOn}
-          warn={!autoOn && !killSwitch}
-        />
-        <StatusPill
-          label={cryptoOnly ? 'CRYPTO-FOCUS' : 'US MARKT OPEN'}
+          label={cryptoOnly ? 'Crypto' : 'Aandelen'}
           ok={!cryptoOnly}
-          warn={cryptoOnly}
+          warn={!!cryptoOnly}
         />
         <StatusPill
-          label={liveEnabled ? '🔴 LIVE' : `${status?.trading_mode?.toUpperCase() ?? '...'}`}
+          label={liveEnabled ? 'Live' : (status?.trading_mode?.toUpperCase() ?? '...')}
           ok={!liveEnabled && !!status?.trading_mode}
-          warn={liveEnabled}
+          warn={!!liveEnabled}
         />
-        {killSwitch && <StatusPill label="🛑 KILL SWITCH" ok={false} />}
-        {aiPaused && <StatusPill label="AI STOP" ok={false} />}
+        {aiPaused && <StatusPill label="AI Gepauzeerd" ok={false} />}
 
         <div className="hidden md:block h-4 border-l border-border mx-1" />
 
+        {/* AI toggle (desktop) */}
         <button
           onClick={handleAiToggle}
           disabled={aiBusy}
-          title={aiPaused ? 'AI-analyse hervatten' : 'AI-analyse direct stoppen'}
+          title={aiPaused ? 'AI-analyse hervatten' : 'AI-analyse pauzeren'}
           className={cn(
             'hidden md:inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors disabled:opacity-50',
             aiPaused
@@ -128,49 +138,32 @@ export function TopBar() {
           )}
         >
           {aiPaused ? <PlayCircle size={13} /> : <StopCircle size={13} />}
-          {aiPaused ? 'AI hervatten' : 'Stop AI'}
+          {aiPaused ? 'AI hervatten' : 'AI pauzeren'}
         </button>
 
-        <Link href="/notifications" className="hidden md:flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <Bell size={12} />
-          <span>{recentAlerts}</span>
+        {/* Notifications */}
+        <Link href="/notifications" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground relative">
+          <Bell size={14} />
+          {recentAlerts > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
+              {recentAlerts > 9 ? '9+' : recentAlerts}
+            </span>
+          )}
         </Link>
 
-        <span className="hidden md:flex items-center gap-1 text-xs">
-          <Shield size={12} className="text-muted-foreground" />
-          <span className={cn('text-xs', killSwitch ? 'text-red-400' : 'text-green-400')}>
-            {killSwitch ? 'BLOCKED' : 'OK'}
-          </span>
-        </span>
-
-        <span className="hidden md:flex items-center gap-1 text-xs">
-          <TrendingUp size={12} className="text-muted-foreground" />
-          <span className={cn('text-xs', alpacaOk ? 'text-green-400' : 'text-muted-foreground')}>
-            {alpacaOk ? '●' : '○'}
-          </span>
-        </span>
-
-        <span className="hidden md:flex items-center gap-1 text-xs">
-          <Brain size={12} className="text-muted-foreground" />
-          <span className={cn('text-xs', aiOk ? 'text-green-400' : 'text-muted-foreground')}>
-            {aiOk ? '●' : '○'}
-          </span>
-        </span>
-
-        {/* Mobile: compact status */}
-        <div className="flex md:hidden items-center gap-2 text-xs">
-          {killSwitch && <span className="text-red-400">🛑</span>}
-          {aiPaused && <span className="text-amber-500">AI</span>}
+        {/* Mobile: compact status + AI toggle */}
+        <div className="flex md:hidden items-center gap-1.5 text-xs">
+          {aiPaused && <span className="text-amber-600 font-medium text-[11px]">AI</span>}
           <button
             onClick={handleAiToggle}
             disabled={aiBusy}
-            className={cn('rounded border px-1.5 py-0.5', aiPaused ? 'border-green-200 text-green-700' : 'border-red-200 text-red-700')}
+            className={cn(
+              'rounded border px-1.5 py-0.5 text-[11px] font-medium',
+              aiPaused ? 'border-green-200 text-green-700' : 'border-red-200 text-red-700'
+            )}
           >
             {aiPaused ? 'Start AI' : 'Stop AI'}
           </button>
-          <span className={cn(alpacaOk ? 'text-green-400' : 'text-muted-foreground')}>
-            {alpacaOk ? '●' : '○'}
-          </span>
         </div>
       </header>
 
@@ -187,28 +180,38 @@ export function TopBar() {
               <button onClick={() => setMobileOpen(false)}><X size={16} /></button>
             </div>
             <nav className="flex-1 py-2 px-2">
-              {mobileMenuItems.map(({ href, label, icon: Icon }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-                >
-                  <Icon size={16} />
-                  {label}
-                </Link>
-              ))}
+              {menuGroups.map((group) => {
+                const items = mobileMenuItems.filter(i => i.group === group);
+                return (
+                  <div key={group} className="mb-4">
+                    <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/55">
+                      {group}
+                    </p>
+                    {items.map(({ href, label, icon: Icon }) => (
+                      <Link
+                        key={href}
+                        href={href}
+                        onClick={() => setMobileOpen(false)}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                      >
+                        <Icon size={16} />
+                        {label}
+                      </Link>
+                    ))}
+                  </div>
+                );
+              })}
             </nav>
-            <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground">
-              <div className="flex gap-2">
-                <span className={cn(killSwitch ? 'text-red-400' : 'text-green-400')}>
-                  Kill Switch: {killSwitch ? 'AAN' : 'UIT'}
+            <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground space-y-1">
+              <div className="flex gap-3">
+                <span className={cn(killSwitch ? 'text-red-500 font-medium' : 'text-green-700')}>
+                  Kill Switch: {killSwitch ? 'AAN' : 'Uit'}
                 </span>
-                <span className={cn(aiPaused ? 'text-amber-600' : 'text-green-600')}>
-                  AI: {aiPaused ? 'STOP' : 'AAN'}
+                <span className={cn(aiPaused ? 'text-amber-600 font-medium' : 'text-green-700')}>
+                  AI: {aiPaused ? 'Gepauzeerd' : 'Actief'}
                 </span>
               </div>
-              <p className="mt-1">v1.1.0</p>
+              <p>v1.1.0</p>
             </div>
           </div>
         </div>

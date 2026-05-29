@@ -83,16 +83,16 @@ export default function SignalsPage() {
     <div className="space-y-4 pb-20 md:pb-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-base font-semibold">
-          Signals {pendingCount > 0 && (
-            <span className="ml-2 text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">
-              {pendingCount} pending
+          Signalen {pendingCount > 0 && (
+            <span className="ml-2 text-xs bg-amber-500/15 text-amber-600 font-medium px-2 py-0.5 rounded-full">
+              {pendingCount} wachtend
             </span>
           )}
         </h1>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={reload}>Vernieuwen</Button>
           <Button variant="success" size="sm" onClick={handleGenerate} disabled={generating}>
-            {generating ? '⏳ Bezig...' : '⚡ Genereer'}
+            {generating ? 'Bezig...' : 'Genereer Signalen'}
           </Button>
         </div>
       </div>
@@ -101,15 +101,15 @@ export default function SignalsPage() {
       <div className="flex gap-1 flex-wrap">
         {[
           { key: 'all', label: `Alles (${signals?.length || 0})` },
-          { key: 'pending', label: `⏳ Pending (${(signals || []).filter((s: any) => s.status === 'pending').length})` },
-          { key: 'traded', label: `✅ Getraded` },
-          { key: 'rejected', label: `❌ Afgewezen` },
+          { key: 'pending', label: `Wachtend (${(signals || []).filter((s: any) => s.status === 'pending').length})` },
+          { key: 'traded', label: `Uitgevoerd` },
+          { key: 'rejected', label: `Afgewezen` },
         ].map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setFilter(key as any)}
             className={cn(
-              'px-3 py-1.5 text-xs rounded-md transition-colors',
+              'px-3 py-1.5 text-sm rounded-md transition-colors',
               filter === key ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
             )}
           >
@@ -141,7 +141,7 @@ export default function SignalsPage() {
                     <div className="flex items-center gap-3 flex-wrap">
                       <AssetLabel symbol={s.asset} />
                       <Badge variant={s.direction === 'buy' ? 'success' : 'danger'}>
-                        {s.direction?.toUpperCase()}
+                        {s.direction === 'buy' ? 'KOOP' : 'VERKOOP'}
                       </Badge>
                       <span className={cn('text-sm', confidenceColor(s.confidence))}>
                         {(s.confidence * 100).toFixed(0)}%
@@ -162,7 +162,7 @@ export default function SignalsPage() {
                             onClick={e => { e.stopPropagation(); handlePaperTrade(s.id); }}
                             disabled={acting === s.id}
                           >
-                            {acting === s.id ? '...' : '📄 Trade'}
+                            {acting === s.id ? 'Bezig...' : 'Trade'}
                           </Button>
                           <Button
                             variant="outline"
@@ -170,7 +170,7 @@ export default function SignalsPage() {
                             onClick={e => { e.stopPropagation(); handleReject(s.id); }}
                             disabled={acting === s.id}
                           >
-                            ✕
+                            Afwijzen
                           </Button>
                         </>
                       )}
@@ -187,9 +187,9 @@ export default function SignalsPage() {
                   <div className="px-4 pb-4 space-y-3 bg-muted/5">
                     {/* Price levels */}
                     <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                      {s.suggested_entry && <span>Entry: <span className="text-foreground font-medium">{fmtUSD(s.suggested_entry)}</span></span>}
+                      {s.suggested_entry && <span>Instap: <span className="text-foreground font-medium">{fmtUSD(s.suggested_entry)}</span></span>}
                       {s.suggested_stop && <span>Stop: <span className="text-red-400 font-medium">{fmtUSD(s.suggested_stop)}</span></span>}
-                      {s.suggested_take_profit && <span>TP: <span className="text-green-400 font-medium">{fmtUSD(s.suggested_take_profit)}</span></span>}
+                      {s.suggested_take_profit && <span>Doel: <span className="text-green-400 font-medium">{fmtUSD(s.suggested_take_profit)}</span></span>}
                       {s.risk_reward && <span>R/R: <span className="text-foreground font-medium">{s.risk_reward?.toFixed(2)}</span></span>}
                       <span>{fmtDate(s.created_at)}</span>
                     </div>
