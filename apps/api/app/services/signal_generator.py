@@ -255,6 +255,8 @@ class SignalGeneratorService:
             try:
                 if await self._recent_signal_exists(asset):
                     continue
+                if self._is_skip_cooldown(asset):
+                    continue
 
                 candles = await self._get_candles(asset)
                 ta_result = ta_analyze(candles) if candles else None
@@ -308,6 +310,11 @@ class SignalGeneratorService:
                 if lessons:
                     ta_summary += f"\n\n🧠 Geheugen — eerdere trades {asset} (BELANGRIJK: pas deze lessen toe):\n" + "\n".join(f"  {l}" for l in lessons)
 
+                # Enrich with Polymarket prediction market probabilities if available
+                poly_context = self._get_polymarket_context(asset)
+                if poly_context:
+                    ta_summary += f"\n\n📊 Polymarket voorspellingsmarkt:\n{poly_context}"
+
                 price_str = f"{price:.4f}" if price else "onbekend"
 
                 # Single combined call (was 3 separate calls — saves ~67% tokens)
@@ -326,12 +333,18 @@ class SignalGeneratorService:
 
                 if signal_data.get("direction") == "skip":
                     await self._log_signal_skip(asset, "AI koos SKIP", signal_data, data, ta_result)
+                    # Cooldown: sterk skip (bear >> bull) = 4u, normaal = 2u
+                    bear = float(signal_data.get("bear_score") or 0)
+                    bull = float(signal_data.get("bull_score") or 0)
+                    cooldown_hours = 4.0 if (bear - bull) > 0.35 else 2.0
+                    self._mark_skip_cooldown(asset, cooldown_hours)
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
                 min_confidence = MIN_CONFIDENCE_CRYPTO_SESSION if crypto_session_mode and is_crypto(asset) else MIN_CONFIDENCE_GENERATE
                 if confidence < min_confidence:
                     await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
+                    self._mark_skip_cooldown(asset, 1.5)
                     continue
 
                 # Build bull_data / bear_data from combined response for _save_signal compatibility
@@ -492,6 +505,11 @@ class SignalGeneratorService:
     async def _get_candles(self, symbol: str) -> list:
         from app.services.market_data_service import MarketDataService
         svc = MarketDataService()
+        # Prefer 1H candles for crypto (fresher RSI/MACD), fall back to 1D
+        if is_crypto(symbol):
+            candles = await svc.get_candles(symbol, "1Hour", 72)
+            if candles:
+                return candles
         return await svc.get_candles(symbol, "1Day", 50)
 
     async def _get_memory_lessons(self, asset: str, limit: int = 6) -> list[str]:
@@ -609,3 +627,55 @@ class SignalGeneratorService:
             )
 
         return signal
+
+    def _mark_skip_cooldown(self, asset: str, hours: float = 2.0) -> None:
+        """Register a skip cooldown in Redis so this asset isn't re-analyzed too soon."""
+        try:
+            import redis as redis_lib
+            r = redis_lib.from_url(self.settings.redis_url, decode_responses=True)
+            r.setex(f"skip_cooldown:{asset}", int(hours * 3600), "1")
+        except Exception:
+            pass
+
+    def _is_skip_cooldown(self, asset: str) -> bool:
+        """Return True if this asset is in skip cooldown (recently analyzed and skipped)."""
+        try:
+            import redis as redis_lib
+            r = redis_lib.from_url(self.settings.redis_url, decode_responses=True)
+            return bool(r.exists(f"skip_cooldown:{asset}"))
+        except Exception:
+            return False
+
+    def _get_polymarket_context(self, asset: str) -> str:
+        """Return a short summary of relevant Polymarket markets for this asset.
+        Uses the cached data from the polymarket Celery task (stored in Redis)."""
+        try:
+            from app.services.runtime_state import get_runtime_value
+            markets = get_runtime_value("polymarket_markets_cache", [])
+            if not markets or not isinstance(markets, list):
+                return ""
+            asset_lower = asset.lower()
+            name_map = {
+                "btc": ["bitcoin", "btc"],
+                "eth": ["ethereum", "eth"],
+                "sol": ["solana", "sol"],
+                "doge": ["dogecoin", "doge"],
+                "avax": ["avalanche", "avax"],
+            }
+            keywords = name_map.get(asset_lower, [asset_lower])
+            relevant = [
+                m for m in markets
+                if any(kw in (m.get("question") or "").lower() for kw in keywords)
+            ][:3]
+            if not relevant:
+                return ""
+            lines = []
+            for m in relevant:
+                hrs = f"{m['hours_left']:.0f}u" if m.get("hours_left") else "?"
+                lines.append(
+                    f"- \"{m['question'][:70]}\" → YES {m['yes_price']:.0%} | "
+                    f"vol ${m['volume']:,.0f} | {hrs} resterend"
+                )
+            return "\n".join(lines)
+        except Exception:
+            return ""

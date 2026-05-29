@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.tasks.signal_tasks",
         "app.tasks.social_tasks",
         "app.tasks.analysis_tasks",
+        "app.tasks.polymarket_tasks",
     ],
 )
 
@@ -89,6 +90,18 @@ celery_app.conf.update(
         "daily-summary-after-close": {
             "task": "app.tasks.analysis_tasks.send_activity_summary",
             "schedule": crontab(hour=21, minute=30),
+        },
+
+        # === POLYMARKET (data-only intelligence) ===
+        # Fetch + cache crypto markets every 5 min for signal enrichment
+        "polymarket-fetch-every-5min": {
+            "task": "app.tasks.polymarket_tasks.fetch_polymarket_data",
+            "schedule": 300.0,
+        },
+        # Update open simulated position prices every 15 min
+        "polymarket-update-prices-every-15min": {
+            "task": "app.tasks.polymarket_tasks.update_position_prices",
+            "schedule": 900.0,
         },
     },
 )

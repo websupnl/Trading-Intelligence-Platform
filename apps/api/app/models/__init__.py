@@ -20,6 +20,7 @@ from app.models.rules import PendingRule, ActiveRule
 from app.models.outcomes import SignalOutcome
 from app.models.notifications import Notification
 from app.models.token_usage import TokenUsage
+from app.models.polymarket import PolymarketPosition
 
 __all__ = [
     "TimestampMixin", "Asset", "Candle", "NewsItem", "SocialPost",
@@ -27,5 +28,5 @@ __all__ = [
     "RiskEvent", "AuditLog", "AIAgentRun", "MemoryEntry",
     "SourceCredibility", "StrategyPerformance", "Setting",
     "PendingRule", "ActiveRule", "SignalOutcome", "Notification",
-    "TokenUsage",
+    "TokenUsage", "PolymarketPosition",
 ]

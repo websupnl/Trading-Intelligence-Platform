@@ -137,7 +137,7 @@
 
 ---
 
-## 🚀 Volgende sessie — Stap 2: Polymarket Voorspellingsmarkt Pagina
+## ✅ Stap 2: Polymarket Voorspellingsmarkt Pagina (GEDAAN)
 
 ### Doel & visie
 Een volledig nieuwe pagina in de Trading OS waarop de AI automatisch handelt op **Polymarket voorspellingsmarkten** — met name snel aflopende crypto markten (5-min, 15-min, uur). De AI vergelijkt zijn eigen inschatting van de kans met de marktprijs. Als de markt onderprijs heeft (bijv. markt zegt 40% kans op BTC stijging, AI denkt 65%) → koop YES tokens. Als overprijs → koop NO tokens. Dit is puur kansarbitrage met AI als voorsprong.
