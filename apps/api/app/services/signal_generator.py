@@ -35,6 +35,9 @@ DEFAULT_WATCHLIST: set[str] = {
     "LMT", "RTX", "XOM", "CVX", "XLE",
 }
 
+# Top 5 most liquid crypto — used in active timed sessions for faster cycles
+CRYPTO_SESSION_WATCHLIST: list[str] = ["BTC", "ETH", "SOL", "DOGE", "AVAX"]
+
 SIGNAL_SYSTEM_PROMPT = """Je bent een gedisciplineerde trading analist voor een LONG-ONLY systeem. Je opereert volgens deze niet-onderhandelbare principes:
 
 KERNFILOSOFIE
@@ -217,14 +220,21 @@ class SignalGeneratorService:
 
         ticker_data = self._aggregate_by_ticker(news_items, social_posts)
 
-        watchlist = sorted(CRYPTO_SYMBOLS) if crypto_session_mode else DEFAULT_WATCHLIST
-        # Add watchlist tickers only when we have TA data for them (avoids wasting tokens on data-less tickers)
+        # In timed crypto session mode: narrow to top 5 for faster cycles
+        # In 24/7 mode (crypto_session_mode but no active timed session): scan all crypto
+        from app.services.crypto_session import get_crypto_session as _get_cs
+        _cs = _get_cs()
+        fast_session = crypto_session_mode and bool(_cs.get("active"))
+        watchlist = CRYPTO_SESSION_WATCHLIST if fast_session else (sorted(CRYPTO_SYMBOLS) if crypto_session_mode else DEFAULT_WATCHLIST)
         for ticker in watchlist:
             if ticker not in ticker_data:
                 ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0, "_watchlist_only": True}
 
         if crypto_session_mode:
             ticker_data = {ticker: data for ticker, data in ticker_data.items() if is_crypto(ticker)}
+            if fast_session:
+                # Keep only the session watchlist order for consistent fast cycles
+                ticker_data = {t: ticker_data[t] for t in CRYPTO_SESSION_WATCHLIST if t in ticker_data}
 
         if not ticker_data:
             logger.info("Geen tickers met voldoende data voor signaal generatie")
@@ -237,7 +247,7 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        limit = 10 if crypto_session_mode else 15
+        limit = 5 if fast_session else (10 if crypto_session_mode else 15)
         for asset, data in list(ticker_data.items())[:limit]:
             if is_ai_paused():
                 logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")

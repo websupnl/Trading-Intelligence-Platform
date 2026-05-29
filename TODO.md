@@ -125,19 +125,15 @@
 
 ---
 
-## 🔥 Volgende sessie — Stap 1: Crypto Live Micro-Trading
+## ✅ Stap 1: Crypto Live Micro-Trading (GEDAAN)
 
-### Doel
-De gebruiker kan een live sessie starten met een vast budget en de bot handelt continu en agressief terwijl je meekijkt.
-
-### Wat bouwen
-- [ ] **Signaal frequentie omhoog tijdens actieve sessie**: elke 2 min i.p.v. 5 min
-- [ ] **Confidence drempel naar 50%** voor crypto 24/7 mode (nu 55%) — meer gokkend, meer leren
-- [ ] **Micro-trade sizing**: budget per sessie instellen (bijv. $100), max per trade automatisch = budget / max_trades (bijv. $100 / 10 = $10/trade)
-- [ ] **Sessie budget UI**: slider of invoer voor totaalbudget per sessie op Crypto Sessie pagina
-- [ ] **Live P&L teller**: running total tijdens sessie, hoeveel trades open, hoeveel gesloten
-- [ ] **Auto-stop bij verlies**: sessie stopt automatisch als budget voor X% verloren (bijv. -20%)
-- [ ] **Snellere signal generator in crypto mode**: watchlist versmallen naar top 5 meest actieve coins, minder tokens, snellere cyclus
+- [x] **Signaal frequentie omhoog tijdens actieve sessie**: nieuwe `generate_signals_crypto_fast` task elke 2 min, alleen actief bij actieve timed sessie
+- [x] **Confidence drempel naar 50%** voor crypto mode (was 55%) — `CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.50`
+- [x] **Micro-trade sizing**: `session_budget` + `max_trades` → `max_notional_per_trade = budget / trades` automatisch berekend
+- [x] **Sessie budget UI**: budget-invoer + max trades + stop-loss% slider; toont berekende per-trade bedrag en auto-stop drempel
+- [x] **Live P&L teller**: `/api/crypto-session/status` geeft `trades_open`, `trades_closed`, `realized_pnl`; getoond in topbar + sessie controls
+- [x] **Auto-stop bij verlies**: `_session_budget_exceeded()` in auto_trader stopt sessie automatisch als verlies > `stop_loss_pct * session_budget`
+- [x] **Snellere signal generator**: timed sessie gebruikt `CRYPTO_SESSION_WATCHLIST` = [BTC, ETH, SOL, DOGE, AVAX], limit 5 i.p.v. 10
 
 ---
 

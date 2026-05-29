@@ -12,12 +12,12 @@ from app.schemas.risk import RiskCheckRequest
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.order_recorder import record_submitted_order
 from app.services.notifications import NotificationService
-from app.services.crypto_session import crypto_session_allows_autonomy, get_crypto_session, is_crypto_24_7_enabled
+from app.services.crypto_session import crypto_session_allows_autonomy, get_crypto_session, is_crypto_24_7_enabled, stop_crypto_session
 
 logger = logging.getLogger(__name__)
 
 AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.60
-CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.55
+CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.50
 MAX_AUTO_NOTIONAL = 500.0
 MIN_VIABLE_NOTIONAL = 1.0
 
@@ -54,6 +54,11 @@ class AutoTraderService:
         # Daily loss circuit breaker check
         if await self._daily_loss_triggered(mode):
             return 0
+
+        # Session budget auto-stop
+        if session_autonomy and not crypto_24_7:
+            if await self._session_budget_exceeded(crypto_session):
+                return 0
 
         now = datetime.now(timezone.utc)
         remaining_session_trades = None
@@ -164,6 +169,50 @@ class AutoTraderService:
         except Exception as e:
             logger.error(f"Daily loss check fout: {e}")
 
+        return False
+
+    async def _session_budget_exceeded(self, session: dict) -> bool:
+        """Stop session automatically if realized P&L loss exceeds stop_loss_pct of session_budget."""
+        try:
+            session_budget = float(session.get("session_budget") or 0)
+            stop_loss_pct = float(session.get("stop_loss_pct") or 0.20)
+            if session_budget <= 0:
+                return False
+            started_at = session.get("started_at")
+            if not started_at:
+                return False
+            session_start = datetime.fromisoformat(str(started_at))
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(func.sum(Trade.pnl)).where(
+                        Trade.status == "closed",
+                        Trade.pnl.isnot(None),
+                        Trade.symbol.in_(CRYPTO_SYMBOLS),
+                        Trade.opened_at >= session_start,
+                    )
+                )
+                realized_pnl = float(result.scalar() or 0)
+            max_loss = -(session_budget * stop_loss_pct)
+            if realized_pnl <= max_loss:
+                stop_crypto_session("budget_exceeded")
+                logger.warning(
+                    f"Sessie budget auto-stop: P&L ${realized_pnl:.2f} ≤ limiet ${max_loss:.2f} "
+                    f"({stop_loss_pct:.0%} van ${session_budget:.0f})"
+                )
+                async with AsyncSessionLocal() as db:
+                    db.add(AuditLog(
+                        action="crypto_session_budget_exceeded",
+                        actor="auto_trader",
+                        details={"realized_pnl": realized_pnl, "session_budget": session_budget, "max_loss": max_loss},
+                        status="warning",
+                        message=f"Sessie gestopt: verlies ${abs(realized_pnl):.2f} overschrijdt {stop_loss_pct:.0%} van budget ${session_budget:.0f}",
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    ))
+                    await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Session budget check fout: {e}")
         return False
 
     async def _get_equity(self) -> float:

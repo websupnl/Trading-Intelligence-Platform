@@ -62,6 +62,11 @@ celery_app.conf.update(
             "task": "app.tasks.signal_tasks.generate_signals",
             "schedule": 300.0,
         },
+        # Every 2 min: fast signal cycle — only runs during active timed crypto session
+        "generate-signals-crypto-fast-every-2min": {
+            "task": "app.tasks.signal_tasks.generate_signals_crypto_fast",
+            "schedule": 120.0,
+        },
         # Every 2 min: fallback sweep for any unexecuted pending signals
         "auto-trade-every-2min": {
             "task": "app.tasks.analysis_tasks.auto_trade",
