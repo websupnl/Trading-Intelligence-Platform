@@ -472,7 +472,9 @@ class SignalGeneratorService:
                 select(Signal).where(
                     Signal.asset == asset,
                     Signal.created_at >= since,
-                    Signal.status.in_(["pending", "paper_traded"]),
+                    # skipped_funds en broker_error: account-probleem, niet een signal-probleem.
+                    # Blokkeer ze wél om te voorkomen dat dezelfde call elke 5 min opnieuw draait.
+                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped_funds", "broker_error"]),
                 ).limit(1)
             )
             return result.scalar_one_or_none() is not None
