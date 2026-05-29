@@ -44,9 +44,17 @@ class AutoTraderService:
         if mode not in ("paper", "live"):
             logger.info("Ongeldig trading_mode - auto trader gestopt")
             return 0
-        if crypto_only and not autonomous:
-            logger.info("US markt gesloten - crypto auto trader wacht op sessie of 24/7 modus")
-            return 0
+        if not autonomous:
+            from app.services.market_session import us_market_open as _market_open
+            if _market_open():
+                # Market open but no session/24/7 active — wait for explicit permission
+                if crypto_only:
+                    logger.info("Crypto auto trader wacht op sessie of 24/7 modus (markt open)")
+                    return 0
+            else:
+                # Market closed: crypto is inherently 24/7, no session needed
+                autonomous = True
+                crypto_only = True
         if get_runtime_value("require_manual_confirmation", self.settings.require_manual_confirmation) and not autonomous:
             logger.info("Handmatige bevestiging vereist - auto trader gestopt")
             return 0
