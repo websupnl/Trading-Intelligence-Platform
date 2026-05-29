@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -49,20 +49,29 @@ class PositionMonitorService:
 
         return closed
 
-    async def _check_and_close(self, trade: Trade) -> bool:
-        if not trade.stop_loss and not trade.take_profit:
-            return False
+    MAX_HOLD_HOURS = 72  # sluit altijd na 72u als SL/TP niet bereikt werd
 
+    async def _check_and_close(self, trade: Trade) -> bool:
         price = await self.market.get_latest_price(trade.symbol)
         if price is None:
             return False
 
-        triggered, reason, exit_price = self._is_triggered(trade, price)
-        if not triggered:
-            return False
+        # SL/TP check
+        if trade.stop_loss or trade.take_profit:
+            triggered, reason, exit_price = self._is_triggered(trade, price)
+            if triggered:
+                await self._execute_close(trade, exit_price, reason)
+                return True
 
-        await self._execute_close(trade, exit_price, reason)
-        return True
+        # Max hold time: sluit altijd na MAX_HOLD_HOURS als er geen exit is geraakt
+        if trade.opened_at:
+            age = datetime.now(timezone.utc) - trade.opened_at
+            if age > timedelta(hours=self.MAX_HOLD_HOURS):
+                reason = f"Max hold tijd ({self.MAX_HOLD_HOURS}u) bereikt @ ${price:.4f}"
+                await self._execute_close(trade, price, reason)
+                return True
+
+        return False
 
     def _is_triggered(self, trade: Trade, price: float) -> tuple[bool, str, float]:
         is_long = trade.side.lower() in ("buy", "long")

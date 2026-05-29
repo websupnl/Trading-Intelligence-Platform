@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.60
 CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.55
 MAX_AUTO_NOTIONAL = 500.0
-MIN_NOTIONAL = 50.0
+MIN_VIABLE_NOTIONAL = 1.0
 
 
 class AutoTraderService:
@@ -79,6 +79,7 @@ class AutoTraderService:
 
         async with AsyncSessionLocal() as db:
             threshold = CRYPTO_SESSION_CONFIDENCE_THRESHOLD if autonomous else AUTO_TRADE_CONFIDENCE_THRESHOLD
+            # broker_error = transient API failure → retry; skipped_funds = niet genoeg saldo → niet retrien
             query = select(Signal).where(
                 Signal.status.in_(["pending", "broker_error"]),
                 Signal.confidence >= threshold,
@@ -95,6 +96,10 @@ class AutoTraderService:
             return 0
 
         notional = await self._get_notional()
+        if notional < MIN_VIABLE_NOTIONAL:
+            logger.warning(f"Berekende notional ${notional:.2f} is te laag voor een order — auto trader gestopt")
+            return 0
+
         executed = 0
         for signal in signals:
             try:
@@ -162,23 +167,34 @@ class AutoTraderService:
         return False
 
     async def _get_equity(self) -> float:
-        """Get account equity from Alpaca, fallback to 10k."""
+        """Get account equity from Alpaca. Returns 0.0 on failure so sizing fails safe."""
         try:
             account = await self.broker.get_account()
             equity = float(account.get("equity") or account.get("portfolio_value") or 0)
-            return equity if equity > 0 else 10_000.0
+            return equity if equity > 0 else 0.0
         except Exception:
-            return 10_000.0
+            return 0.0
+
+    async def _get_buying_power(self) -> float:
+        """Return available buying power (cash not tied up in open positions)."""
+        try:
+            account = await self.broker.get_account()
+            bp = float(account.get("buying_power") or account.get("cash") or 0)
+            return bp if bp > 0 else 0.0
+        except Exception:
+            return 0.0
 
     async def _get_notional(self) -> float:
-        """Equity-based position sizing: position_size_pct % of account, capped at 5x MAX_AUTO_NOTIONAL."""
+        """Equity-based position sizing: position_size_pct % of account, hard-capped at MAX_AUTO_NOTIONAL."""
         try:
             equity = await self._get_equity()
+            if equity <= 0:
+                return 0.0
             pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
-            notional = equity * pct
-            return round(max(MIN_NOTIONAL, min(notional, MAX_AUTO_NOTIONAL * 5)), 2)
+            notional = round(equity * pct, 2)
+            return min(notional, MAX_AUTO_NOTIONAL)
         except Exception:
-            return MAX_AUTO_NOTIONAL
+            return 0.0
 
     async def _get_broker_exposure(self, symbol: str) -> float | None:
         """Return signed broker quantity if a position exists; positive=long, negative=short."""
@@ -215,10 +231,10 @@ class AutoTraderService:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)
 
         exposure = await self._get_broker_exposure(signal.asset)
+        is_closing = signal.direction == "sell"
 
-        if signal.direction == "sell":
-            # Long-only strategy: SELL only closes an existing long position.
-            # Without an existing long, a sell order would open a short — not allowed.
+        if is_closing:
+            # SELL: alleen toegestaan om een bestaande long te sluiten
             if not exposure or exposure <= 0:
                 await self._skip_signal(
                     signal,
@@ -226,24 +242,47 @@ class AutoTraderService:
                     f"{signal.asset}: SELL signaal overgeslagen — geen bestaande long positie om te sluiten (long-only strategie)",
                 )
                 return False
+            # exposure > 0: we hebben een long → doorgaan met sluiting
 
-        if exposure:
+        elif exposure:
+            # BUY: geen nieuwe positie stapelen op bestaande exposure
             current_side = "buy" if exposure > 0 else "sell"
-            if current_side == signal.direction:
+            if current_side == "buy":
                 await self._skip_signal(
                     signal,
                     "skipped_existing",
-                    f"{signal.asset}: bestaande {current_side} exposure ({exposure}) - signaal niet gestapeld",
+                    f"{signal.asset}: bestaande long exposure ({exposure:.4f}) — signaal niet gestapeld",
                 )
-                return False
-            # exposure exists but direction conflicts — for sell this is handled above,
-            # for buy on a short position, skip to avoid adding complexity
-            await self._skip_signal(
-                signal,
-                "skipped_conflict",
-                f"{signal.asset}: bestaande {current_side} exposure ({exposure}) conflicteert met {signal.direction} signaal",
-            )
+            else:
+                await self._skip_signal(
+                    signal,
+                    "skipped_conflict",
+                    f"{signal.asset}: bestaande short exposure ({exposure:.4f}) conflicteert met BUY signaal",
+                )
             return False
+
+        # Pre-flight: check of er genoeg koopkracht is voor een BUY
+        if not is_closing:
+            buying_power = await self._get_buying_power()
+            if buying_power < MIN_VIABLE_NOTIONAL:
+                await self._skip_signal(
+                    signal,
+                    "skipped_funds",
+                    f"{signal.asset}: onvoldoende koopkracht (${buying_power:.2f} beschikbaar, ${notional:.2f} nodig)",
+                )
+                logger.warning(f"{signal.asset}: auto trade overgeslagen — koopkracht ${buying_power:.2f} te laag")
+                return False
+            if buying_power < notional:
+                # Schaal af naar 95% van beschikbaar saldo
+                notional = round(buying_power * 0.95, 2)
+                logger.info(f"{signal.asset}: notional teruggeschaald naar ${notional:.2f} (koopkracht: ${buying_power:.2f})")
+                if notional < MIN_VIABLE_NOTIONAL:
+                    await self._skip_signal(
+                        signal,
+                        "skipped_funds",
+                        f"{signal.asset}: onvoldoende koopkracht na afschaling (${buying_power:.2f} beschikbaar)",
+                    )
+                    return False
 
         risk_req = RiskCheckRequest(
             symbol=signal.asset,
@@ -253,6 +292,7 @@ class AutoTraderService:
             stop_loss=signal.suggested_stop,
             mode=mode,
             estimated_notional=notional,
+            is_closing_position=is_closing,
         )
         risk_result = await self.risk_engine.check_async(risk_req)
 
@@ -284,9 +324,9 @@ class AutoTraderService:
 
             order_qty = None
             order_notional = round(float(notional), 2)
-            if signal.direction == "sell" and signal.suggested_entry:
-                # Alpaca rejects fractional short sells. Use whole-share qty for sell/short signals.
-                order_qty = max(1, int(order_notional / float(signal.suggested_entry)))
+            if is_closing and exposure:
+                # Sluit exacte positiegrootte — gebruik broker exposure, niet notional-berekening
+                order_qty = abs(exposure)
                 order_notional = None
 
             try:
@@ -387,18 +427,34 @@ class AutoTraderService:
                 await db.commit()
                 return False
             except AlpacaAPIError as e:
-                logger.error(f"Broker fout voor {signal.asset}: {e}")
-                db_signal.status = "broker_error"
-                db.add(AuditLog(
-                    action="auto_trade_broker_error",
-                    actor="auto_trader",
-                    entity_type="signal",
-                    entity_id=signal.id,
-                    status="error",
-                    message=str(e)[:500],
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
-                ))
+                err_str = str(e)
+                # 40310000 = Alpaca insufficient balance code; ook plain-text check als fallback
+                is_funds_error = "40310000" in err_str or "insufficient balance" in err_str.lower() or "insufficient_balance" in err_str.lower()
+                if is_funds_error:
+                    logger.warning(f"Onvoldoende saldo voor {signal.asset}: {e}")
+                    db_signal.status = "skipped_funds"
+                    db.add(AuditLog(
+                        action="auto_trade_insufficient_funds",
+                        actor="auto_trader",
+                        entity_type="signal",
+                        entity_id=signal.id,
+                        status="skipped",
+                        message=f"Onvoldoende saldo: {err_str[:300]}",
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    ))
+                else:
+                    logger.error(f"Broker fout voor {signal.asset}: {e}")
+                    db_signal.status = "broker_error"
+                    db.add(AuditLog(
+                        action="auto_trade_broker_error",
+                        actor="auto_trader",
+                        entity_type="signal",
+                        entity_id=signal.id,
+                        status="error",
+                        message=err_str[:500],
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    ))
                 await db.commit()
-                # Broker errors worden gebundeld in de dagelijkse samenvatting, geen losse ping
                 return False

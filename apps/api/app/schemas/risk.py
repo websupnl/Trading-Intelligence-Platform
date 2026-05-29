@@ -11,6 +11,7 @@ class RiskCheckRequest(BaseModel):
     confidence: Optional[float] = None
     stop_loss: Optional[float] = None
     mode: str = "paper"
+    is_closing_position: bool = False
 
 
 class RiskCheckResult(BaseModel):
