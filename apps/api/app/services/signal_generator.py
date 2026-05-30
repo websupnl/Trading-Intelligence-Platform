@@ -386,12 +386,16 @@ class SignalGeneratorService:
 
                 if signal_data.get("direction") == "skip":
                     await self._log_signal_skip(asset, "AI koos SKIP", signal_data, data, ta_result)
+                    # Save "skipped" Signal so cooldown applies — prevents re-analysis every 10min
+                    await self._save_skipped_signal(asset, signal_data, ta_result, price)
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
                 min_confidence = MIN_CONFIDENCE_CRYPTO_SESSION if crypto_session_mode and is_crypto(asset) else MIN_CONFIDENCE_GENERATE
                 if confidence < min_confidence:
                     await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
+                    # Save "skipped" Signal so cooldown applies
+                    await self._save_skipped_signal(asset, signal_data, ta_result, price)
                     continue
 
                 # Build bull_data / bear_data from combined response for _save_signal compatibility
@@ -550,12 +554,39 @@ class SignalGeneratorService:
                 select(Signal).where(
                     Signal.asset == asset,
                     Signal.created_at >= since,
-                    # skipped_funds en broker_error: account-probleem, niet een signal-probleem.
-                    # Blokkeer ze wél om te voorkomen dat dezelfde call elke 5 min opnieuw draait.
-                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped_funds", "broker_error"]),
+                    # Include "skipped" so AI-analyzed-but-skipped assets are not re-analyzed
+                    # every 10 minutes (was causing 84 AI calls/hour instead of ~8)
+                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped_funds", "broker_error", "skipped"]),
                 ).limit(1)
             )
             return result.scalar_one_or_none() is not None
+
+    async def _save_skipped_signal(self, asset: str, signal_data: dict, ta_result, price) -> None:
+        """Save a minimal Signal with status='skipped' so the 6h cooldown applies.
+        Without this, AI-skipped assets are re-analyzed every 10 minutes."""
+        try:
+            expires = datetime.now(timezone.utc) + timedelta(hours=6)
+            signal = Signal(
+                asset=asset,
+                direction="skip",
+                timeframe=signal_data.get("timeframe", "swing"),
+                reason=signal_data.get("reason", "AI koos skip"),
+                confidence=float(signal_data.get("confidence") or 0),
+                status="skipped",
+                ai_analysis={
+                    "bull_score": signal_data.get("bull_score"),
+                    "bear_score": signal_data.get("bear_score"),
+                    "already_priced_in": signal_data.get("already_priced_in"),
+                    "ta_score": ta_result.score if ta_result else None,
+                    "ta_rsi": ta_result.rsi if ta_result else None,
+                },
+                expires_at=expires,
+            )
+            async with AsyncSessionLocal() as db:
+                db.add(signal)
+                await db.commit()
+        except Exception as e:
+            logger.warning(f"Skipped signal opslaan mislukt voor {asset}: {e}")
 
     async def generate_scalp_signals(self) -> int:
         """Snelle 15min/1H signals voor intraday scalp trades. Cooldown: 1u."""
@@ -642,9 +673,14 @@ class SignalGeneratorService:
                 signal_data = json.loads(text[start:end])
 
                 if signal_data.get("direction") != "buy":
+                    # Save skipped scalp to prevent re-analysis within cooldown
+                    signal_data.setdefault("timeframe", "intraday")
+                    await self._save_skipped_signal(asset, signal_data, ta_15m or ta_1h, price)
                     continue
                 confidence = float(signal_data.get("confidence", 0))
                 if confidence < MIN_CONFIDENCE_SCALP:
+                    signal_data.setdefault("timeframe", "intraday")
+                    await self._save_skipped_signal(asset, signal_data, ta_15m or ta_1h, price)
                     continue
                 if not signal_data.get("suggested_stop") or not signal_data.get("suggested_take_profit"):
                     continue
@@ -670,7 +706,7 @@ class SignalGeneratorService:
         return generated
 
     async def _recent_scalp_exists(self, asset: str) -> bool:
-        """Scalp cooldown: 1u (vs 6u voor swing signals)."""
+        """Scalp cooldown: 1u (vs 6u voor swing signals). Include 'skipped' to prevent re-analysis."""
         since = datetime.now(timezone.utc) - timedelta(hours=1)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -678,7 +714,7 @@ class SignalGeneratorService:
                     Signal.asset == asset,
                     Signal.timeframe == "intraday",
                     Signal.created_at >= since,
-                    Signal.status.in_(["pending", "paper_traded", "live_traded"]),
+                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped"]),
                 ).limit(1)
             )
             return result.scalar_one_or_none() is not None

@@ -197,15 +197,31 @@ class AutoTraderService:
             return MIN_NOTIONAL
 
     async def _get_broker_exposure(self, symbol: str) -> float | None:
-        """Return signed broker quantity if a position exists; positive=long, negative=short."""
+        """Return signed broker quantity if a position exists; positive=long, negative=short.
+        Normalizes symbol: Alpaca returns 'ETH/USD' but we query with 'ETH'."""
         try:
             positions = await self.broker.get_positions()
+            base = symbol.upper().split("/")[0]
             for pos in positions:
-                if (pos.get("symbol") or "").upper() == symbol.upper():
+                pos_base = (pos.get("symbol") or "").upper().split("/")[0]
+                if pos_base == base:
                     return float(pos.get("qty") or 0)
         except Exception as exc:
             logger.warning(f"Broker exposure check overgeslagen voor {symbol}: {exc}")
         return None
+
+    async def _has_open_db_trade(self, symbol: str) -> bool:
+        """Fallback: check DB for open position when broker check returns None."""
+        base = symbol.upper().split("/")[0]
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Trade).where(
+                    Trade.symbol.in_([base, f"{base}/USD"]),
+                    Trade.status == "open",
+                    Trade.side == "buy",
+                ).limit(1)
+            )
+            return result.scalar_one_or_none() is not None
 
     async def _skip_signal(self, signal: Signal, status: str, message: str) -> None:
         async with AsyncSessionLocal() as db:
@@ -259,6 +275,14 @@ class AutoTraderService:
                     "skipped_conflict",
                     f"{signal.asset}: bestaande short exposure ({exposure:.4f}) conflicteert met BUY signaal",
                 )
+            return False
+        elif not is_closing and await self._has_open_db_trade(signal.asset):
+            # DB fallback: broker check returned None but DB shows open position
+            await self._skip_signal(
+                signal,
+                "skipped_existing",
+                f"{signal.asset}: open positie aanwezig in DB — niet gestapeld (broker exposure check onzeker)",
+            )
             return False
 
         # Pre-flight: check of er genoeg koopkracht is voor een BUY
