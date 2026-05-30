@@ -52,9 +52,9 @@ celery_app.conf.update(
             "task": "app.tasks.analysis_tasks.fetch_market_data",
             "schedule": 900.0,
         },
-        "evaluate-outcomes-hourly": {
+        "evaluate-outcomes-every-15min": {
             "task": "app.tasks.analysis_tasks.evaluate_signal_outcomes",
-            "schedule": 3600.0,
+            "schedule": 900.0,
         },
 
         # === SIGNAL GENERATION & EXECUTION ===
@@ -76,9 +76,9 @@ celery_app.conf.update(
         },
 
         # === TRADE SYNC & LEARNING ===
-        "sync-closed-trades-every-5min": {
+        "sync-closed-trades-every-2min": {
             "task": "app.tasks.analysis_tasks.sync_closed_trades",
-            "schedule": 300.0,
+            "schedule": 120.0,
         },
 
         # Daily summary at 21:30 UTC (after US market close at ~21:00 UTC)

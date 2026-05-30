@@ -49,7 +49,7 @@ class PositionMonitorService:
 
         return closed
 
-    MAX_HOLD_HOURS = 36  # sluit altijd na 36u — snellere rotatie, minder exposure
+    MAX_HOLD_HOURS = 24  # sluit altijd na 24u — snellere rotatie, AI leert sneller
 
     async def _check_and_close(self, trade: Trade) -> bool:
         price = await self.market.get_latest_price(trade.symbol)
