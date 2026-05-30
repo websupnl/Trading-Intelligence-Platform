@@ -207,3 +207,25 @@ class PositionMonitorService:
             )
 
         logger.info(f"Trade gesloten: {trade.symbol} {reason} P&L=${pnl:.2f}")
+
+        # Write AI reflection + memory lesson for closed trade
+        try:
+            from app.services.trade_tracker import TradeTrackerService
+            from app.config import get_settings
+            tracker = TradeTrackerService(get_settings())
+            trade_data = {
+                "id": trade.id,
+                "symbol": trade.symbol,
+                "side": trade.side,
+                "entry_price": entry,
+                "exit_price": exit_price,
+                "pnl": round(pnl, 4),
+                "pnl_pct": round(pnl_pct, 4),
+                "quantity": qty,
+                "entry_reason": trade.entry_reason or "",
+                "opened_at": trade.opened_at,
+                "closed_at": now,
+            }
+            await tracker._write_reflection(trade_data)
+        except Exception as e:
+            logger.warning(f"Reflectie schrijven mislukt voor {trade.symbol}: {e}")

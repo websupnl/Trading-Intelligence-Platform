@@ -133,7 +133,9 @@ def auto_trade():
     market_open = _us_market_open()
     try:
         svc = AutoTraderService()
-        crypto_only = (not market_open) or crypto_session_allows_autonomy()
+        # Market open: trade everything (crypto + stocks)
+        # Market closed: crypto only (24/7 autonomous)
+        crypto_only = not market_open
         count = asyncio.run(svc.process_pending_signals(crypto_only=crypto_only))
         return {"status": "ok", "executed": count, "crypto_only": crypto_only}
     except Exception as e:
