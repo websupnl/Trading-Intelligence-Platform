@@ -20,30 +20,29 @@ COMMON_WORDS = {
 
 # Built-in default feeds — always active, no config needed
 DEFAULT_NEWS_FEEDS = [
-    # Finance & markets
-    "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
-    "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best",
-    "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US",
-    "https://feeds.marketwatch.com/marketwatch/topstories/",
-    "https://seekingalpha.com/feed.xml",
-    "https://www.investing.com/rss/news.rss",
-    "https://www.ft.com/rss/home",
-    "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-    "https://www.cnbc.com/id/20910258/device/rss/rss.html",
-    "https://feeds.bloomberg.com/markets/news.rss",
-    # Crypto
+    # Crypto — high signal-to-noise
     "https://www.coindesk.com/arc/outboundfeeds/rss/",
     "https://cointelegraph.com/rss",
     "https://decrypt.co/feed",
-    # Reddit (RSS, no auth needed)
-    "https://www.reddit.com/r/wallstreetbets/.rss",
-    "https://www.reddit.com/r/stocks/.rss",
-    "https://www.reddit.com/r/investing/.rss",
-    "https://www.reddit.com/r/StockMarket/.rss",
-    "https://www.reddit.com/r/options/.rss",
-    "https://www.reddit.com/r/SecurityAnalysis/.rss",
+    "https://theblock.co/rss.xml",
+    "https://bitcoinmagazine.com/.rss/full/",
+    "https://cryptonews.com/news/feed/",
+    "https://cryptoslate.com/feed/",
+    # Finance & markets
+    "https://feeds.bloomberg.com/markets/news.rss",
+    "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+    "https://feeds.marketwatch.com/marketwatch/topstories/",
+    "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+    "https://seekingalpha.com/feed.xml",
+    # Reddit crypto (RSS, no auth needed)
     "https://www.reddit.com/r/cryptocurrency/.rss",
     "https://www.reddit.com/r/Bitcoin/.rss",
+    "https://www.reddit.com/r/ethereum/.rss",
+    "https://www.reddit.com/r/solana/.rss",
+    "https://www.reddit.com/r/CryptoCurrencies/.rss",
+    # Reddit finance
+    "https://www.reddit.com/r/wallstreetbets/.rss",
+    "https://www.reddit.com/r/investing/.rss",
 ]
 
 DEFAULT_HEADERS = {
