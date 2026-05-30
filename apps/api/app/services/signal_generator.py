@@ -28,9 +28,10 @@ MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
 # Always-monitored assets — generate signals even without news/social data
+# XRP/ADA removed: no longer in CRYPTO_SYMBOLS (Alpaca returned wrong prices causing data bugs)
 DEFAULT_WATCHLIST: set[str] = {
     # Crypto large-cap
-    "BTC", "ETH", "SOL", "DOGE", "AVAX", "XRP", "ADA", "LINK", "LTC",
+    "BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK", "LTC",
     # Crypto mid-cap (meme/volatile)
     "AAVE", "UNI", "ALGO", "BAT", "CRV", "BCH",
     # US equities & ETFs
@@ -179,6 +180,36 @@ BTC in downtrend → VERLAAG confidence met 0.05, alleen oversold bounces bij st
 ═══ OUTPUT ═══
 JSON alleen. Bij buy: stop_loss en take_profit verplicht. R/R minimaal 1.5.
 Reden: setup_type + welk niveau + waarom nu."""
+
+SCALP_SYSTEM_PROMPT = """Je bent een crypto scalp trader. Je analyseert 15min en 1H charts voor intraday setups.
+
+SETUP TYPES (kies er één):
+1. BOUNCE: prijs raakt steun, RSI < 40, bullish candle patroon → TP: +1%, SL: -0.5%
+2. BREAKOUT: prijs breekt boven weerstand met volume, Entry boven candle. TP: +1.5%, SL: -0.5%
+3. MOMENTUM: RSI 45-60 + MACD bullish cross + uptrend. TP: +1%, SL: -0.4%
+4. SQUEEZE: Bollinger squeeze + richting bepaald. TP: +1.5%, SL: -0.6%
+
+SKIP:
+- RSI > 72 of RSI < 20
+- Geen duidelijk patroon op 15min OF 1H
+- Bollinger banden te breed (hoge volatiliteit, geen squeeze)
+- Volume te laag (< normaal)
+
+CONFIDENCE: 0.52-0.75 (snelle beslissing, lagere drempel dan swing)
+R/R minimaal 1.5 verplicht. Stop en target VERPLICHT in output.
+
+OUTPUT: geldig JSON met deze velden:
+{
+  "direction": "buy" | "skip",
+  "confidence": <0.52-0.75>,
+  "setup_type": "bounce" | "breakout" | "momentum" | "squeeze",
+  "suggested_entry": <prijs>,
+  "suggested_stop": <prijs onder steun>,
+  "suggested_take_profit": <prijs>,
+  "risk_reward": <ratio>,
+  "timeframe": "intraday",
+  "reason": "<setup_type + welk niveau + waarom nu, max 50 woorden>"
+}"""
 
 # Backwards-compat alias (oude callers kunnen nog de combinatie krijgen)
 SIGNAL_PROMPT = SIGNAL_SYSTEM_PROMPT + "\n\n" + SIGNAL_USER_PROMPT
@@ -526,6 +557,132 @@ class SignalGeneratorService:
             )
             return result.scalar_one_or_none() is not None
 
+    async def generate_scalp_signals(self) -> int:
+        """Snelle 15min/1H signals voor intraday scalp trades. Cooldown: 1u."""
+        if is_ai_paused():
+            return 0
+
+        client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key) if self.settings.anthropic_api_key else None
+        if not client:
+            return 0
+
+        assets = sorted(CRYPTO_SYMBOLS)
+        generated = 0
+
+        for asset in assets[:12]:
+            if is_ai_paused():
+                break
+            try:
+                if await self._recent_scalp_exists(asset):
+                    continue
+
+                candles_15m = await self._get_candles_15m(asset)
+                candles_1h = await self._get_candles(asset)  # reuse daily helper, but 1H
+                candles_1h_data = await self._get_candles_4h(asset)  # 4H as proxy when no 1H
+
+                ta_15m = ta_analyze(candles_15m) if candles_15m else None
+                ta_1h = ta_analyze(candles_1h_data) if candles_1h_data else None
+
+                if not ta_15m and not ta_1h:
+                    continue
+
+                price = candles_15m[-1].close if candles_15m else (candles_1h_data[-1].close if candles_1h_data else None)
+                if not price:
+                    continue
+
+                ta_summary = "═══ MULTI-TIMEFRAME TA ═══"
+                if ta_15m:
+                    rsi = f"{ta_15m.rsi:.0f}" if ta_15m.rsi is not None else "N/A"
+                    bb_info = ""
+                    if ta_15m.bb_pct is not None:
+                        bb_info = f" | BB%: {ta_15m.bb_pct:.2f}"
+                        if ta_15m.bb_squeeze:
+                            bb_info += " (SQUEEZE)"
+                    patterns = ", ".join(ta_15m.candlestick_patterns) if ta_15m.candlestick_patterns else "geen"
+                    ta_summary += f"\n[15min] Score:{ta_15m.score:.2f} | RSI:{rsi} | {ta_15m.trend}{bb_info} | Patroon:{patterns}"
+                    if ta_15m.support:
+                        ta_summary += f" | Steun:${ta_15m.support:.4f}"
+                    if ta_15m.resistance:
+                        ta_summary += f" | Weerstand:${ta_15m.resistance:.4f}"
+                    if ta_15m.atr:
+                        ta_summary += f" | ATR:${ta_15m.atr:.4f}"
+                if ta_1h:
+                    rsi_1h = f"{ta_1h.rsi:.0f}" if ta_1h.rsi is not None else "N/A"
+                    ta_summary += f"\n[4H]   Score:{ta_1h.score:.2f} | RSI:{rsi_1h} | MACD:{ta_1h.macd_signal} | {ta_1h.trend}"
+
+                user_prompt = SIGNAL_USER_PROMPT.format(
+                    asset=asset,
+                    price=f"{price:.4f}",
+                    news_summary="Geen nieuws (intraday scalp — TA-only)",
+                    social_summary="N/A",
+                    ta_summary=ta_summary,
+                )
+                system_blocks = [{
+                    "type": "text",
+                    "text": SCALP_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }] if self.settings.anthropic_enable_prompt_caching else SCALP_SYSTEM_PROMPT
+
+                response = client.messages.create(
+                    model=self.settings.anthropic_model,
+                    max_tokens=500,
+                    temperature=0.4,
+                    system=system_blocks,
+                    messages=[{"role": "user", "content": user_prompt}],
+                )
+                async with AsyncSessionLocal() as db:
+                    await flush_usage(db, [usage_record(self.settings.anthropic_model, "scalp_signal", response.usage)])
+                    await db.commit()
+
+                text = response.content[0].text.strip()
+                start = text.find("{")
+                end = text.rfind("}") + 1
+                if start < 0 or end <= start:
+                    continue
+                signal_data = json.loads(text[start:end])
+
+                if signal_data.get("direction") != "buy":
+                    continue
+                confidence = float(signal_data.get("confidence", 0))
+                if confidence < MIN_CONFIDENCE_SCALP:
+                    continue
+                if not signal_data.get("suggested_stop") or not signal_data.get("suggested_take_profit"):
+                    continue
+
+                signal_data.setdefault("timeframe", "intraday")
+                ta_used = ta_15m or ta_1h
+                await self._save_signal(
+                    asset, signal_data,
+                    {"news_items": [], "social_posts": []},
+                    ta_used,
+                    {"bull_score": confidence, "key_catalyst": signal_data.get("setup_type"), "bull_arguments": [], "price_target": signal_data.get("suggested_take_profit")},
+                    {"bear_score": 1 - confidence, "key_risk": "intraday reversal", "bear_arguments": [], "downside_target": signal_data.get("suggested_stop")},
+                )
+                generated += 1
+                logger.info(f"Scalp signaal: {asset} buy confidence={confidence:.2f} setup={signal_data.get('setup_type')}")
+
+            except Exception as e:
+                logger.error(f"Scalp signal fout voor {asset}: {e}")
+                if is_ai_failure(e):
+                    await pause_ai("scalp_generator", e)
+                    break
+
+        return generated
+
+    async def _recent_scalp_exists(self, asset: str) -> bool:
+        """Scalp cooldown: 1u (vs 6u voor swing signals)."""
+        since = datetime.now(timezone.utc) - timedelta(hours=1)
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Signal).where(
+                    Signal.asset == asset,
+                    Signal.timeframe == "intraday",
+                    Signal.created_at >= since,
+                    Signal.status.in_(["pending", "paper_traded", "live_traded"]),
+                ).limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+
     async def _get_candles(self, symbol: str) -> list:
         from app.services.market_data_service import MarketDataService
         svc = MarketDataService()
@@ -535,6 +692,11 @@ class SignalGeneratorService:
         from app.services.market_data_service import MarketDataService
         svc = MarketDataService()
         return await svc.get_candles(symbol, "4Hour", 60)
+
+    async def _get_candles_15m(self, symbol: str) -> list:
+        from app.services.market_data_service import MarketDataService
+        svc = MarketDataService()
+        return await svc.get_candles(symbol, "15Min", 200)
 
     async def _get_memory_lessons(self, asset: str, limit: int = 6) -> list[str]:
         """Fetch recent trade lessons for this asset, including rule suggestions."""
