@@ -10,6 +10,11 @@ class TAResult:
     trend: str            # "uptrend" | "downtrend" | "sideways"
     volume_signal: str    # "high" | "normal" | "low"
     summary: str
+    ema20: Optional[float] = None
+    ema50: Optional[float] = None
+    pct_from_ema20: Optional[float] = None
+    pct_from_ema50: Optional[float] = None
+    setup_type: str = "none"   # "oversold_bounce" | "momentum_breakout" | "overbought" | "none"
 
 
 def _ema(values: list[float], period: int) -> list[float]:
@@ -101,22 +106,44 @@ def analyze(candles) -> TAResult:
                         score -= 0.10
                         macd_signal = "bearish"
 
-    # Trend (EMA20 vs current price)
+    # Trend (EMA20 + EMA50 vs current price)
     trend = "sideways"
+    ema20_val: Optional[float] = None
+    ema50_val: Optional[float] = None
+    pct_from_ema20: Optional[float] = None
+    pct_from_ema50: Optional[float] = None
+
     if len(closes) >= 20:
-        ema20 = _ema(closes, 20)
-        if ema20:
-            current = closes[-1]
-            ema_val = ema20[-1]
-            pct_diff = (current - ema_val) / ema_val
-            if pct_diff > 0.02:
+        ema20_list = _ema(closes, 20)
+        if ema20_list:
+            ema20_val = ema20_list[-1]
+            pct_from_ema20 = (closes[-1] - ema20_val) / ema20_val
+            if pct_from_ema20 > 0.02:
                 score += 0.20
                 trend = "uptrend"
-                signals.append(f"Prijs {pct_diff:.1%} boven EMA20")
-            elif pct_diff < -0.02:
+                signals.append(f"Prijs {pct_from_ema20:.1%} boven EMA20")
+            elif pct_from_ema20 < -0.02:
                 score -= 0.20
                 trend = "downtrend"
-                signals.append(f"Prijs {pct_diff:.1%} onder EMA20")
+                signals.append(f"Prijs {pct_from_ema20:.1%} onder EMA20")
+
+    if len(closes) >= 50:
+        ema50_list = _ema(closes, 50)
+        if ema50_list:
+            ema50_val = ema50_list[-1]
+            pct_from_ema50 = (closes[-1] - ema50_val) / ema50_val
+            if pct_from_ema50 > 0.05:
+                score += 0.10
+                signals.append(f"Prijs {pct_from_ema50:.1%} boven EMA50")
+            elif pct_from_ema50 < -0.05:
+                score -= 0.10
+                signals.append(f"Prijs {pct_from_ema50:.1%} onder EMA50")
+            # EMA20 > EMA50 = golden cross territory
+            if ema20_val and ema20_val > ema50_val:
+                score += 0.05
+                signals.append("EMA20 > EMA50 (bullish alignment)")
+            elif ema20_val and ema20_val < ema50_val:
+                score -= 0.05
 
     # Volume analysis
     volume_signal = "normal"
@@ -135,6 +162,16 @@ def analyze(candles) -> TAResult:
     # Clamp score
     score = max(-1.0, min(1.0, score))
 
+    # Classify setup type for prompt context
+    setup_type = "none"
+    if rsi is not None:
+        if rsi < 40 and trend in ("downtrend", "sideways"):
+            setup_type = "oversold_bounce"
+        elif rsi > 70:
+            setup_type = "overbought"
+        elif 45 <= rsi <= 65 and macd_signal in ("bullish_cross", "bullish") and trend == "uptrend":
+            setup_type = "momentum_breakout"
+
     summary = " | ".join(signals) if signals else "Geen duidelijke technische signalen"
 
     return TAResult(
@@ -144,4 +181,9 @@ def analyze(candles) -> TAResult:
         trend=trend,
         volume_signal=volume_signal,
         summary=summary,
+        ema20=round(ema20_val, 4) if ema20_val else None,
+        ema50=round(ema50_val, 4) if ema50_val else None,
+        pct_from_ema20=round(pct_from_ema20 * 100, 2) if pct_from_ema20 else None,
+        pct_from_ema50=round(pct_from_ema50 * 100, 2) if pct_from_ema50 else None,
+        setup_type=setup_type,
     )

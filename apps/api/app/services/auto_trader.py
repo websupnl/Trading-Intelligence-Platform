@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.55
 CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.52
 MAX_AUTO_NOTIONAL = 500.0
-MIN_VIABLE_NOTIONAL = 1.0
+MIN_NOTIONAL = 50.0      # Never trade less than $50 — below this commissions eat profit
 
 
 class AutoTraderService:
@@ -185,16 +185,16 @@ class AutoTraderService:
             return 0.0
 
     async def _get_notional(self) -> float:
-        """Equity-based position sizing: position_size_pct % of account, hard-capped at MAX_AUTO_NOTIONAL."""
+        """Equity-based position sizing: position_size_pct % of account, floored at MIN_NOTIONAL, capped at MAX_AUTO_NOTIONAL."""
         try:
             equity = await self._get_equity()
             if equity <= 0:
-                return 0.0
+                return MIN_NOTIONAL
             pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
-            notional = round(equity * pct, 2)
-            return min(notional, MAX_AUTO_NOTIONAL)
+            notional = round(equity * float(pct), 2)
+            return max(MIN_NOTIONAL, min(notional, MAX_AUTO_NOTIONAL))
         except Exception:
-            return 0.0
+            return MIN_NOTIONAL
 
     async def _get_broker_exposure(self, symbol: str) -> float | None:
         """Return signed broker quantity if a position exists; positive=long, negative=short."""

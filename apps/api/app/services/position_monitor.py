@@ -49,7 +49,7 @@ class PositionMonitorService:
 
         return closed
 
-    MAX_HOLD_HOURS = 72  # sluit altijd na 72u als SL/TP niet bereikt werd
+    MAX_HOLD_HOURS = 36  # sluit altijd na 36u — snellere rotatie, minder exposure
 
     async def _check_and_close(self, trade: Trade) -> bool:
         price = await self.market.get_latest_price(trade.symbol)

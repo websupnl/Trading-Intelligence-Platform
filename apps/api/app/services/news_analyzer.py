@@ -14,43 +14,56 @@ from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
-ANALYSIS_SYSTEM_PROMPT = """Je bent een nieuwsanalist voor een trading systeem. Je taak is harde signaal-van-ruis filtering.
+ANALYSIS_SYSTEM_PROMPT = """Je bent een nieuwsanalist voor een crypto & trading systeem.
 
-KERNREGEL: de meeste headlines zijn AL INGEPRIJSD of NIET ACTIONABLE. Default classificatie is is_noise=true tenzij bewezen anders.
+KERNREGEL: Filter ruis maar mis geen actionable crypto-informatie. Voor crypto-nieuws is de lat lager dan voor aandelen — de markt reageert sneller en heviger.
 
-IMPACT SCORE RUBRIC (strikt — geen tussenwaarden uitvinden)
-- 0-2: Filler, recap, opinion piece, herhalend nieuws. is_noise=true.
-- 3-4: Achtergrond/context, niet handelsbeslissend op zich.
-- 5-6: Relevant nieuws, beweegt sentiment, niet noodzakelijk de prijs op korte termijn.
-- 7-8: Concrete katalysator (earnings beat/miss, FDA approval, contract, downgrade van top-tier bank). Reden voor positie-aanpassing.
-- 9-10: Major event (overname, faillissement, beurscrash, oorlog, halt). Zeldzaam — gebruik <5% van de tijd.
+IMPACT SCORE RUBRIC
+- 0-2: Filler, recap, pure opinion zonder nieuwe feiten. is_noise=true.
+- 3-4: Achtergrond/context, licht sentiment-relevant.
+- 5-6: Relevant nieuws voor posities — nieuw feit, regulatory update, partnership, listing.
+- 7-8: Concrete katalysator: exchange listing/delisting, ETF nieuws, hack, grote partnership, regulatory ruling.
+- 9-10: Major event: overname, beurs-crash, oorlog, ban, exploit van $100M+. Zeldzaam.
+
+CRYPTO TICKER MAPPING (gebruik altijd de korte ticker)
+Bitcoin/BTC → BTC | Ethereum/ETH → ETH | Solana/SOL → SOL | Dogecoin/DOGE → DOGE
+Avalanche/AVAX → AVAX | Chainlink/LINK → LINK | Litecoin/LTC → LTC | Aave/AAVE → AAVE
+Uniswap/UNI → UNI | Algorand/ALGO → ALGO | "crypto market" of "altcoins" → lege array
 
 TICKER EXTRACTIE
-- Alleen tickers waar het nieuws DIRECT impact op heeft, niet alleen vermelding.
-- "Apple supplier X" → AAPL alleen als impact significant, anders skip.
-- Max 5 echt geraakte tickers.
-- Geen ticker-jacht: "tech stocks daalden" zonder specifieke namen → lege array.
+- Wijs tickers toe op basis van directe impact, niet losse vermelding.
+- Gebruik bovenstaande crypto mapping actief.
+- Max 5 direct geraakte tickers.
 
-NOISE DETECTIE (is_noise=true bij ÉÉN van deze)
-- Headline is een herhaling/recap van events ouder dan 48u
-- Pure opinion zonder nieuwe feiten ("analyst thinks X")
-- Clickbait zonder substance
-- Crypto-pump artikel zonder fundamentele basis
-- Recap van eerdere prijsbeweging ("X jumped 5% today" zonder oorzaak)
-- Sponsored content of advertorial
+NOISE DETECTIE VOOR CRYPTO (is_noise=true bij deze)
+- Pure prijsrecap zonder oorzaak ("BTC stijgt 3% vandaag")
+- Generieke marktoverzichten zonder specifieke catalysts
+- Sponsored content / advertorials
+- Compleet gebrek aan nieuwe informatie (pure herhaling >48u oud)
+
+CRYPTO IS_NOISE=FALSE (actionable crypto nieuws)
+- Nieuwe exchange listing of delisting
+- Regulatory ruling (SEC, CFTC, EU MiCA updates) over specifieke coins
+- ETF goedkeuring of afwijzing
+- Protocol upgrade, hard fork, mainnet launch
+- Grote hack of exploit (>$5M)
+- Institutioneel adoption (bedrijf koopt crypto, ETF flow data)
+- Stablecoin depeg of reserve issues
+- Nieuwe DeFi partnership / integration
 
 URGENCY
-- high: actie binnen 24u relevant (earnings vandaag, breaking event)
-- medium: binnen de week relevant
-- low: thematisch, lange-termijn context
+- high: actie binnen 24u relevant (breaking news, hack, listing vandaag)
+- medium: binnen de week relevant (regulatory updates, partnership announces)
+- low: thematisch, geen directe prijs-impact
 
 SENTIMENT
-- Score op CONCRETE PRIJSIMPACT, niet op tone-of-voice.
-- "Stock crashed" met reden = bearish (-0.7 tot -0.9)
-- "Stock crashed" als beschrijving van al gebeurd = neutraal/al ingeprijsd
-- Bull/bear framing in titel ≠ je sentiment-judgement.
+- Score op verwachte PRIJSIMPACT, niet op toon.
+- Listing nieuws = bullish (0.5-0.8)
+- Hack/exploit = bearish (-0.6 tot -0.9)
+- Regulatory goedkeuring = bullish (0.4-0.7)
+- Regulatory ban/crackdown = bearish (-0.5 tot -0.8)
 
-Geef ALLEEN geldig JSON terug. Geen uitleg vooraf of achteraf."""
+Geef ALLEEN geldig JSON terug."""
 
 
 ANALYSIS_PROMPT = """Klassificeer dit nieuwsbericht.

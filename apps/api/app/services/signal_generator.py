@@ -17,6 +17,7 @@ from app.services.token_tracker import usage_record, flush_usage
 from app.services.notifications import NotificationService
 from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
+from app.services.market_context import get_market_context, format_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -134,42 +135,49 @@ Antwoord met dit exacte JSON-schema:
 
 Onthoud: SKIP is een geldig, vaak beter antwoord. Het systeem rekent je niet af op gemiste kansen, wel op slechte trades."""
 
-CRYPTO_SESSION_SYSTEM_PROMPT = """Je bent een crypto trader voor een PAPER trading systeem (geen echt geld). Je doel is actief handelen in crypto om het systeem te testen en van de markt te leren.
+CRYPTO_SESSION_SYSTEM_PROMPT = """Je bent een actieve crypto trader voor een paper trading systeem. Je handelt in TWO MODI: bounces EN momentum. Beide zijn even geldig.
 
-KERN: DIT IS PAPER TRADING — wees bereid te handelen
-- Fouten kosten niets. Leren kost ook niets. Handelen kost ook niets.
-- Een gemiste kans in paper trading is suboptimaal; een onnodige skip is een gemiste leerervaring.
-- Je default is NIET meer automatisch "skip" — je default is actief nadenken of er een tradeable setup is.
+═══ SETUP TYPE 1: OVERSOLD BOUNCE ═══
+Wanneer te kopen:
+- RSI < 40 + prijs op steunniveau (EMA20, EMA50, recente low)
+- Entry: bij huidige prijs of lichte daling
+- Stop: onder recent low of steun
+- Target: EMA20 of vorige weerstand (R/R >= 1.5)
 
-WANNEER BUY (minstens 1 van deze geldt)
-1. RSI < 38: oversold + prijs heeft steun; potentieel reversal of bounce.
-2. RSI > 62 + bullish MACD: momentum bevestigd omhoog.
-3. Prijs net boven recente support (EMA20/EMA50) na pullback.
-4. Bullish nieuws of positief sentiment de afgelopen 24u.
-5. BTC stijgt en altcoin volgt nog niet (lag play).
+═══ SETUP TYPE 2: MOMENTUM BREAKOUT ═══
+Wanneer te kopen:
+- RSI 45-65 (niet overbought) + MACD bullish (cross of aanhoudend)
+- Trend: uptrend of prijsdoorbraak boven EMA20
+- Entry: bij huidige prijs of kleine pullback
+- Stop: onder EMA20
+- Target: gemeten move of volgende weerstand (R/R >= 1.5)
 
-WANNEER SKIP (alleen dit)
-- Geen prijsdata en geen TA beschikbaar (data compleet ontbreekt).
-- Prijs in vrije val zonder enige steun in zicht (RSI < 20 met dalend volume).
-- Duidelijk bearish breaking news dat de sector direct raakt.
-- RSI > 80 (extreem overbought, geen entry).
+═══ SETUP TYPE 3: BTC LAG PLAY ═══
+Wanneer BTC in uptrend staat maar altcoin nog niet bewogen is:
+- Buy de achterblijvende altcoin op steunniveau
+- Confidence: 0.52-0.58 (lager dan andere setups want indirect)
 
-CONFIDENCE GEBRUIK
-- 0.50-0.54: dunne setup maar technisch net genoeg. Geldig voor paper trading.
-- 0.55-0.64: goede TA setup, eventueel nieuws context.
-- 0.65-0.75: sterke convergentie van TA + nieuws + momentum.
-- Bull hoeft niet hoger dan bear te zijn voor een buy — bull >= 0.45 is voldoende als TA het ondersteunt.
+═══ MARKT BIAS ═══
+Fear & Greed < 30 (extreme fear) → VERHOOG confidence met 0.05 voor bounces
+Fear & Greed > 70 (greed) → VERLAAG confidence met 0.05, alleen momentum setups
+BTC in uptrend → VERHOOG confidence met 0.03 voor alle setups
+BTC in downtrend → VERLAAG confidence met 0.05, alleen oversold bounces bij sterke steun
 
-RISK/REWARD
-- Stop loss is verplicht bij buy: onder steun of EMA niveau.
-- Take profit is verplicht: minimaal 1.5x de stop-afstand.
-- Entry bij huidige prijs of net pullback.
+═══ SKIP WANNEER ═══
+- RSI > 75 (te overbought voor veilige entry)
+- Prijs in vrije val, geen steun in zicht (RSI < 20, dalend volume)
+- Duidelijk bearish breaking news (hack, ban, exploit)
+- Nul data beschikbaar
 
-OUTPUT
-- Geef ALLEEN geldig JSON.
-- direction is "buy" of "skip".
-- Bij buy: stop loss en take profit verplicht.
-- Reden: concreet en technisch (welk niveau, welke indicator, welk scenario)."""
+═══ CONFIDENCE CALIBRATIE ═══
+0.50-0.54: Dunne setup, één criterium, paper trading acceptabel
+0.55-0.62: Solide TA setup, twee of meer criteria
+0.63-0.72: Sterke convergentie TA + nieuws + markt bias
+0.73+: Meerdere harde catalysts + sterke TA
+
+═══ OUTPUT ═══
+JSON alleen. Bij buy: stop_loss en take_profit verplicht. R/R minimaal 1.5.
+Reden: setup_type + welk niveau + waarom nu."""
 
 # Backwards-compat alias (oude callers kunnen nog de combinatie krijgen)
 SIGNAL_PROMPT = SIGNAL_SYSTEM_PROMPT + "\n\n" + SIGNAL_USER_PROMPT
@@ -220,7 +228,6 @@ class SignalGeneratorService:
         ticker_data = self._aggregate_by_ticker(news_items, social_posts)
 
         watchlist = sorted(CRYPTO_SYMBOLS) if crypto_session_mode else DEFAULT_WATCHLIST
-        # Add watchlist tickers only when we have TA data for them (avoids wasting tokens on data-less tickers)
         for ticker in watchlist:
             if ticker not in ticker_data:
                 ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0, "_watchlist_only": True}
@@ -231,6 +238,15 @@ class SignalGeneratorService:
         if not ticker_data:
             logger.info("Geen tickers met voldoende data voor signaal generatie")
             return 0
+
+        # Fetch market context once for all signals in this run
+        market_ctx = {}
+        market_ctx_text = ""
+        try:
+            market_ctx = await get_market_context()
+            market_ctx_text = format_for_prompt(market_ctx)
+        except Exception as e:
+            logger.debug("Market context ophalen mislukt: %s", e)
 
         if not self.settings.anthropic_api_key:
             logger.warning("ANTHROPIC_API_KEY niet geconfigureerd - signaal generatie overgeslagen")
@@ -292,23 +308,33 @@ class SignalGeneratorService:
                 ta_summary = "Geen technische data"
                 if ta_result:
                     rsi_str = f"{ta_result.rsi:.0f}" if ta_result.rsi is not None else "N/A"
+                    ema_info = ""
+                    if ta_result.ema20:
+                        ema_info += f" | EMA20: ${ta_result.ema20:.2f}"
+                        if ta_result.pct_from_ema20 is not None:
+                            ema_info += f" ({ta_result.pct_from_ema20:+.1f}%)"
+                    if ta_result.ema50:
+                        ema_info += f" | EMA50: ${ta_result.ema50:.2f}"
+                        if ta_result.pct_from_ema50 is not None:
+                            ema_info += f" ({ta_result.pct_from_ema50:+.1f}%)"
+                    setup_hint = f" | Setup: {ta_result.setup_type}" if ta_result.setup_type != "none" else ""
                     ta_summary = (
                         f"Score: {ta_result.score:.2f} | RSI: {rsi_str} | "
-                        f"MACD: {ta_result.macd_signal} | Trend: {ta_result.trend} | {ta_result.summary}"
+                        f"MACD: {ta_result.macd_signal} | Trend: {ta_result.trend}{ema_info}{setup_hint} | {ta_result.summary}"
                     )
 
                 if lessons:
-                    ta_summary += f"\n\n🧠 Geheugen — eerdere trades {asset} (BELANGRIJK: pas deze lessen toe):\n" + "\n".join(f"  {l}" for l in lessons)
+                    ta_summary += f"\n\n🧠 Geheugen — eerdere trades {asset}:\n" + "\n".join(f"  {l}" for l in lessons)
 
                 price_str = f"{price:.4f}" if price else "onbekend"
 
-                # Single combined call (was 3 separate calls — saves ~67% tokens)
                 if is_ai_paused():
                     logger.warning("AI analyse vlak voor signaalcall gepauzeerd - resterende assets overgeslagen")
                     break
                 signal_data, resp = self._call_signal_agent(
                     client, asset, price_str, news_summary, social_summary, ta_summary,
                     crypto_session_mode=crypto_session_mode,
+                    market_context=market_ctx_text,
                 )
 
                 # Track token usage
@@ -415,16 +441,16 @@ class SignalGeneratorService:
 
     def _call_signal_agent(self, client, asset: str, price: str,
                             news_summary: str, social_summary: str, ta_summary: str,
-                            crypto_session_mode: bool = False) -> tuple[dict, any]:
+                            crypto_session_mode: bool = False,
+                            market_context: str = "") -> tuple[dict, any]:
+        context_block = f"\n\n═══ MARKTCONTEXT ═══\n{market_context}" if market_context else ""
         user_prompt = SIGNAL_USER_PROMPT.format(
             asset=asset,
             price=price,
             news_summary=news_summary,
             social_summary=social_summary,
-            ta_summary=ta_summary,
+            ta_summary=ta_summary + context_block,
         )
-        # System prompt is gecached (zelfde voor elke call), user prompt bevat de variërende data.
-        # Lage temperature voor consistente, gedisciplineerde reasoning.
         system_prompt = CRYPTO_SESSION_SYSTEM_PROMPT if crypto_session_mode and is_crypto(asset) else SIGNAL_SYSTEM_PROMPT
         system_blocks = [{
             "type": "text",
