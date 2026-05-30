@@ -329,6 +329,24 @@ class AutoTraderService:
                 order_qty = abs(exposure)
                 order_notional = None
 
+            # Price sanity check: catch data bugs like XRP entry=$14 while actual price=$2.50
+            if not is_closing and signal.suggested_entry and signal.suggested_entry > 0:
+                try:
+                    from app.services.market_data_service import MarketDataService
+                    current_price = await MarketDataService().get_latest_price(signal.asset)
+                    if current_price and current_price > 0:
+                        deviation = abs(current_price - signal.suggested_entry) / signal.suggested_entry
+                        if deviation > 0.50:
+                            await self._skip_signal(
+                                signal,
+                                "skipped_price_invalid",
+                                f"{signal.asset}: entry ${signal.suggested_entry:.4f} wijkt {deviation:.0%} af van huidige prijs ${current_price:.4f} — data bug",
+                            )
+                            logger.error(f"DATA BUG GEBLOKKEERD: {signal.asset} entry=${signal.suggested_entry:.4f} vs huidig=${current_price:.4f} ({deviation:.0%} afwijking)")
+                            return False
+                except Exception as price_err:
+                    logger.warning(f"Prijs sanity check mislukt voor {signal.asset}: {price_err}")
+
             try:
                 order = await self.broker.submit_order(
                     symbol=signal.asset,

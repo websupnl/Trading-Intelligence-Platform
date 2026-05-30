@@ -8,11 +8,11 @@ from app.services.runtime_state import get_runtime_value
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Alpaca-supported crypto base symbols
+# Alpaca-supported crypto base symbols — only coins with reliable Alpaca data
+# XRP/ADA/DOT/MATIC/ATOM/FIL/LRC removed: Alpaca returned wrong prices causing data bugs
 CRYPTO_SYMBOLS = {
     "BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK", "LTC", "BCH", "UNI",
     "AAVE", "CRV", "BAT", "ALGO", "XTZ", "MKR", "SUSHI", "YFI",
-    "XRP", "ADA", "DOT", "MATIC", "ATOM", "FIL", "LRC",
 }
 
 

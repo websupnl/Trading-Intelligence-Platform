@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 MIN_CONFIDENCE_GENERATE = 0.55
 MIN_CONFIDENCE_CRYPTO_SESSION = 0.50
+MIN_CONFIDENCE_SCALP = 0.52      # Lower threshold for fast intraday setups
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 

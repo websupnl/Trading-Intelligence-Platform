@@ -211,8 +211,7 @@ class PositionMonitorService:
         # Write AI reflection + memory lesson for closed trade
         try:
             from app.services.trade_tracker import TradeTrackerService
-            from app.config import get_settings
-            tracker = TradeTrackerService(get_settings())
+            tracker = TradeTrackerService()
             trade_data = {
                 "id": trade.id,
                 "symbol": trade.symbol,
