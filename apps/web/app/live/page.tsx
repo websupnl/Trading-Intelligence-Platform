@@ -551,32 +551,24 @@ export default function LivePage() {
     loadInitial();
   }, []);
 
-  // ── Load candles via REST for every symbol — gives charts data immediately ──
-  useEffect(() => {
-    async function loadAllCandles() {
-      const results = await Promise.allSettled(
-        ALL_SYMBOLS.map(sym =>
-          fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/stream/candles/${sym}?timeframe=1Day&limit=30`, {
-            headers: { 'X-Dashboard-Pin': sessionStorage.getItem('dashboard_pin') || '' },
-          }).then(r => r.json())
-        )
-      );
-      const nextCandles: Record<string, OHLCVCandle[]> = {};
-      const nextPrices: Record<string, PriceData> = {};
-      results.forEach((r, i) => {
-        const sym = ALL_SYMBOLS[i];
-        if (r.status === 'fulfilled' && r.value?.candles?.length > 0) {
-          const cs: OHLCVCandle[] = r.value.candles;
-          nextCandles[sym] = cs;
-          const last = cs.at(-1)!;
-          nextPrices[sym] = { symbol: sym, price: last.close, open: cs[0].open, high: last.high, low: last.low, volume: last.volume };
-        }
+  // ── Lazy candle loader — only fetch when asset is selected ──────────────────
+  const loadCandles = useCallback(async (sym: string) => {
+    if (candles[sym]?.length > 1) return; // already loaded
+    try {
+      const pin = typeof window !== 'undefined' ? sessionStorage.getItem('dashboard_pin') || '' : '';
+      const base = process.env.NEXT_PUBLIC_API_URL || '';
+      const r = await fetch(`${base}/api/stream/candles/${sym}?timeframe=1Day&limit=60`, {
+        headers: { 'X-Dashboard-Pin': pin },
       });
-      setCandles(prev => ({ ...nextCandles, ...prev }));
-      setPrices(prev => ({ ...nextPrices, ...prev }));
-    }
-    loadAllCandles();
-  }, []);
+      const d = await r.json();
+      if (d?.candles?.length > 0) {
+        const cs: OHLCVCandle[] = d.candles;
+        setCandles(prev => ({ ...prev, [sym]: cs }));
+        const last = cs.at(-1)!;
+        setPrices(prev => prev[sym] ? prev : { ...prev, [sym]: { symbol: sym, price: last.close, open: cs[0].open, high: last.high, low: last.low, volume: last.volume } });
+      }
+    } catch {}
+  }, [candles]);
 
   // ── Polling: positions every 10s ────────────────────────────────────────────
   useEffect(() => {
@@ -733,7 +725,7 @@ export default function LivePage() {
                     {gridSymbols.map(sym => (
                       <AssetCard key={sym} symbol={sym} price={prices[sym]} candles={candles[sym] ?? []}
                         signal={signalMap[sym]} selected={selected === sym}
-                        onClick={() => setSelected(p => p === sym ? null : sym)} />
+                        onClick={() => { const next = selected === sym ? null : sym; setSelected(next); if (next) loadCandles(next); }} />
                     ))}
                   </div>
                 )}
