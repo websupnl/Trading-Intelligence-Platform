@@ -96,7 +96,7 @@ class AutoTraderService:
             return 0
 
         notional = await self._get_notional()
-        if notional < MIN_VIABLE_NOTIONAL:
+        if notional < MIN_NOTIONAL:
             logger.warning(f"Berekende notional ${notional:.2f} is te laag voor een order — auto trader gestopt")
             return 0
 
@@ -264,7 +264,7 @@ class AutoTraderService:
         # Pre-flight: check of er genoeg koopkracht is voor een BUY
         if not is_closing:
             buying_power = await self._get_buying_power()
-            if buying_power < MIN_VIABLE_NOTIONAL:
+            if buying_power < MIN_NOTIONAL:
                 await self._skip_signal(
                     signal,
                     "skipped_funds",
@@ -276,7 +276,7 @@ class AutoTraderService:
                 # Schaal af naar 95% van beschikbaar saldo
                 notional = round(buying_power * 0.95, 2)
                 logger.info(f"{signal.asset}: notional teruggeschaald naar ${notional:.2f} (koopkracht: ${buying_power:.2f})")
-                if notional < MIN_VIABLE_NOTIONAL:
+                if notional < MIN_NOTIONAL:
                     await self._skip_signal(
                         signal,
                         "skipped_funds",
