@@ -1,7 +1,6 @@
 import logging
 import feedparser
 import hashlib
-import re
 from datetime import datetime, timezone
 from sqlalchemy import select
 from app.config import get_settings
@@ -10,13 +9,6 @@ from app.models.news import NewsItem
 
 logger = logging.getLogger(__name__)
 
-TICKER_PATTERN = re.compile(r'\b[A-Z]{2,5}\b')
-COMMON_WORDS = {
-    "A", "I", "IT", "IN", "IS", "AT", "BE", "BY", "DO", "GO", "NO", "OF", "ON", "OR",
-    "SO", "TO", "UP", "US", "WAS", "FOR", "AND", "THE", "ARE", "NEW", "ALL", "SEC",
-    "NYSE", "ETF", "IPO", "CEO", "CFO", "COO", "AI", "EU", "UK", "GDP", "CPI",
-    "FED", "IMF", "RSS", "HTML", "HTTP", "HTTPS", "API", "USD", "EUR", "GBP",
-}
 
 # Built-in default feeds — always active, no config needed
 DEFAULT_NEWS_FEEDS = [
@@ -56,10 +48,6 @@ class RSSFeedService:
         extra = settings.news_feed_list + settings.crypto_feed_list
         # Merge defaults with user-configured feeds, deduplicate
         self.feeds = list(dict.fromkeys(DEFAULT_NEWS_FEEDS + extra))
-
-    def _extract_tickers(self, text: str) -> list[str]:
-        matches = TICKER_PATTERN.findall(text)
-        return list(set(m for m in matches if m not in COMMON_WORDS))[:10]
 
     def _detect_source_type(self, url: str) -> str:
         if "reddit.com" in url:
@@ -112,8 +100,6 @@ class RSSFeedService:
                     continue
 
                 content = entry.get("summary", "") or entry.get("content", [{}])[0].get("value", "") if entry.get("content") else entry.get("summary", "")
-                tickers = self._extract_tickers(title + " " + (content or ""))
-
                 # Parse published date
                 published_at = datetime.now(timezone.utc)
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
@@ -130,7 +116,7 @@ class RSSFeedService:
                     url=item_url[:2000],
                     source=feed_source,
                     source_type=source_type,
-                    tickers=tickers,
+                    tickers=[],
                     published_at=published_at,
                     status="new",
                 )

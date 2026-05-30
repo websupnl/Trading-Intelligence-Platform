@@ -232,10 +232,8 @@ class NewsAnalyzerService:
                         db_item.sentiment = analysis.get("sentiment", "neutral")
                         db_item.sentiment_score = float(analysis.get("sentiment_score", 0))
                         db_item.impact_score = float(analysis.get("impact_score", 5))
-                        # Merge new tickers with existing
-                        existing = db_item.tickers or []
                         new_tickers = analysis.get("tickers", [])
-                        db_item.tickers = list(set(existing + new_tickers))[:10]
+                        db_item.tickers = [t for t in new_tickers if 2 <= len(t) <= 5][:10]
                         db_item.ai_analyzed = True
                         db_item.ai_analysis = analysis
                         if analysis.get("is_noise"):
@@ -348,9 +346,8 @@ class NewsAnalyzerService:
                         db_item.sentiment = analysis.get("sentiment", "neutral")
                         db_item.sentiment_score = float(analysis.get("sentiment_score", 0))
                         db_item.hype_score = float(analysis.get("hype_score", 0))
-                        existing = db_item.tickers or []
                         new_tickers = analysis.get("tickers", [])
-                        db_item.tickers = list(set(existing + new_tickers))[:10]
+                        db_item.tickers = [t for t in new_tickers if 2 <= len(t) <= 5][:10]
                         db_item.ai_analyzed = True
                         db_item.ai_analysis = analysis
                         await flush_usage(db, [usage_record(self.settings.anthropic_model, "social_analysis", resp.usage)])
