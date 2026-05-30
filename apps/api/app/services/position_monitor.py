@@ -59,8 +59,8 @@ class PositionMonitorService:
         # Trailing stop: adjust SL upward as trade profits
         await self._apply_trailing_stop(trade, price)
 
-        # SL/TP check
-        if trade.stop_loss or trade.take_profit:
+        # SL/TP check (use 'is not None' — stop_loss=0 is falsy but valid)
+        if trade.stop_loss is not None or trade.take_profit is not None:
             triggered, reason, exit_price = self._is_triggered(trade, price)
             if triggered:
                 await self._execute_close(trade, exit_price, reason)
@@ -131,14 +131,14 @@ class PositionMonitorService:
         is_long = trade.side.lower() in ("buy", "long")
 
         if is_long:
-            if trade.stop_loss and price <= trade.stop_loss:
+            if trade.stop_loss is not None and price <= trade.stop_loss:
                 return True, f"Stop-loss geraakt @ ${price:.4f} (SL=${trade.stop_loss:.4f})", trade.stop_loss
-            if trade.take_profit and price >= trade.take_profit:
+            if trade.take_profit is not None and price >= trade.take_profit:
                 return True, f"Take-profit geraakt @ ${price:.4f} (TP=${trade.take_profit:.4f})", trade.take_profit
         else:
-            if trade.stop_loss and price >= trade.stop_loss:
+            if trade.stop_loss is not None and price >= trade.stop_loss:
                 return True, f"Stop-loss geraakt @ ${price:.4f} (SL={trade.stop_loss:.4f})", trade.stop_loss
-            if trade.take_profit and price <= trade.take_profit:
+            if trade.take_profit is not None and price <= trade.take_profit:
                 return True, f"Take-profit geraakt @ ${price:.4f} (TP={trade.take_profit:.4f})", trade.take_profit
 
         return False, "", price

@@ -243,8 +243,24 @@ class AutoTraderService:
             ))
             await db.commit()
 
+    MAX_OPEN_POSITIONS = 8  # Hard cap on simultaneous open positions
+
     async def _execute_signal(self, signal: Signal, notional: float, session_autonomy: bool = False) -> bool:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)
+
+        # Hard cap on open positions (was declared as constant but never enforced)
+        if signal.direction == "buy":
+            async with AsyncSessionLocal() as db:
+                open_count = (await db.execute(
+                    select(func.count()).where(Trade.status == "open")
+                )).scalar() or 0
+            if open_count >= self.MAX_OPEN_POSITIONS:
+                await self._skip_signal(
+                    signal,
+                    "skipped_max_positions",
+                    f"{signal.asset}: max open posities ({self.MAX_OPEN_POSITIONS}) bereikt — huidige: {open_count}",
+                )
+                return False
 
         exposure = await self._get_broker_exposure(signal.asset)
         is_closing = signal.direction == "sell"
