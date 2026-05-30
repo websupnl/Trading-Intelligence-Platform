@@ -60,6 +60,8 @@ export default function Dashboard() {
   const { data: account } = useApi(() => api.getAccount(), [], { pollIntervalMs: 15000 });
   const { data: positions } = useApi(() => api.getPositions(), [], { pollIntervalMs: 15000 });
   const { data: signals } = useApi(() => api.getSignals(20), [], { pollIntervalMs: 30000 });
+  const { data: aiUsage } = useApi(() => api.getAiUsage(), [], { pollIntervalMs: 60000 });
+  const { data: trades } = useApi(() => api.getTrades(100), [], { pollIntervalMs: 30000 });
 
   const equity = account?.equity ? parseFloat(account.equity) : null;
   const buyingPower = account?.buying_power ? parseFloat(account.buying_power) : null;
@@ -167,6 +169,62 @@ export default function Dashboard() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Kosten vs Winst */}
+      {aiUsage && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">AI Kosten vs Trading Winst</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <p className="text-[10px] text-muted-foreground">AI Kosten Vandaag</p>
+              <p className="text-lg font-bold font-num text-red-400 mt-0.5">${(aiUsage as any).today_cost?.toFixed(2) ?? '—'}</p>
+              <p className="text-[10px] text-muted-foreground">{(aiUsage as any).today_calls ?? 0} calls</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground">AI Kosten Deze Week</p>
+              <p className="text-lg font-bold font-num text-red-400 mt-0.5">${(aiUsage as any).week_cost?.toFixed(2) ?? '—'}</p>
+              <p className="text-[10px] text-muted-foreground">{(aiUsage as any).total_calls ?? 0} totaal</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground">Trading P&L (gesloten)</p>
+              {(() => {
+                const closed = (Array.isArray(trades) ? trades : []).filter((t: any) => t.status === 'closed' && t.pnl != null);
+                const totalPnl = closed.reduce((s: number, t: any) => s + parseFloat(t.pnl || '0'), 0);
+                return (
+                  <>
+                    <p className={cn('text-lg font-bold font-num mt-0.5', totalPnl >= 0 ? 'text-green-400' : 'text-red-400')}>{totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}</p>
+                    <p className="text-[10px] text-muted-foreground">{closed.length} trades</p>
+                  </>
+                );
+              })()}
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground">Netto (P&L - Kosten)</p>
+              {(() => {
+                const closed = (Array.isArray(trades) ? trades : []).filter((t: any) => t.status === 'closed' && t.pnl != null);
+                const tradePnl = closed.reduce((s: number, t: any) => s + parseFloat(t.pnl || '0'), 0);
+                const costs = (aiUsage as any).week_cost ?? 0;
+                const net = tradePnl - costs;
+                return (
+                  <>
+                    <p className={cn('text-lg font-bold font-num mt-0.5', net >= 0 ? 'text-green-400' : 'text-red-400')}>{net >= 0 ? '+' : ''}${net.toFixed(2)}</p>
+                    <p className={cn('text-[10px]', net >= 0 ? 'text-green-400/70' : 'text-red-400/70')}>{net >= 0 ? '✅ Winstgevend' : '❌ Verlies'}</p>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+          {(() => {
+            const costs = (aiUsage as any).today_cost ?? 0;
+            if (costs > 5) return (
+              <div className="mt-3 text-xs text-amber-400 bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
+                ⚠️ AI kosten zijn hoog (${costs.toFixed(2)}/dag). De bot moet minimaal ${costs.toFixed(2)}/dag winnen om break-even te draaien.
+              </div>
+            );
+            return null;
+          })()}
         </div>
       )}
 
