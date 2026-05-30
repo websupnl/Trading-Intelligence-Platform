@@ -13,6 +13,7 @@ celery_app = Celery(
         "app.tasks.signal_tasks",
         "app.tasks.social_tasks",
         "app.tasks.analysis_tasks",
+        "app.tasks.telegram_tasks",
     ],
 )
 
@@ -90,6 +91,12 @@ celery_app.conf.update(
         "daily-summary-after-close": {
             "task": "app.tasks.analysis_tasks.send_activity_summary",
             "schedule": crontab(hour=21, minute=30),
+        },
+
+        # === TELEGRAM BOT ===
+        "poll-telegram-every-3sec": {
+            "task": "app.tasks.telegram_tasks.poll_telegram",
+            "schedule": 3.0,
         },
     },
 )

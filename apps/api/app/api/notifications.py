@@ -6,6 +6,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models.notifications import Notification
 from app.services.notifications import NotificationService
+from app.services.runtime_state import get_runtime_value
 
 router = APIRouter(prefix="/api/notifications")
 
@@ -51,4 +52,26 @@ async def send_test_notification(db: AsyncSession = Depends(get_db)):
     return {
         "status": notification.status,
         "message": "Testnotificatie verstuurd." if notification.status == "sent" else notification.error_message,
+    }
+
+
+@router.post("/register-commands")
+async def register_telegram_commands():
+    """Herregistreer de bot commando-lijst bij BotFather (setMyCommands)."""
+    settings = get_settings()
+    if not settings.telegram_configured:
+        return {"status": "disabled", "message": "Telegram niet geconfigureerd"}
+    from app.services.telegram_bot import TelegramBotService
+    ok = await TelegramBotService().set_my_commands()
+    return {"status": "ok" if ok else "failed"}
+
+
+@router.get("/bot-info")
+async def get_bot_info():
+    """Geeft de huidige bot polling status en offset terug."""
+    settings = get_settings()
+    return {
+        "telegram_configured": settings.telegram_configured,
+        "current_offset": get_runtime_value("telegram_update_offset", 0),
+        "polling_lock": get_runtime_value("telegram_polling_lock", None),
     }

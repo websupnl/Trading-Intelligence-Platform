@@ -34,6 +34,7 @@ class NotificationService:
         severity: str = "info",
         entity_type: str | None = None,
         entity_id: str | None = None,
+        reply_markup: dict | None = None,
     ) -> Notification:
         notification = Notification(
             event_type=event_type,
@@ -68,14 +69,17 @@ class NotificationService:
             prefix = "[ERROR] "
         text = f"{prefix}{title}\n\n{message}"[:4096]
         try:
+            json_body: dict = {
+                "chat_id": self.settings.telegram_chat_id,
+                "text": text,
+                "disable_web_page_preview": True,
+            }
+            if reply_markup:
+                json_body["reply_markup"] = reply_markup
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(
                     f"https://api.telegram.org/bot{self.settings.telegram_bot_token}/sendMessage",
-                    json={
-                        "chat_id": self.settings.telegram_chat_id,
-                        "text": text,
-                        "disable_web_page_preview": True,
-                    },
+                    json=json_body,
                 )
                 response.raise_for_status()
                 payload = response.json().get("result", {})

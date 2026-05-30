@@ -29,6 +29,13 @@ async def lifespan(app: FastAPI):
         await hydrate_runtime_settings(db)
         audit_svc = AuditLogService(db)
         await audit_svc.log("app_startup", message="Trading OS API gestart")
+    if get_settings().telegram_configured:
+        from app.services.telegram_bot import TelegramBotService
+        try:
+            await TelegramBotService().set_my_commands()
+            logger.info("Telegram bot commands geregistreerd bij BotFather")
+        except Exception as exc:
+            logger.warning("Telegram command registratie mislukt (niet fataal): %s", exc)
     yield
     logger.info("Trading OS API gestopt")
 
