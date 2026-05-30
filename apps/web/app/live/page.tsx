@@ -232,6 +232,12 @@ function ChartView({ symbol, price, candles, signal, onClose, onTrade, onReject,
     symbol,
   }] : [];
 
+  const chartLevels = signal ? {
+    entry: signal.suggested_entry,
+    stopLoss: signal.suggested_stop,
+    takeProfit: signal.suggested_take_profit,
+  } : undefined;
+
   return (
     <div className="flex flex-col h-full">
       {/* Chart header */}
@@ -252,7 +258,7 @@ function ChartView({ symbol, price, candles, signal, onClose, onTrade, onReject,
       {/* Chart */}
       <div className="flex-1 min-h-0">
         {candles.length > 1
-          ? <CandlestickChart candles={candles} signals={chartSignals} />
+          ? <CandlestickChart candles={candles} signals={chartSignals} levels={chartLevels} dark />
           : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
               <div className="text-center">
@@ -334,29 +340,73 @@ function ChartView({ symbol, price, candles, signal, onClose, onTrade, onReject,
 
 // ── Position Row ───────────────────────────────────────────────────────────────
 
-function PositionRow({ pos, onClose, closing }: { pos: AlpacaPosition; onClose: (s: string) => void; closing: string | null }) {
+function PositionRow({ pos, onClose, closing, signal }: {
+  pos: AlpacaPosition; onClose: (s: string) => void; closing: string | null; signal?: SignalData;
+}) {
   const pnl = parseFloat(pos.unrealized_pl ?? '0');
   const pct = parseFloat(pos.unrealized_plpc ?? '0') * 100;
   const sym = pos.symbol.split('/')[0];
   const qty = parseFloat(pos.qty ?? '0');
   const entry = parseFloat(pos.avg_entry_price ?? '0');
+  const currentPrice = entry * (1 + pct / 100);
+  const sl = signal?.suggested_stop;
+  const tp = signal?.suggested_take_profit;
+
+  // Progress: how far from entry to TP (0-100%)
+  const progress = tp && sl && tp !== entry
+    ? Math.max(0, Math.min(100, ((currentPrice - entry) / (tp - entry)) * 100))
+    : null;
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50 last:border-0 hover:bg-accent/20 transition-colors">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-sm">{sym}</span>
-          <span className="text-[10px] text-muted-foreground">{qty < 1 ? qty.toFixed(4) : qty.toFixed(2)} @ ${fmt(entry)}</span>
+    <div className="px-4 py-3 border-b border-border/40 last:border-0 hover:bg-accent/20 transition-colors">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm font-num">{sym}</span>
+            <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', pnl >= 0 ? 'bg-green-500/15 text-green-400' : 'bg-red-500/15 text-red-400')}>
+              LONG
+            </span>
+            <span className={cn('text-sm font-bold font-num tabular-nums ml-auto', pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
+              {pnl >= 0 ? '+' : ''}{fmtUSD(pnl)}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-muted-foreground font-num">
+            <span>{qty < 1 ? qty.toFixed(5) : qty.toFixed(3)} stuks</span>
+            <span>Entry <span className="text-foreground">${fmt(entry)}</span></span>
+            {sl && <span>SL <span className="text-red-400">${fmt(sl)}</span></span>}
+            {tp && <span>TP <span className="text-green-400">${fmt(tp)}</span></span>}
+          </div>
         </div>
-        <p className={cn('text-sm font-bold tabular-nums mt-0.5', pnl >= 0 ? 'text-green-600' : 'text-red-500')}>
-          {pnl >= 0 ? '+' : ''}{fmtUSD(pnl)}
-          <span className="text-xs font-normal ml-1.5 opacity-70">({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)</span>
-        </p>
+        <button onClick={() => onClose(sym)} disabled={closing === sym}
+          className="h-7 px-2.5 text-[11px] rounded-lg border border-border text-muted-foreground hover:text-red-400 hover:border-red-500/40 transition-colors disabled:opacity-40 shrink-0">
+          {closing === sym ? '…' : 'Sluit'}
+        </button>
       </div>
-      <button onClick={() => onClose(sym)} disabled={closing === sym}
-        className="h-7 px-3 text-xs rounded-lg border border-border text-muted-foreground hover:text-red-500 hover:border-red-400/50 transition-colors disabled:opacity-40 shrink-0">
-        {closing === sym ? '…' : 'Sluiten'}
-      </button>
+
+      {/* Progress: entry → current → TP */}
+      {progress !== null && (
+        <div className="mt-2 space-y-0.5">
+          <div className="flex justify-between text-[9px] text-muted-foreground font-num">
+            <span>Entry ${fmt(entry)}</span>
+            <span className={cn('font-bold', pct >= 0 ? 'text-green-400' : 'text-red-400')}>
+              {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+            </span>
+            <span className="text-green-400">TP ${fmt(tp!)}</span>
+          </div>
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+            <div
+              className={cn('h-full rounded-full transition-all', pnl >= 0 ? 'bg-green-500' : 'bg-red-500')}
+              style={{ width: `${Math.max(2, progress)}%` }}
+            />
+          </div>
+          {sl && (
+            <div className="flex justify-between text-[9px] text-muted-foreground font-num">
+              <span className="text-red-400/60">SL ${fmt(sl)}</span>
+              <span>{progress.toFixed(0)}% naar target</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -755,7 +805,11 @@ export default function LivePage() {
                         {totalPnl >= 0 ? '+' : ''}{fmtUSD(totalPnl)}
                       </p>
                     </div>
-                    {positions.map((p, i) => <PositionRow key={i} pos={p} onClose={doClose} closing={closing} />)}
+                    {positions.map((p, i) => {
+                      const sym = p.symbol.split('/')[0];
+                      const relSignal = signals.find(s => s.asset === sym && s.status === 'paper_traded');
+                      return <PositionRow key={i} pos={p} onClose={doClose} closing={closing} signal={relSignal} />;
+                    })}
                   </>
                 )}
             </div>

@@ -1,474 +1,183 @@
 'use client';
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
+
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
-import { StatusGrid } from '@/components/dashboard/StatusGrid';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { EmptyState } from '@/components/ui/empty-state';
-import { ErrorState } from '@/components/ui/error-state';
-import { LoadingSpinner } from '@/components/ui/loading';
-import { fmtUSD, fmtDate, confidenceColor } from '@/lib/utils';
-import { cn } from '@/lib/utils';
-import { AssetLabel } from '@/components/market/AssetLabel';
-import { CheckCircle, XCircle, AlertTriangle, Bot } from 'lucide-react';
-import { OperationsFlow } from '@/components/dashboard/OperationsFlow';
+import { cn, fmtUSD } from '@/lib/utils';
+import Link from 'next/link';
+import { Zap, Activity, Radio, BarChart2, Cpu, ArrowRight, Dice5, TrendingUp, TrendingDown } from 'lucide-react';
 
-function BotStatusCard() {
-  const { data, loading, reload: refetch } = useApi(() => api.getBotHealth(), []);
-  const [resuming, setResuming] = useState(false);
+function fmt(p: number): string {
+  if (p >= 10000) return p.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (p >= 100) return p.toFixed(2);
+  if (p >= 1) return p.toFixed(3);
+  return p.toFixed(5);
+}
 
-  const ready = data?.ready;
-  const blockers: string[] = data?.blockers ?? [];
-  const isAiPaused = blockers.some((b) => b.startsWith('anthropic_api_paused_until'));
+function StatCard({ label, value, sub, color, href }: {
+  label: string; value: string; sub?: string; color?: string; href?: string;
+}) {
+  const inner = (
+    <div className={cn(
+      'bg-card border border-border rounded-xl p-4 transition-all',
+      href && 'hover:border-primary/40 hover:shadow-md cursor-pointer',
+    )}>
+      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">{label}</p>
+      <p className={cn('text-2xl font-bold font-num tabular-nums', color ?? 'text-foreground')}>{value}</p>
+      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+    </div>
+  );
+  return href ? <Link href={href}>{inner}</Link> : inner;
+}
 
-  async function handleResumeAi() {
-    setResuming(true);
-    try {
-      await api.resumeAiGuard();
-      await refetch();
-    } finally {
-      setResuming(false);
-    }
-  }
-
+function QuickLink({ href, icon, label, desc, badge }: {
+  href: string; icon: React.ReactNode; label: string; desc: string; badge?: string;
+}) {
   return (
-    <Card className="md:col-span-3">
-      <CardHeader>
+    <Link href={href} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-sm transition-all group">
+      <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 group-hover:bg-accent transition-colors">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <Bot size={16} />
-          <CardTitle>Bot Status</CardTitle>
+          <p className="text-sm font-semibold">{label}</p>
+          {badge && <span className="text-[9px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{badge}</span>}
         </div>
-        <button onClick={refetch} className="text-xs text-primary hover:underline">Vernieuwen</button>
-      </CardHeader>
-      <CardContent>
-        {loading && <LoadingSpinner />}
-        {!loading && data && (
-          <div className="flex flex-col md:flex-row md:items-center gap-4">
-            {/* Ready indicator */}
-            <div className="flex items-center gap-2 shrink-0">
-              {ready ? (
-                <CheckCircle size={20} className="text-green-500" />
-              ) : (
-                <XCircle size={20} className="text-red-500" />
-              )}
-              <span className={cn('font-semibold text-sm', ready ? 'text-green-500' : 'text-red-500')}>
-                {ready ? 'Bot actief — auto-trading AAN' : 'Bot geblokkeerd'}
+        <p className="text-xs text-muted-foreground truncate">{desc}</p>
+      </div>
+      <ArrowRight size={14} className="text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
+    </Link>
+  );
+}
+
+export default function Dashboard() {
+  const { data: status } = useApi(() => api.apiStatus(), []);
+  const { data: bot } = useApi(() => api.getBotHealth(), []);
+  const { data: account } = useApi(() => api.getAccount(), [], { pollIntervalMs: 15000 });
+  const { data: positions } = useApi(() => api.getPositions(), [], { pollIntervalMs: 15000 });
+  const { data: signals } = useApi(() => api.getSignals(20), [], { pollIntervalMs: 30000 });
+
+  const equity = account?.equity ? parseFloat(account.equity) : null;
+  const buyingPower = account?.buying_power ? parseFloat(account.buying_power) : null;
+  const lastEquity = account?.last_equity ? parseFloat(account.last_equity) : null;
+  const dayPnl = equity !== null && lastEquity !== null ? equity - lastEquity : null;
+
+  const openPositions = Array.isArray(positions) ? positions : [];
+  const pendingSignals = (Array.isArray(signals) ? signals : []).filter((s: any) => s.status === 'pending');
+  const totalPnl = openPositions.reduce((sum: number, p: any) => sum + parseFloat(p.unrealized_pl ?? '0'), 0);
+
+  const aiPaused = bot?.ai_guard?.paused;
+  const crypto247 = status?.crypto_24_7_enabled;
+  const tradingMode = status?.trading_mode ?? 'paper';
+
+  return (
+    <div className="space-y-5 max-w-5xl mx-auto">
+
+      {/* Status bar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className={cn('flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full border', aiPaused ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-green-500/30 bg-green-500/10 text-green-400')}>
+          <span className={cn('w-1.5 h-1.5 rounded-full', aiPaused ? 'bg-red-400' : 'bg-green-400 animate-pulse')} />
+          AI {aiPaused ? 'gepauzeerd' : 'actief'}
+        </div>
+        <div className={cn('flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full border', tradingMode === 'paper' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-green-500/30 bg-green-500/10 text-green-400')}>
+          {tradingMode === 'paper' ? '📄 Paper' : '💰 Live'}
+        </div>
+        {crypto247 && (
+          <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-400">
+            🌙 24/7
+          </div>
+        )}
+        {pendingSignals.length > 0 && (
+          <Link href="/live" className="ml-auto flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors border border-amber-500/20">
+            <Zap size={11} className="animate-pulse" />
+            {pendingSignals.length} signaal{pendingSignals.length > 1 ? 'en' : ''} — handel nu
+          </Link>
+        )}
+      </div>
+
+      {/* KPI row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard label="Portfolio" value={equity !== null ? fmtUSD(equity) : '—'} sub={buyingPower !== null ? `${fmtUSD(buyingPower)} vrij` : undefined} href="/live" />
+        <StatCard label="Vandaag" value={dayPnl !== null ? `${dayPnl >= 0 ? '+' : ''}${fmtUSD(dayPnl)}` : '—'} color={dayPnl !== null ? (dayPnl >= 0 ? 'text-green-400' : 'text-red-400') : undefined} />
+        <StatCard label="Posities" value={String(openPositions.length)} sub={openPositions.length > 0 ? `${totalPnl >= 0 ? '+' : ''}${fmtUSD(totalPnl)}` : 'Geen open'} color={openPositions.length > 0 ? (totalPnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-muted-foreground'} href="/live" />
+        <StatCard label="Signalen" value={String(pendingSignals.length)} sub={pendingSignals.length > 0 ? 'Wachten op actie' : 'Geen actief'} color={pendingSignals.length > 0 ? 'text-amber-400' : 'text-muted-foreground'} href="/signals" />
+      </div>
+
+      {/* Open positions */}
+      {openPositions.length > 0 && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <p className="text-sm font-semibold">Open Posities</p>
+            <Link href="/live" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
+              Alles bekijken <ArrowRight size={11} />
+            </Link>
+          </div>
+          {openPositions.slice(0, 5).map((pos: any, i: number) => {
+            const pnl = parseFloat(pos.unrealized_pl ?? '0');
+            const pct = parseFloat(pos.unrealized_plpc ?? '0') * 100;
+            const sym = pos.symbol.split('/')[0];
+            const entry = parseFloat(pos.avg_entry_price ?? '0');
+            return (
+              <div key={i} className={cn('flex items-center gap-3 px-4 py-2.5 border-b border-border/40 last:border-0', pnl >= 0 ? 'hover:bg-green-500/5' : 'hover:bg-red-500/5')}>
+                <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0 text-[10px] font-bold">
+                  {sym.slice(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">{sym}</p>
+                  <p className="text-[10px] text-muted-foreground font-num">Entry ${fmt(entry)}</p>
+                </div>
+                <div className="text-right">
+                  <p className={cn('text-sm font-bold font-num', pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
+                    {pnl >= 0 ? '+' : ''}{fmtUSD(pnl)}
+                  </p>
+                  <p className={cn('text-[10px] font-num', pct >= 0 ? 'text-green-400/70' : 'text-red-400/70')}>
+                    {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pending signals */}
+      {pendingSignals.length > 0 && (
+        <div className="bg-card border border-amber-500/20 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <p className="text-sm font-semibold flex items-center gap-2">
+              <Zap size={14} className="text-amber-400" /> Actieve Signalen
+            </p>
+            <Link href="/live" className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors">
+              Handel nu <ArrowRight size={11} />
+            </Link>
+          </div>
+          {pendingSignals.slice(0, 3).map((sig: any) => (
+            <div key={sig.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-border/40 last:border-0">
+              <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full shrink-0', sig.direction === 'buy' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400')}>
+                {sig.direction === 'buy' ? '▲' : '▼'} {sig.asset}
+              </span>
+              <span className="text-xs text-muted-foreground">{(sig.confidence * 100).toFixed(0)}% conf</span>
+              <span className="text-xs text-muted-foreground ml-auto font-num">
+                {sig.suggested_entry ? `$${fmt(sig.suggested_entry)}` : ''}
+                {sig.risk_reward ? ` · R/R ${sig.risk_reward.toFixed(1)}` : ''}
               </span>
             </div>
+          ))}
+        </div>
+      )}
 
-            {/* Blockers */}
-            {blockers.length > 0 && (
-              <div className="flex flex-wrap gap-2 items-center">
-                {blockers.map((b) => (
-                  <span key={b} className="flex items-center gap-1 text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded">
-                    <AlertTriangle size={10} />
-                    {b}
-                  </span>
-                ))}
-                {isAiPaused && (
-                  <button
-                    onClick={handleResumeAi}
-                    disabled={resuming}
-                    className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 px-2 py-0.5 rounded disabled:opacity-50"
-                  >
-                    {resuming ? 'Bezig…' : 'AI pauze opheffen'}
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Stats */}
-            <div className="flex items-center gap-4 text-xs text-muted-foreground ml-auto flex-wrap">
-              <span>Mode: <b className="text-foreground">{data.trading_mode}</b></span>
-              <span>Signalen (1h): <b className="text-foreground">{data.recent_signals_1h}</b></span>
-              <span>Trades (1h): <b className="text-foreground">{data.recent_trades_1h}</b></span>
-              <span>Open posities: <b className="text-foreground">{data.open_trades}</b></span>
-              {data.last_signal_at && (
-                <span>Laatste signaal: <b className="text-foreground">{new Date(data.last_signal_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</b></span>
-              )}
-              {data.last_auto_trade_at && (
-                <span>Laatste trade: <b className="text-foreground">{new Date(data.last_auto_trade_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}</b></span>
-              )}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function AccountCard() {
-  const { data, loading, error } = useApi(() => api.getAccount(), []);
-  return (
-    <Card>
-      <CardHeader><CardTitle>Alpaca Account</CardTitle></CardHeader>
-      <CardContent>
-        {loading && <LoadingSpinner />}
-        {error && <ErrorState message={typeof error === 'string' ? error : 'Alpaca niet geconfigureerd'} />}
-        {data && (
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-muted-foreground text-xs">Portfolio Value</p>
-              <p className="font-semibold text-lg">{fmtUSD(parseFloat(data.portfolio_value))}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Buying Power</p>
-              <p className="font-semibold">{fmtUSD(parseFloat(data.buying_power))}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Cash</p>
-              <p className="text-sm">{fmtUSD(parseFloat(data.cash))}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">Status</p>
-              <Badge variant={data.status === 'ACTIVE' ? 'success' : 'warning'}>{data.status}</Badge>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function SignalsCard() {
-  const { data, loading, error } = useApi(() => api.getSignals(5), []);
-  return (
-    <Card>
-      <CardHeader><CardTitle>Recente Signals</CardTitle></CardHeader>
-      <CardContent className="p-0">
-        {loading && <LoadingSpinner />}
-        {error && <div className="p-4"><ErrorState message="Signals niet beschikbaar" /></div>}
-        {data?.length === 0 && <EmptyState message="Geen actieve signals" />}
-        {data?.map((s: any) => (
-          <div key={s.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0">
-            <div>
-              <AssetLabel symbol={s.asset} className="text-sm" />
-              <span className={cn('ml-2 text-xs', s.direction === 'buy' ? 'text-green-400' : 'text-red-400')}>
-                {s.direction?.toUpperCase()}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={cn('text-xs', confidenceColor(s.confidence))}>{(s.confidence * 100).toFixed(0)}%</span>
-              <Badge variant={s.status === 'pending' ? 'warning' : 'muted'}>{s.status}</Badge>
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function RumoursCard() {
-  const { data, loading } = useApi(() => api.getRumours(5), []);
-  return (
-    <Card>
-      <CardHeader><CardTitle>Actieve Geruchten</CardTitle></CardHeader>
-      <CardContent className="p-0">
-        {loading && <LoadingSpinner />}
-        {data?.length === 0 && <EmptyState message="Geen actieve geruchten" />}
-        {data?.map((r: any) => (
-          <div key={r.id} className="flex items-center justify-between px-4 py-2.5 border-b border-border last:border-0">
-            <div className="min-w-0 mr-2">
-              <span className="text-sm truncate block">{r.title}</span>
-              {r.related_assets?.slice(0, 2).map((asset: string) => (
-                <AssetLabel key={asset} symbol={asset} compact className="text-xs mr-2" />
-              ))}
-            </div>
-            <Badge variant={
-              r.recommendation === 'ignore' ? 'muted' :
-              r.recommendation === 'watch' ? 'warning' :
-              r.recommendation === 'blocked' ? 'danger' : 'default'
-            }>{r.recommendation}</Badge>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function NewsCard() {
-  const { data, loading } = useApi(() => api.getNews(5), []);
-  return (
-    <Card>
-      <CardHeader><CardTitle>Laatste Nieuws</CardTitle></CardHeader>
-      <CardContent className="p-0">
-        {loading && <LoadingSpinner />}
-        {data?.length === 0 && <EmptyState message="Geen nieuws beschikbaar" />}
-        {data?.map((n: any) => (
-          <div key={n.id} className="px-4 py-2.5 border-b border-border last:border-0">
-            <p className="text-sm truncate">{n.title}</p>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs text-muted-foreground">{n.source}</span>
-              {n.tickers?.slice(0, 3).map((t: string) => (
-                <Badge key={t} variant="muted" className="text-xs px-1"><AssetLabel symbol={t} compact /></Badge>
-              ))}
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function AuditCard() {
-  const { data, loading } = useApi(() => api.getAuditLogs(8), []);
-  return (
-    <Card>
-      <CardHeader><CardTitle>Audit Log</CardTitle></CardHeader>
-      <CardContent className="p-0">
-        {loading && <LoadingSpinner />}
-        {data?.length === 0 && <EmptyState message="Geen audit events" />}
-        {data?.map((e: any) => (
-          <div key={e.id} className="flex items-center justify-between px-4 py-2 border-b border-border last:border-0">
-            <div>
-              <span className="text-xs font-medium">{e.action}</span>
-              {e.message && <span className="text-xs text-muted-foreground ml-2">{e.message}</span>}
-            </div>
-            <span className="text-xs text-muted-foreground shrink-0 ml-2">{fmtDate(e.created_at)}</span>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PerformanceSnapshot() {
-  const { data, loading } = useApi(() => api.getOutcomeSummary(), []);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Signal Performance</CardTitle>
-        <Link href="/performance" className="text-xs text-primary hover:underline">Details</Link>
-      </CardHeader>
-      <CardContent>
-        {loading && <LoadingSpinner />}
-        {!loading && (
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">Gemeten 5d</p>
-              <p className="text-lg font-semibold">{data?.evaluated_5d ?? 0}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Hit rate</p>
-              <p className={cn('text-lg font-semibold', data?.hit_rate_5d >= 50 ? 'text-green-400' : 'text-muted-foreground')}>
-                {data?.hit_rate_5d == null ? '-' : `${data.hit_rate_5d.toFixed(1)}%`}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Gem. 5d</p>
-              <p className={cn('text-lg font-semibold', data?.avg_pnl_5d_pct >= 0 ? 'text-green-400' : 'text-red-400')}>
-                {data?.avg_pnl_5d_pct == null ? '-' : `${data.avg_pnl_5d_pct >= 0 ? '+' : ''}${data.avg_pnl_5d_pct.toFixed(2)}%`}
-              </p>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PnlCard() {
-  const { data, loading } = useApi(() => api.getPnlSummary(), []);
-  const pnlColor = (v: number) => v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-muted-foreground';
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>P&amp;L Overzicht</CardTitle>
-        <Link href="/performance" className="text-xs text-primary hover:underline">Details</Link>
-      </CardHeader>
-      <CardContent>
-        {loading && <LoadingSpinner />}
-        {!loading && (
-          <>
-            <div className="grid grid-cols-3 gap-3 text-sm mb-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Vandaag</p>
-                <p className={cn('text-lg font-semibold', pnlColor(data?.today_pnl ?? 0))}>
-                  {data?.today_pnl == null ? '-' : `${data.today_pnl >= 0 ? '+' : ''}$${data.today_pnl.toFixed(2)}`}
-                </p>
-                <p className="text-xs text-muted-foreground">{data?.today_trades ?? 0} trades</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Deze week</p>
-                <p className={cn('text-lg font-semibold', pnlColor(data?.week_pnl ?? 0))}>
-                  {data?.week_pnl == null ? '-' : `${data.week_pnl >= 0 ? '+' : ''}$${data.week_pnl.toFixed(2)}`}
-                </p>
-                <p className="text-xs text-muted-foreground">{data?.week_trades ?? 0} trades</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Totaal</p>
-                <p className={cn('text-lg font-semibold', pnlColor(data?.total_pnl ?? 0))}>
-                  {data?.total_pnl == null ? '-' : `${data.total_pnl >= 0 ? '+' : ''}$${data.total_pnl.toFixed(2)}`}
-                </p>
-                <p className="text-xs text-muted-foreground">{data?.open_trades ?? 0} open</p>
-              </div>
-            </div>
-            {data?.daily?.length > 0 && (
-              <div className="space-y-1">
-                {data.daily.map((d: any) => (
-                  <div key={d.date} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{d.date}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-muted-foreground">{d.trade_count} trades</span>
-                      <span className={cn('font-medium', pnlColor(d.pnl))}>
-                        {d.pnl >= 0 ? '+' : ''}${d.pnl.toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!loading && !data?.daily?.length && (
-              <p className="text-xs text-muted-foreground text-center py-2">Nog geen gesloten trades</p>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function TokenCostCard() {
-  const { data, loading } = useApi(() => api.getAiUsage(), []);
-  const fmtCost = (v: number) => v < 0.01 ? `$${(v * 100).toFixed(2)}¢` : `$${v.toFixed(3)}`;
-  return (
-    <Card>
-      <CardHeader><CardTitle>AI Token Kosten</CardTitle></CardHeader>
-      <CardContent>
-        {loading && <LoadingSpinner />}
-        {!loading && (
-          <>
-            <div className="grid grid-cols-3 gap-3 text-sm mb-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Vandaag</p>
-                <p className="text-lg font-semibold text-amber-400">{data ? fmtCost(data.today_cost) : '-'}</p>
-                <p className="text-xs text-muted-foreground">{data?.today_calls ?? 0} calls</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Deze week</p>
-                <p className="text-lg font-semibold">{data ? fmtCost(data.week_cost) : '-'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Totaal</p>
-                <p className="text-lg font-semibold">{data ? fmtCost(data.total_cost) : '-'}</p>
-                <p className="text-xs text-muted-foreground">{data ? (data.total_tokens / 1000).toFixed(0) + 'K tok' : '-'}</p>
-              </div>
-            </div>
-            {data?.daily?.length > 0 && (
-              <div className="space-y-1">
-                {data.daily.map((d: any) => (
-                  <div key={d.date} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{d.date}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-muted-foreground">{d.calls} calls · {(d.tokens / 1000).toFixed(0)}K tok</span>
-                      <span className="font-medium text-amber-400">{fmtCost(d.cost)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!loading && !data?.daily?.length && (
-              <p className="text-xs text-muted-foreground text-center py-2">Nog geen AI kosten geregistreerd</p>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function AiFeedbackCard() {
-  const [feedback, setFeedback] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      try {
-        const result = await api.getAiFeedback();
-        if (active) setFeedback(result.items || []);
-      } catch {
-        if (active) setFeedback([]);
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    load();
-    const timer = window.setInterval(load, 30000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  function message(item: any) {
-    if (item.kind !== 'lesson') return item.message;
-    try {
-      const parsed = JSON.parse(item.message);
-      return parsed.lesson || parsed.next_time || item.message;
-    } catch {
-      return item.message;
-    }
-  }
-
-  return (
-    <Card className="md:col-span-2">
-      <CardHeader>
-        <CardTitle>AI Feedback Feed</CardTitle>
-        <span className="text-xs text-muted-foreground">ververst elke 30 sec</span>
-      </CardHeader>
-      <CardContent className="p-0">
-        {loading && <LoadingSpinner />}
-        {!loading && feedback.length === 0 && <EmptyState message="Nog geen AI feedback of gemeten outcomes." />}
-        {feedback.map(item => (
-          <div key={`${item.kind}-${item.id}`} className="border-b border-border px-4 py-2.5 last:border-0">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <Badge variant={item.kind === 'outcome' ? 'success' : item.kind === 'lesson' ? 'default' : 'muted'}>
-                  {item.kind}
-                </Badge>
-                {item.symbol && <AssetLabel symbol={item.symbol} compact className="text-xs" />}
-              </div>
-              <span className="text-xs text-muted-foreground shrink-0">{fmtDate(item.created_at)}</span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{message(item)}</p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-export default function DashboardPage() {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-base font-semibold text-foreground">Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <BotStatusCard />
+      {/* Quick links */}
+      <div>
+        <p className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wider">Snel navigeren</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <QuickLink href="/live" icon={<Activity size={16} className="text-green-400" />} label="Live Sessie" desc="Realtime markt, grafieken en posities" badge="LIVE" />
+          <QuickLink href="/gok" icon={<Dice5 size={16} className="text-amber-400" />} label="Gok Modus" desc="High-risk meme coin plays — jij bepaalt de inzet" />
+          <QuickLink href="/signals" icon={<Zap size={16} className="text-amber-400" />} label="Alle Signalen" desc="Overzicht van alle AI-gegenereerde signalen" />
+          <QuickLink href="/crypto-session" icon={<Radio size={16} className="text-blue-400" />} label="Crypto Sessie" desc="24/7 modus beheren en sessie starten" />
+          <QuickLink href="/ai-war-room" icon={<BarChart2 size={16} className="text-purple-400" />} label="AI War Room" desc="Bull vs Bear debat, geheugen en lessen" />
+          <QuickLink href="/pipeline" icon={<Cpu size={16} className="text-muted-foreground" />} label="Pipeline Status" desc="Nieuwsingest, signalen, trades — alles live" />
+        </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <OperationsFlow />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatusGrid />
-        <AccountCard />
-        <SignalsCard />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <PnlCard />
-        <TokenCostCard />
-        <PerformanceSnapshot />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <AiFeedbackCard />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <RumoursCard />
-        <NewsCard />
-        <AuditCard />
-      </div>
+
     </div>
   );
 }

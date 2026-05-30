@@ -4,83 +4,99 @@
 
 @layer base {
   :root {
-    --background: 140 33% 98%;
-    --foreground: 153 30% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 153 30% 12%;
-    --border: 141 22% 87%;
-    --input: 141 22% 87%;
-    --primary: 151 62% 34%;
+    /* ── Dark trading terminal theme ─────────────────────────────────────── */
+    --background: 220 14% 9%;
+    --foreground: 220 10% 88%;
+    --card: 220 13% 12%;
+    --card-foreground: 220 10% 88%;
+    --border: 220 10% 20%;
+    --input: 220 10% 18%;
+    --primary: 142 55% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 142 25% 95%;
-    --secondary-foreground: 153 30% 16%;
-    --muted: 142 23% 95%;
-    --muted-foreground: 150 12% 42%;
-    --accent: 143 36% 91%;
-    --accent-foreground: 151 54% 24%;
-    --destructive: 0 69% 47%;
+    --secondary: 220 13% 16%;
+    --secondary-foreground: 220 10% 80%;
+    --muted: 220 13% 16%;
+    --muted-foreground: 220 8% 52%;
+    --accent: 220 13% 20%;
+    --accent-foreground: 220 10% 88%;
+    --destructive: 0 62% 58%;
     --destructive-foreground: 0 0% 100%;
     --radius: 0.5rem;
+
+    /* Trading-specific */
+    --up: 142 76% 45%;
+    --down: 0 72% 58%;
+    --warning: 38 92% 50%;
   }
 }
 
 @layer base {
   * { @apply border-border; }
-  body { @apply bg-background text-foreground; font-family: 'Inter', -apple-system, sans-serif; }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: hsl(var(--background)); }
   ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
 }
 
-@keyframes flow-pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.22); }
-  50% { box-shadow: 0 0 0 6px rgba(21, 128, 61, 0); }
+/* ── Trading colors — bright on dark background ───────────────────────────── */
+.text-up    { color: #4ade80; }
+.text-down  { color: #f87171; }
+.bg-up      { background-color: rgba(74, 222, 128, 0.12); }
+.bg-down    { background-color: rgba(248, 113, 113, 0.12); }
+.border-up  { border-color: rgba(74, 222, 128, 0.4); }
+.border-down { border-color: rgba(248, 113, 113, 0.4); }
+
+/* ── Number font ─────────────────────────────────────────────────────────── */
+.font-num {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-feature-settings: "tnum";
 }
 
-@keyframes flow-scan {
-  0% { transform: translateX(-120%); opacity: 0; }
-  30% { opacity: 0.55; }
-  100% { transform: translateX(220%); opacity: 0; }
-}
+/* ── Card glow ────────────────────────────────────────────────────────────── */
+.card-glow-up   { box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.3), 0 0 12px rgba(74, 222, 128, 0.06); }
+.card-glow-down { box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.3), 0 0 12px rgba(248, 113, 113, 0.06); }
 
-.flow-step {
-  position: relative;
-  overflow: hidden;
-}
+/* ── Safe area ────────────────────────────────────────────────────────────── */
+.safe-area-pb { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
+/* ── Animations ───────────────────────────────────────────────────────────── */
+@keyframes pulse-up {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.pulse-up { animation: pulse-up 2s ease-in-out infinite; }
+
+@keyframes tick-flash {
+  0% { background-color: rgba(74, 222, 128, 0.2); }
+  100% { background-color: transparent; }
+}
+.tick-flash { animation: tick-flash 0.4s ease-out; }
+
+/* ── Flow step (pipeline) ─────────────────────────────────────────────────── */
+.flow-step { position: relative; overflow: hidden; }
 .flow-step::after {
   content: "";
   position: absolute;
   inset: 0;
   width: 45%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.42), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
   transform: translateX(-120%);
   pointer-events: none;
 }
+.flow-step:hover::after { animation: flow-scan 1.2s ease; }
 
-.flow-step:hover::after {
-  animation: flow-scan 1.2s ease;
+@keyframes flow-scan {
+  0% { transform: translateX(-120%); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateX(220%); opacity: 0; }
 }
 
-.flow-pulse {
-  animation: flow-pulse-ring 1.7s ease-in-out infinite;
-}
-
-/* Readable status tones for the light research-desk theme. */
-.text-green-400 { color: #15803d; }
-.text-green-300 { color: #15803d; }
-.text-red-400 { color: #b91c1c; }
-.text-red-300 { color: #b91c1c; }
-.text-yellow-400, .text-amber-400, .text-orange-400 { color: #a16207; }
-.text-purple-400 { color: #6d28d9; }
-.text-blue-400 { color: #1d4ed8; }
-
-/* Mobile safe area for bottom nav */
-.safe-area-pb {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-
-/* Touch-friendly tap targets on mobile */
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   button, a { min-height: 36px; }
 }
