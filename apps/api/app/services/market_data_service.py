@@ -38,7 +38,7 @@ class MarketDataService:
         *,
         normalize: bool,
         label: str,
-        max_pages: int = 20,
+        max_pages: int = 200,
     ) -> int:
         saved = 0
         page_token = None
@@ -153,8 +153,9 @@ class MarketDataService:
             # ── Crypto ────────────────────────────────────────────────────────
             if crypto:
                 # Alpaca crypto market data uses v1beta3 with a location segment.
+                # Batch size 5 (not 10) so limit=120 covers more bars per symbol per page.
                 crypto_pairs = [f"{s}/USD" for s in crypto]
-                for batch in _chunks(crypto_pairs, 10):
+                for batch in _chunks(crypto_pairs, 5):
                     try:
                         saved += await self._fetch_and_save_paginated(
                             client,
