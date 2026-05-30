@@ -1,7 +1,8 @@
 import logging
-import hashlib
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import httpx
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
@@ -22,8 +23,8 @@ SUBREDDITS = [
 ]
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; TradingOS/1.0; research-bot)",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "application/rss+xml, application/xml, text/xml",
 }
 
 
@@ -45,62 +46,85 @@ class RedditScraperService:
         return total
 
     async def _fetch_subreddit(self, client: httpx.AsyncClient, subreddit: str) -> int:
-        url = f"https://www.reddit.com/r/{subreddit}/hot.json?limit=25"
+        url = f"https://www.reddit.com/r/{subreddit}/hot.rss?limit=25"
         resp = await client.get(url)
         if resp.status_code != 200:
             logger.warning(f"Reddit {subreddit}: HTTP {resp.status_code}")
             return 0
 
-        data = resp.json()
-        posts = data.get("data", {}).get("children", [])
+        try:
+            root = ET.fromstring(resp.text)
+        except ET.ParseError as e:
+            logger.warning(f"Reddit {subreddit}: RSS parse fout: {e}")
+            return 0
+
+        ns = {"atom": "http://www.w3.org/2005/Atom"}
+        entries = root.findall("atom:entry", ns) or root.findall(".//item")
         saved = 0
 
         async with AsyncSessionLocal() as db:
-            for child in posts:
-                post = child.get("data", {})
-                post_id = post.get("id", "")
-                if not post_id:
+            for entry in entries:
+                # Support both Atom and RSS formats
+                entry_id = (
+                    _text(entry, "atom:id", ns)
+                    or _text(entry, "guid")
+                    or ""
+                )
+                if not entry_id:
                     continue
 
-                external_id = f"reddit_{post_id}"
+                external_id = f"reddit_rss_{abs(hash(entry_id)) % 10**12}"
 
-                # Check duplicate
                 existing = await db.execute(
                     select(SocialPost).where(SocialPost.external_id == external_id).limit(1)
                 )
                 if existing.scalar_one_or_none():
                     continue
 
-                title = post.get("title", "").strip()
-                selftext = post.get("selftext", "").strip()
-                content = f"{title}\n\n{selftext}".strip() if selftext else title
-                if not content or post.get("is_video") or post.get("stickied"):
+                title = (
+                    _text(entry, "atom:title", ns)
+                    or _text(entry, "title")
+                    or ""
+                ).strip()
+                content_el = entry.find("atom:content", ns) or entry.find("description")
+                content_text = (content_el.text or "") if content_el is not None else ""
+                content = f"{title}\n\n{content_text}".strip() if content_text else title
+                if not content:
                     continue
 
-                tickers = self._extract_tickers(content)
-                score = post.get("score", 0)
-                num_comments = post.get("num_comments", 0)
-
-                # Skip low-engagement posts
-                if score < 10:
-                    continue
-
-                posted_at = datetime.fromtimestamp(
-                    post.get("created_utc", datetime.now(timezone.utc).timestamp()),
-                    tz=timezone.utc
+                # Parse publication date
+                pub_str = (
+                    _text(entry, "atom:updated", ns)
+                    or _text(entry, "atom:published", ns)
+                    or _text(entry, "pubDate")
+                    or ""
                 )
+                try:
+                    posted_at = datetime.fromisoformat(pub_str.replace("Z", "+00:00")) if pub_str else datetime.now(timezone.utc)
+                except ValueError:
+                    try:
+                        posted_at = parsedate_to_datetime(pub_str).replace(tzinfo=timezone.utc)
+                    except Exception:
+                        posted_at = datetime.now(timezone.utc)
+
+                link_el = entry.find("atom:link", ns)
+                url_val = (link_el.get("href") if link_el is not None else None) or _text(entry, "link") or ""
+                author = _text(entry, "atom:author/atom:name", ns) or "unknown"
+
+                tickers = self._extract_tickers(f"{title} {content_text}")
 
                 item = SocialPost(
                     external_id=external_id,
                     platform="reddit",
-                    author=post.get("author", "unknown"),
+                    author=author,
                     content=content[:2000],
-                    url=f"https://reddit.com{post.get('permalink', '')}",
+                    url=url_val,
                     subreddit=subreddit,
                     posted_at=posted_at,
                     tickers=tickers,
-                    score=score,
-                    num_comments=num_comments,
+                    score=50,
+                    num_comments=0,
+                    hype_score=0.3,
                 )
                 db.add(item)
                 saved += 1
@@ -109,3 +133,8 @@ class RedditScraperService:
                 await db.commit()
 
         return saved
+
+
+def _text(el, path: str, ns: dict | None = None) -> str:
+    found = el.find(path, ns) if ns else el.find(path)
+    return (found.text or "").strip() if found is not None else ""

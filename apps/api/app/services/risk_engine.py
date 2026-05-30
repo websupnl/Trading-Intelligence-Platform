@@ -12,9 +12,9 @@ settings = get_settings()
 # Risk limits
 MAX_DAILY_LOSS_PCT = 0.05
 MAX_POSITION_SIZE_USD = 10000.0
-MAX_OPEN_POSITIONS = 10
-MAX_TRADES_PER_DAY = 20
-MIN_CONFIDENCE_FOR_AUTO = 0.60
+MAX_OPEN_POSITIONS = 15
+MAX_TRADES_PER_DAY = 30
+MIN_CONFIDENCE_FOR_AUTO = 0.55
 MANUAL_APPROVAL_THRESHOLD = 0.5
 
 
@@ -109,6 +109,6 @@ class RiskEngine:
             "max_open_positions": MAX_OPEN_POSITIONS,
             "max_trades_per_day": MAX_TRADES_PER_DAY,
             "min_confidence_for_auto": MIN_CONFIDENCE_FOR_AUTO,
-            "auto_trade_threshold": 0.60,
+            "auto_trade_threshold": 0.55,
             "position_size_pct": get_runtime_value("position_size_pct", settings.position_size_pct),
         }

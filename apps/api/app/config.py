@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     require_manual_confirmation: bool = False
     kill_switch_enabled: bool = False
     allow_short_selling: bool = False  # Short selling disabled by default — only longs
-    position_size_pct: float = 0.02   # 2% of account equity per trade
-    max_daily_loss_pct: float = 0.05  # 5% daily loss triggers circuit breaker
+    position_size_pct: float = 0.10   # 10% of account equity per trade
+    max_daily_loss_pct: float = 0.08  # 8% daily loss triggers circuit breaker
+    crypto_24_7_enabled: bool = True  # 24/7 crypto trading — persists across restarts
 
     # Alpaca
     alpaca_api_key: str = ""

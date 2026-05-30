@@ -16,8 +16,8 @@ from app.services.crypto_session import crypto_session_allows_autonomy, get_cryp
 
 logger = logging.getLogger(__name__)
 
-AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.60
-CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.55
+AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.55
+CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.52
 MAX_AUTO_NOTIONAL = 500.0
 MIN_VIABLE_NOTIONAL = 1.0
 
@@ -88,7 +88,7 @@ class AutoTraderService:
             if crypto_only:
                 query = query.where(Signal.asset.in_(CRYPTO_SYMBOLS))
             result = await db.execute(
-                query.order_by(Signal.confidence.desc()).limit(remaining_session_trades or 10)
+                query.order_by(Signal.confidence.desc()).limit(remaining_session_trades or 15)
             )
             signals = result.scalars().all()
 

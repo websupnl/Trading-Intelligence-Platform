@@ -12,6 +12,7 @@ settings = get_settings()
 CRYPTO_SYMBOLS = {
     "BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK", "LTC", "BCH", "UNI",
     "AAVE", "CRV", "BAT", "ALGO", "XTZ", "MKR", "SUSHI", "YFI",
+    "XRP", "ADA", "DOT", "MATIC", "ATOM", "FIL", "LRC",
 }
 
 

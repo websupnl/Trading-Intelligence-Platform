@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from app.services.market_session import market_session_status
 from app.services.runtime_state import get_runtime_value, set_runtime_value
+from app.config import get_settings
 
 SESSION_KEY = "autonomous_crypto_session"
 CRYPTO_24_7_KEY = "crypto_24_7_enabled"
@@ -85,7 +86,9 @@ def stop_crypto_session(reason: str = "manual") -> dict[str, Any]:
 
 
 def is_crypto_24_7_enabled() -> bool:
-    return bool(get_runtime_value(CRYPTO_24_7_KEY, False))
+    # Fall back to config default so the setting persists across container restarts
+    config_default = get_settings().crypto_24_7_enabled
+    return bool(get_runtime_value(CRYPTO_24_7_KEY, config_default))
 
 
 def set_crypto_24_7(enabled: bool) -> bool:

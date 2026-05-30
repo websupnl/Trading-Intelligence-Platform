@@ -47,9 +47,9 @@ celery_app.conf.update(
         },
 
         # === MARKET DATA ===
-        "fetch-market-data-hourly": {
+        "fetch-market-data-every-30min": {
             "task": "app.tasks.analysis_tasks.fetch_market_data",
-            "schedule": 3600.0,
+            "schedule": 1800.0,
         },
         "evaluate-outcomes-hourly": {
             "task": "app.tasks.analysis_tasks.evaluate_signal_outcomes",

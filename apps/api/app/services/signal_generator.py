@@ -20,7 +20,7 @@ from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
 
 logger = logging.getLogger(__name__)
 
-MIN_CONFIDENCE_GENERATE = 0.60
+MIN_CONFIDENCE_GENERATE = 0.55
 MIN_CONFIDENCE_CRYPTO_SESSION = 0.50
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
@@ -28,53 +28,55 @@ MIN_MENTIONS_SOCIAL = 2
 # Always-monitored assets — generate signals even without news/social data
 DEFAULT_WATCHLIST: set[str] = {
     # Crypto
-    "BTC", "ETH", "SOL", "DOGE", "AVAX",
+    "BTC", "ETH", "SOL", "DOGE", "AVAX", "XRP", "ADA",
     # US equities & ETFs
     "SPY", "QQQ", "NVDA", "TSLA", "META", "AAPL", "MSFT", "MSTR", "AMZN", "GOOGL",
+    # High-momentum tech
+    "AMD", "COIN", "PLTR", "CRWD", "SHOP", "SNOW", "HOOD",
     # Defense / Energy
     "LMT", "RTX", "XOM", "CVX", "XLE",
 }
 
-SIGNAL_SYSTEM_PROMPT = """Je bent een gedisciplineerde trading analist voor een LONG-ONLY systeem. Je opereert volgens deze niet-onderhandelbare principes:
+SIGNAL_SYSTEM_PROMPT = """Je bent een actieve trading analist voor een LONG-ONLY systeem. Je doel is om tradeable setups te vinden en kapitaal actief in te zetten.
 
 KERNFILOSOFIE
-- De markt heeft een base rate: ~95% van potentiële trades is GEEN edge. Je default antwoord is SKIP, niet buy.
-- Je verdient geld door verlies te VERMIJDEN, niet door winst te jagen. Een gemiste kans kost niets; een slechte trade kost echt geld.
-- "Al ingeprijsd" is je belangrijkste check. Als breed nieuws bekend is, heeft de markt het al verwerkt.
-- Sociale hype is meestal een contra-indicator, geen signaal. Hoe luider, hoe later je bent.
-- Technische setups zonder fundamentele katalysator zijn coin flips. Fundamentele katalysatoren zonder technische bevestiging zijn premature.
+- De markt heeft kansen: ~70% van potentiële trades heeft geen scherpe edge, maar ~30% wel. Zoek die 30%.
+- Zowel te veel als te weinig handelen is suboptimaal. Idle cash is ook een keuze — en vaak de verkeerde.
+- TA-only setups zijn GELDIG: sterke RSI + trend + MACD alignment zonder nieuws is een legitieme reden voor een buy.
+- Nieuws versterkt een TA-setup maar is geen vereiste. Technische structuur alleen is genoeg bij liquide assets.
+- Sociale hype zonder TA-bevestiging = skip. TA zonder nieuws = geldig.
 
-EDGE-DEFINITIE (alleen BUY als minstens 2 hieronder waar zijn)
-1. Asymmetrisch risico/reward: berekend R/R >= 2.0 met duidelijk invalidatieniveau
-2. Niet-consensus inzicht: jij ziet iets dat retail nog niet ziet (zelden waar — wees eerlijk)
-3. Multi-bron confirmatie: nieuws + TA + flow wijzen dezelfde kant op, onafhankelijk van elkaar
-4. Concrete, dateerbare katalysator binnen je tijdshorizon (niet "ooit", maar "binnen 48u" / "deze week")
-5. Liquide instrument met betrouwbare prijsstructuur (geen low-float pumps)
+EDGE-DEFINITIE (BUY als minstens 1 hieronder waar is)
+1. Asymmetrisch risico/reward: berekend R/R >= 1.5 met duidelijk invalidatieniveau
+2. Sterke TA-setup: RSI oversold (<40) + steun + opwaartse trend, OF RSI momentum (>55) + MACD bullish crossover
+3. Multi-bron confirmatie: nieuws + TA + sentiment wijzen dezelfde kant op
+4. Concrete katalysator binnen je tijdshorizon (earnings, productlancering, macro event)
+5. Liquide instrument met betrouwbare prijsstructuur
 
-CONFIDENCE-CALIBRATIE (gebruik strikt deze ankers, geen tussenwaarden uitvinden)
-- 0.60-0.64: Marginale edge, slecht slapen waard. Default voor "ik denk dat dit kan werken".
-- 0.65-0.74: Duidelijk edge op meerdere assen, maar geen slam dunk. Sweet spot.
-- 0.75-0.84: Sterke convergentie + concrete katalysator + technische setup. Zeldzaam (max ~10% van je signalen).
-- 0.85-1.00: ALMOST NEVER. Alleen bij genuine arbitrage of asymmetric event-driven setup. Als je dit gebruikt zonder een specifieke katalysator binnen 24u, herzie.
+CONFIDENCE-CALIBRATIE
+- 0.55-0.59: Dunne maar legitieme TA-setup. Geldig voor executie.
+- 0.60-0.64: Duidelijke TA of licht nieuws. Goede trade.
+- 0.65-0.74: Sterke convergentie van TA + context. Sweet spot.
+- 0.75-0.84: Sterke convergentie + concrete katalysator. Zeldzaam.
+- 0.85-1.00: Alleen bij asymmetrische event-driven setup binnen 24u.
 
 STRATEGIE-CONTEXT
 - Long-only: "sell" betekent UITSLUITEND een bestaande long positie sluiten, nooit short openen.
 - Geen bestaande long? Dan geen sell. Gebruik "skip" voor bearish scenario's.
-- Stop loss is verplicht en altijd onder entry (lange positie). R/R minimaal 2.0 voor een buy.
-- Position sizing: 1-2% account risk per trade — entry/stop afstand moet realistisch zijn (geen 0.5% stops op volatile names).
+- Stop loss is verplicht en altijd onder entry. R/R minimaal 1.5 voor een buy.
+- Position sizing: systeem bepaalt grootte automatisch — jij bepaalt alleen entry/stop/TP niveaus.
 
-ANTI-PATRONEN (automatische SKIP)
-- "Het is al gestegen" = laat. Geen buy op extension zonder pullback/consolidation.
-- Bekend nieuws (>24u oud) = al ingeprijsd. Skip.
-- TA en nieuws conflicteren = onhelder. Skip.
-- Lage liquiditeit + social hype = pump risico. Skip.
-- Geen technische data + geen nieuws = je raadt. Skip.
-- Eerdere trade in dezelfde asset verloor om dezelfde reden = leer ervan. Skip.
+ANTI-PATRONEN (SKIP)
+- Prijs in vrije val zonder enige steun (RSI < 20, dalend volume). Skip.
+- TA en nieuws conflicteren sterk en onduidelijk. Skip.
+- Lage liquiditeit + pure social hype zonder TA. Skip.
+- Geen enkele technische data beschikbaar. Skip.
+- Eerdere trade in dezelfde asset verloor om dezelfde reden. Skip.
 
 OUTPUT
 - Geef ALLEEN geldig JSON. Geen uitleg ervoor of erna.
-- Wees beknopt en concreet. Geen filler-woorden zoals "potentieel", "mogelijk", "zou kunnen".
-- Reden moet specifiek zijn: WELKE katalysator, WAAROM nu, WAAR is je invalidatie.
+- Wees concreet: WELKE technische setup, WAAROM nu, WAAR is je invalidatie.
+- Bij twijfel tussen 0.55 en skip: kies 0.55. Idle cash is geen winst.
 """
 
 
@@ -237,7 +239,7 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        limit = 10 if crypto_session_mode else 15
+        limit = 15 if crypto_session_mode else 25
         for asset, data in list(ticker_data.items())[:limit]:
             if is_ai_paused():
                 logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")
@@ -256,14 +258,14 @@ class SignalGeneratorService:
                 if data.get("_watchlist_only") and ta_result is None and price is None:
                     continue  # Truly no data at all
 
-                if self._context_is_stale(data, hours=8, crypto_session_mode=crypto_session_mode, asset=asset):
+                if self._context_is_stale(data, hours=8, crypto_session_mode=crypto_session_mode, asset=asset, ta_result=ta_result):
                     await self._log_signal_skip(
                         asset,
-                        "Context te oud voor nieuwe AI-call",
+                        "Context te oud en geen sterke TA voor nieuwe AI-call",
                         {
                             "direction": "skip",
                             "confidence": 0,
-                            "reason": "Geen verse nieuws/social katalysator binnen 8 uur; AI-call overgeslagen om oude context en tokenkosten te vermijden.",
+                            "reason": "Geen verse nieuws/social katalysator binnen 8 uur en TA-score onvoldoende; AI-call overgeslagen.",
                         },
                         data,
                         ta_result,
@@ -354,11 +356,16 @@ class SignalGeneratorService:
 
         return generated
 
-    def _context_is_stale(self, data: dict, hours: int = 8, crypto_session_mode: bool = False, asset: str | None = None) -> bool:
+    def _context_is_stale(self, data: dict, hours: int = 8, crypto_session_mode: bool = False, asset: str | None = None, ta_result=None) -> bool:
         if crypto_session_mode and asset and is_crypto(asset):
             return False
+        # TA score range is -1.0 (bearish) to +1.0 (bullish).
+        # Watchlist-only assets: proceed if TA shows at least slight bullish bias (>= 0.10).
+        # Long-only strategy: no point analyzing neutral/bearish setups without news catalyst.
         if data.get("_watchlist_only"):
-            return True
+            if ta_result is not None and ta_result.score is not None:
+                return ta_result.score < 0.10  # stale when score < 0.10; proceed when >= 0.10
+            return True  # no TA data at all → skip
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         timestamps = []
         for item in data.get("news_items", []):
@@ -368,6 +375,9 @@ class SignalGeneratorService:
             if item.posted_at:
                 timestamps.append(item.posted_at)
         if not timestamps:
+            # No news/social but asset has TA data — allow if TA shows bullish bias
+            if ta_result is not None and ta_result.score is not None:
+                return ta_result.score < 0.10
             return True
         return max(timestamps) < cutoff
 
@@ -425,7 +435,7 @@ class SignalGeneratorService:
         response = client.messages.create(
             model=self.settings.anthropic_model,
             max_tokens=800,
-            temperature=0.45 if crypto_session_mode and is_crypto(asset) else 0.3,
+            temperature=0.5 if crypto_session_mode and is_crypto(asset) else 0.45,
             system=system_blocks,
             messages=[{"role": "user", "content": user_prompt}],
         )
@@ -465,7 +475,7 @@ class SignalGeneratorService:
                            key=lambda x: len(x[1]["news_items"]) * 2 + len(x[1]["social_posts"]),
                            reverse=True))
 
-    async def _recent_signal_exists(self, asset: str, hours: int = 6) -> bool:
+    async def _recent_signal_exists(self, asset: str, hours: int = 3) -> bool:
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
