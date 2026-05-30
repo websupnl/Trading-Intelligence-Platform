@@ -11,9 +11,13 @@ router = APIRouter(prefix="/api/rumours")
 async def get_rumours(limit: int = Query(50, le=200), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Rumour).order_by(desc(Rumour.created_at)).limit(limit))
     items = result.scalars().all()
-    return [{"id": i.id, "title": i.title, "related_assets": i.related_assets,
+    return [{"id": i.id, "title": i.title, "description": i.description,
+             "related_assets": i.related_assets,
              "confidence": i.confidence, "manipulation_risk": i.manipulation_risk,
              "hype_velocity": i.hype_velocity, "recommendation": i.recommendation,
              "official_confirmation": i.official_confirmation, "status": i.status,
-             "independent_source_count": i.independent_source_count}
+             "independent_source_count": i.independent_source_count,
+             "rumour_type": i.ai_analysis.get("rumour_type") if i.ai_analysis else None,
+             "created_at": i.created_at.isoformat() if i.created_at else None,
+             "expires_at": i.expires_at.isoformat() if i.expires_at else None}
             for i in items]

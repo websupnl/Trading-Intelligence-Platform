@@ -5,9 +5,8 @@ import { api } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 import { useToast } from '@/contexts/toast';
 import { cn, fmtUSD, fmtPrice } from '@/lib/utils';
-import { Dice5, Zap, AlertTriangle, TrendingUp, Brain } from 'lucide-react';
+import { Dice5, AlertTriangle, Brain, Flame } from 'lucide-react';
 
-// Meme/volatiele coins op Alpaca
 const MEME_COINS = [
   { symbol: 'DOGE', name: 'Dogecoin', emoji: '🐕', vol: 'Hoog' },
   { symbol: 'ALGO', name: 'Algorand', emoji: '🔺', vol: 'Hoog' },
@@ -21,6 +20,7 @@ const MEME_COINS = [
   { symbol: 'SOL', name: 'Solana', emoji: '☀️', vol: 'Hoog' },
 ];
 
+const MEME_COIN_SET = new Set(MEME_COINS.map(c => c.symbol));
 const STAKES = [10, 25, 50, 100];
 
 export default function GokPage() {
@@ -30,20 +30,63 @@ export default function GokPage() {
   const [loading, setLoading] = useState(false);
   const [aiPicking, setAiPicking] = useState(false);
   const [result, setResult] = useState<any>(null);
-  const [aiPick, setAiPick] = useState<{ symbol: string; reason: string; confidence: number } | null>(null);
+  const [aiPick, setAiPick] = useState<any | null>(null);
+  const [prices, setPrices] = useState<Record<string, number>>({});
+  const [rolling, setRolling] = useState(false);
   const { toast } = useToast();
 
   const { data: account } = useApi(() => api.getAccount(), []);
   const { data: signals } = useApi(() => api.getSignals(20), []);
+  const { data: pnl } = useApi(() => api.getPnlSummary(), []);
+  const { data: rumours } = useApi(() => api.getRumours(10), []);
+  const { data: positions } = useApi(() => api.getPositions(), []);
+
   const buyingPower = account?.buying_power ? parseFloat(account.buying_power) : null;
   const effectiveStake = customStake ? Math.max(5, parseFloat(customStake) || 0) : stake;
 
-  // Find AI's most aggressive pending signal
+  // Batch price fetch
+  useEffect(() => {
+    const symbols = MEME_COINS.map(c => c.symbol).join(',');
+    api.getQuotes(symbols).then((data: any) => {
+      if (data && typeof data === 'object') {
+        const p: Record<string, number> = {};
+        for (const [sym, v] of Object.entries(data)) {
+          p[sym] = (v as any).price;
+        }
+        setPrices(p);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Pre-select coin from URL param (e.g. /gok?symbol=DOGE)
+  useEffect(() => {
+    const sym = new URLSearchParams(window.location.search).get('symbol');
+    if (sym) setSelectedCoin(sym.toUpperCase());
+  }, []);
+
+  // Stats
+  const totalTrades = (pnl as any)?.total_trades ?? 0;
+  const wins = (pnl as any)?.wins ?? 0;
+  const winRate = totalTrades > 0 ? Math.round((wins / totalTrades) * 100) : null;
+  const totalPnl = (pnl as any)?.total_pnl ?? 0;
+
+  // Rumour tips: top 2 non-avoid tips with a gok-compatible asset
+  const rumourTips = Array.isArray(rumours)
+    ? (rumours as any[])
+        .filter(r => r.recommendation === 'watch' || r.recommendation === 'paper_trade_only')
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 2)
+    : [];
+
+  // Open positions for meme coins
+  const openGokPositions = Array.isArray(positions)
+    ? (positions as any[]).filter(p => MEME_COIN_SET.has((p.symbol || '').replace('/USD', '')))
+    : [];
+
   function findAiPick() {
     if (!signals || !Array.isArray(signals)) return null;
     const pending = (signals as any[]).filter(s => !s.status || s.status === 'pending');
     if (!pending.length) return null;
-    // Sort by: risk_reward DESC, then confidence
     const sorted = [...pending].sort((a, b) => {
       const rrA = a.risk_reward || 0;
       const rrB = b.risk_reward || 0;
@@ -56,10 +99,6 @@ export default function GokPage() {
       reason: best.reason?.slice(0, 150) || 'Beste R/R setup op dit moment',
       confidence: best.confidence,
       rr: best.risk_reward,
-      entry: best.suggested_entry,
-      sl: best.suggested_stop,
-      tp: best.suggested_take_profit,
-      id: best.id,
     };
   }
 
@@ -67,10 +106,8 @@ export default function GokPage() {
     setAiPicking(true);
     setAiPick(null);
     try {
-      // Trigger signal generation first
       await api.triggerTask('generate_signals');
       toast('AI analyseert de markt…', 'info');
-      // Wait then check signals
       await new Promise(r => setTimeout(r, 8000));
       const fresh = await api.getSignals(20) as any[];
       if (Array.isArray(fresh)) {
@@ -94,7 +131,7 @@ export default function GokPage() {
     const target = sym || selectedCoin;
     if (!target) { toast('Kies een coin', 'error'); return; }
     if (effectiveStake < 5) { toast('Minimaal $5', 'error'); return; }
-    if (buyingPower && effectiveStake > buyingPower) { toast('Onvoldoende buying power', 'error'); return; }
+    if (buyingPower !== null && effectiveStake > buyingPower) { toast('Onvoldoende buying power', 'error'); return; }
 
     setLoading(true);
     setResult(null);
@@ -116,9 +153,20 @@ export default function GokPage() {
   }
 
   async function handleRandom() {
+    setRolling(true);
+    setTimeout(() => setRolling(false), 600);
     const random = MEME_COINS[Math.floor(Math.random() * MEME_COINS.length)];
     setSelectedCoin(random.symbol);
     await handleGok(random.symbol);
+  }
+
+  async function handleClosePosition(symbol: string) {
+    try {
+      await api.closePosition(symbol);
+      toast(`✅ ${symbol} positie gesloten`, 'success');
+    } catch (e: any) {
+      toast(`❌ ${e?.detail || 'Sluiten mislukt'}`, 'error');
+    }
   }
 
   const currentAiPick = aiPick || findAiPick() as any;
@@ -139,6 +187,28 @@ export default function GokPage() {
           📄 Paper
         </div>
       </div>
+
+      {/* Stats strip */}
+      {totalTrades > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-card border border-border rounded-xl p-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Win rate</p>
+            <p className={cn('text-lg font-bold font-num', winRate !== null && winRate >= 50 ? 'text-green-400' : 'text-red-400')}>
+              {winRate !== null ? `${winRate}%` : '–'}
+            </p>
+          </div>
+          <div className="bg-card border border-border rounded-xl p-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">P&L totaal</p>
+            <p className={cn('text-lg font-bold font-num', totalPnl >= 0 ? 'text-green-400' : 'text-red-400')}>
+              {totalPnl >= 0 ? '+' : ''}{fmtUSD(totalPnl)}
+            </p>
+          </div>
+          <div className="bg-card border border-border rounded-xl p-3 text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Gokken</p>
+            <p className="text-lg font-bold font-num text-amber-400">{totalTrades}</p>
+          </div>
+        </div>
+      )}
 
       {/* Buying power */}
       {buyingPower !== null && (
@@ -174,20 +244,61 @@ export default function GokPage() {
         </div>
       )}
 
+      {/* Rumour Radar Tips */}
+      {rumourTips.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold flex items-center gap-1.5">
+            <Flame size={14} className="text-orange-400" /> Radar Tips
+          </p>
+          {rumourTips.map((r: any) => {
+            const gokTarget = r.related_assets?.find((a: string) => MEME_COIN_SET.has(a));
+            return (
+              <div key={r.id} className="bg-orange-500/5 border border-orange-500/20 rounded-xl p-3 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium leading-snug">
+                    {r.title?.slice(0, 70)}{r.title?.length > 70 ? '…' : ''}
+                  </p>
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap items-center">
+                    {r.related_assets?.slice(0, 3).map((a: string) => (
+                      <span key={a} className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-bold">{a}</span>
+                    ))}
+                    <span className="text-[10px] text-orange-400 font-semibold">{(r.confidence * 100).toFixed(0)}% conf</span>
+                  </div>
+                </div>
+                {gokTarget && (
+                  <button
+                    onClick={() => { setSelectedCoin(gokTarget); toast(`📡 ${gokTarget} geselecteerd via Radar`, 'info'); }}
+                    className="shrink-0 text-[11px] font-bold bg-orange-500 hover:bg-orange-400 text-white px-2.5 py-1.5 rounded-lg transition-colors"
+                  >
+                    🎲 Kies
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Stake */}
       <div className="bg-card border border-border rounded-xl p-4 space-y-3">
         <p className="text-sm font-semibold">Inzet</p>
         <div className="flex gap-2 flex-wrap">
           {STAKES.map(s => (
             <button key={s} onClick={() => { setStake(s); setCustomStake(''); }}
-              className={cn('h-9 px-4 rounded-lg text-sm font-bold transition-all', stake === s && !customStake ? 'bg-amber-500 text-black' : 'bg-muted hover:bg-accent text-foreground')}>
+              className={cn('h-9 px-4 rounded-lg text-sm font-bold transition-all',
+                stake === s && !customStake ? 'bg-amber-500 text-black' : 'bg-muted hover:bg-accent text-foreground')}>
               ${s}
             </button>
           ))}
-          <input type="number" placeholder="Eigen" value={customStake} onChange={e => setCustomStake(e.target.value)}
-            className="h-9 w-28 px-3 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:border-primary font-num" />
+          <input
+            type="number" placeholder="Eigen" value={customStake}
+            onChange={e => setCustomStake(e.target.value)}
+            className="h-9 w-28 px-3 text-sm bg-muted border border-border rounded-lg focus:outline-none focus:border-primary font-num"
+          />
         </div>
-        <p className="text-xs text-muted-foreground">Inzet: <span className="font-bold text-foreground font-num">${effectiveStake}</span></p>
+        <p className="text-xs text-muted-foreground">
+          Inzet: <span className="font-bold text-foreground font-num">${effectiveStake}</span>
+        </p>
       </div>
 
       {/* Coin grid */}
@@ -195,16 +306,27 @@ export default function GokPage() {
         <p className="text-sm font-semibold mb-3">Kies je coin</p>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {MEME_COINS.map(coin => (
-            <button key={coin.symbol} onClick={() => setSelectedCoin(p => p === coin.symbol ? null : coin.symbol)}
+            <button
+              key={coin.symbol}
+              onClick={() => setSelectedCoin(p => p === coin.symbol ? null : coin.symbol)}
               className={cn(
                 'relative rounded-xl border p-2.5 text-left transition-all hover:shadow-md',
-                selectedCoin === coin.symbol ? 'border-amber-500 bg-amber-500/10 shadow-md' : 'border-border bg-card hover:border-amber-500/40',
-              )}>
+                selectedCoin === coin.symbol
+                  ? 'border-amber-500 bg-amber-500/10 shadow-md'
+                  : 'border-border bg-card hover:border-amber-500/40',
+              )}
+            >
               <div className="text-xl mb-1">{coin.emoji}</div>
               <p className="font-bold text-xs">{coin.symbol}</p>
-              <p className={cn('text-[9px] mt-0.5', coin.vol === 'Extreem' ? 'text-red-400' : coin.vol === 'Hoog' ? 'text-amber-400' : 'text-muted-foreground')}>
+              <p className={cn('text-[9px] mt-0.5',
+                coin.vol === 'Extreem' ? 'text-red-400' : coin.vol === 'Hoog' ? 'text-amber-400' : 'text-muted-foreground')}>
                 {coin.vol}
               </p>
+              {prices[coin.symbol] != null && (
+                <p className="text-[9px] text-muted-foreground font-num mt-0.5 tabular-nums">
+                  {fmtPrice(prices[coin.symbol])}
+                </p>
+              )}
             </button>
           ))}
         </div>
@@ -212,24 +334,32 @@ export default function GokPage() {
 
       {/* Action buttons */}
       <div className="grid grid-cols-3 gap-2">
-        <button onClick={() => handleGok()} disabled={loading || !selectedCoin}
-          className={cn('h-11 rounded-xl text-sm font-bold transition-all col-span-1 disabled:opacity-50',
+        <button
+          onClick={() => handleGok()}
+          disabled={loading || !selectedCoin}
+          className={cn('h-11 rounded-xl text-sm font-bold transition-all disabled:opacity-50',
             selectedCoin ? 'bg-amber-500 hover:bg-amber-400 text-black' : 'bg-muted text-muted-foreground')}>
-          {loading ? '…' : `🎲 Gok`}
+          {loading ? '…' : '🎲 Gok'}
         </button>
-        <button onClick={handleAiKiest} disabled={aiPicking || loading}
+        <button
+          onClick={handleAiKiest}
+          disabled={aiPicking || loading}
           className="h-11 rounded-xl border border-purple-500/30 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 text-sm font-bold transition-all disabled:opacity-50">
           {aiPicking ? '🧠 …' : '🧠 AI kiest'}
         </button>
-        <button onClick={handleRandom} disabled={loading}
+        <button
+          onClick={handleRandom}
+          disabled={loading}
           className="h-11 rounded-xl border border-border text-muted-foreground hover:bg-accent text-sm font-bold transition-all disabled:opacity-50">
-          <Dice5 size={14} className="inline mr-1" />Random
+          <Dice5 size={14} className={cn('inline mr-1 transition-transform duration-500', rolling && 'animate-spin')} />
+          Random
         </button>
       </div>
 
       {/* Result */}
       {result && (
-        <div className={cn('rounded-xl border p-4', result.success ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5')}>
+        <div className={cn('rounded-xl border p-4',
+          result.success ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5')}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xl">{result.success ? '✅' : '❌'}</span>
             <p className="font-bold text-sm">{result.success ? `${result.symbol} order geplaatst!` : 'Gok mislukt'}</p>
@@ -238,7 +368,6 @@ export default function GokPage() {
             <div className="text-xs text-muted-foreground space-y-1">
               <p>💰 <span className="font-bold text-foreground font-num">${result.stake}</span> ingezet op <span className="font-bold">{result.symbol}</span></p>
               <p>📊 Status: <span className="text-green-400 font-bold">{result.status}</span></p>
-              <p className="text-amber-400/80">Positie zichtbaar op Live pagina → Posities tab</p>
             </div>
           ) : (
             <p className="text-xs text-red-400">{result.error}</p>
@@ -246,12 +375,43 @@ export default function GokPage() {
         </div>
       )}
 
+      {/* Open gok posities */}
+      {openGokPositions.length > 0 && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border">
+            <p className="text-sm font-semibold">Open posities</p>
+          </div>
+          {openGokPositions.map((pos: any) => {
+            const sym = (pos.symbol || '').replace('/USD', '');
+            const plVal = parseFloat(pos.unrealized_pl || '0');
+            return (
+              <div key={pos.symbol} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0">
+                <p className="font-bold text-sm w-14">{sym}</p>
+                <p className="text-xs text-muted-foreground font-num flex-1">{fmtUSD(parseFloat(pos.market_value || '0'))}</p>
+                <p className={cn('text-xs font-bold font-num', plVal >= 0 ? 'text-green-400' : 'text-red-400')}>
+                  {plVal >= 0 ? '+' : ''}{fmtUSD(plVal)}
+                </p>
+                <button
+                  onClick={() => handleClosePosition(pos.symbol)}
+                  className="text-[11px] font-bold text-muted-foreground hover:text-red-400 border border-border hover:border-red-400/40 px-2 py-1 rounded-lg transition-colors"
+                >
+                  Sluit
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Info */}
       <div className="bg-muted/20 rounded-xl p-4 text-xs text-muted-foreground space-y-1">
-        <p className="font-semibold text-foreground flex items-center gap-1.5"><AlertTriangle size={12} className="text-amber-400" /> Hoe werkt het?</p>
+        <p className="font-semibold text-foreground flex items-center gap-1.5">
+          <AlertTriangle size={12} className="text-amber-400" /> Hoe werkt het?
+        </p>
         <p>• <strong>Zelf kiezen</strong>: selecteer een coin, kies inzet, klik Gok</p>
         <p>• <strong>AI kiest</strong>: AI analyseert en kiest de beste risicovolle setup</p>
-        <p>• <strong>Random</strong>: willekeurige coin, puur geluk</p>
+        <p>• <strong>Random</strong>: willekeurige coin, puur geluk (dobbelsteen draait 🎲)</p>
+        <p>• <strong>Radar Tips</strong>: geruchten uit Rumour Radar met Gok knop</p>
         <p>• Positie sluit automatisch na 24 uur of bij SL/TP</p>
         <p>• Alles is paper trading — geen echt geld</p>
       </div>

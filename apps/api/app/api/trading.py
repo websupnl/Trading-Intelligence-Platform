@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,6 +98,16 @@ async def get_quote(symbol: str):
     if price is None:
         raise HTTPException(status_code=404, detail=f"Geen prijs gevonden voor {symbol}")
     return {"symbol": symbol.upper(), "price": price}
+
+
+@router.get("/quotes")
+async def get_quotes(symbols: str = Query(..., description="Comma-separated symbols")):
+    """Batch price fetch for multiple symbols."""
+    from app.services.market_data_service import MarketDataService
+    svc = MarketDataService()
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()][:15]
+    prices = await asyncio.gather(*[svc.get_latest_price(s) for s in syms])
+    return {s: {"price": p} for s, p in zip(syms, prices) if p is not None}
 
 
 # ─── Manual order ─────────────────────────────────────────────────────────────
@@ -380,6 +391,15 @@ async def get_pnl_summary(db: AsyncSession = Depends(get_db)):
     )
     week_row = week_q.one()
 
+    wins_q = await db.execute(
+        select(func.count(Trade.id)).where(*closed_filter, Trade.pnl > 0)
+    )
+    losses_q = await db.execute(
+        select(func.count(Trade.id)).where(*closed_filter, Trade.pnl <= 0)
+    )
+    wins = int(wins_q.scalar() or 0)
+    losses = int(losses_q.scalar() or 0)
+
     open_count_q = await db.execute(
         select(func.count(Trade.id)).where(Trade.status == "open")
     )
@@ -403,6 +423,8 @@ async def get_pnl_summary(db: AsyncSession = Depends(get_db)):
     return {
         "total_pnl": float(total_row[0] or 0),
         "total_trades": int(total_row[1] or 0),
+        "wins": wins,
+        "losses": losses,
         "today_pnl": float(today_row[0] or 0),
         "today_trades": int(today_row[1] or 0),
         "week_pnl": float(week_row[0] or 0),

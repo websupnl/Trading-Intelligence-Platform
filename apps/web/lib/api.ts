@@ -56,6 +56,7 @@ export const api = {
   submitPaperOrder: (data: any) => apiFetch('/api/trading/orders/paper', { method: 'POST', body: JSON.stringify(data) }),
   cancelOrder: (alpacaOrderId: string) => apiFetch('/api/trading/orders/cancel', { method: 'POST', body: JSON.stringify({ alpaca_order_id: alpacaOrderId }) }),
   getQuote: (symbol: string) => apiFetch(`/api/trading/quote/${symbol.toUpperCase()}`),
+  getQuotes: (symbols: string | string[]) => apiFetch(`/api/trading/quotes?symbols=${Array.isArray(symbols) ? symbols.join(',') : symbols}`),
   closePosition: (symbol: string) => apiFetch(`/api/trading/close-position/${symbol.toUpperCase()}`, { method: 'POST' }),
   closeAllPositions: () => apiFetch('/api/trading/close-all', { method: 'POST' }),
   getTrades: (limit = 100) => apiFetch(`/api/trading/trades?limit=${limit}`),
