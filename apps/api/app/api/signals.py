@@ -59,10 +59,17 @@ async def paper_trade_signal(signal_id: str, confirmed: bool = False, db: AsyncS
         }
 
     try:
+        # Use notional ($50) instead of qty=1 so low-priced coins don't get rejected
+        from app.services.auto_trader import AutoTraderService
+        trade_notional = 50.0
+        try:
+            trade_notional = await AutoTraderService()._get_notional()
+        except Exception:
+            pass
         order = await broker.submit_order(
             symbol=signal.asset,
-            qty=1,
-            notional=None,
+            qty=None,
+            notional=trade_notional,
             side=signal.direction,
             stop_price=signal.suggested_stop,
         )
@@ -70,8 +77,8 @@ async def paper_trade_signal(signal_id: str, confirmed: bool = False, db: AsyncS
             db,
             symbol=signal.asset,
             side=signal.direction,
-            quantity=1,
-            notional=None,
+            quantity=None,
+            notional=trade_notional,
             order_type="market",
             mode="paper",
             broker_response=order,
