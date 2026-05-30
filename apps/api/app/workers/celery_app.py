@@ -58,10 +58,10 @@ celery_app.conf.update(
         },
 
         # === SIGNAL GENERATION & EXECUTION ===
-        # Every 3 min: more frequent signal checks with 4H + daily data
-        "generate-signals-every-3min": {
+        # Every 10 min — balance between freshness and API cost
+        "generate-signals-every-10min": {
             "task": "app.tasks.signal_tasks.generate_signals",
-            "schedule": 180.0,
+            "schedule": 600.0,
         },
         # Every 2 min: fallback sweep for any unexecuted pending signals
         "auto-trade-every-2min": {

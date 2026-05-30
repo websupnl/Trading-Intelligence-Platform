@@ -255,7 +255,7 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        limit = 15 if crypto_session_mode else 25
+        limit = 8 if crypto_session_mode else 15
         for asset, data in list(ticker_data.items())[:limit]:
             if is_ai_paused():
                 logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")
@@ -511,7 +511,7 @@ class SignalGeneratorService:
                            key=lambda x: len(x[1]["news_items"]) * 2 + len(x[1]["social_posts"]),
                            reverse=True))
 
-    async def _recent_signal_exists(self, asset: str, hours: int = 2) -> bool:
+    async def _recent_signal_exists(self, asset: str, hours: int = 6) -> bool:
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
