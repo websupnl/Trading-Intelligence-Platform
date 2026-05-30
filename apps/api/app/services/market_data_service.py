@@ -101,6 +101,35 @@ class MarketDataService:
                 await db.commit()
         return saved
 
+    async def _get_start_date(self, timeframe: str, fallback_days: int) -> datetime:
+        """Return a safe start date for a paginated Alpaca bar request.
+
+        Uses the *oldest* last-known candle across all symbols for this timeframe so
+        we only fetch data that is genuinely missing.  This avoids the multi-symbol
+        pagination trap: Alpaca's cursor advances symbol-by-symbol, so a wide fixed
+        window (e.g. 360 days for 4Hour) exhausts max_pages on the first symbol
+        (AAVE) before ever reaching BTC/ETH/SOL.
+        """
+        from sqlalchemy import func as sqlfunc
+        async with AsyncSessionLocal() as db:
+            sub = (
+                select(
+                    Candle.symbol,
+                    sqlfunc.max(Candle.timestamp).label("latest"),
+                )
+                .where(Candle.timeframe == timeframe)
+                .group_by(Candle.symbol)
+                .subquery()
+            )
+            result = await db.execute(select(sqlfunc.min(sub.c.latest)))
+            oldest_latest = result.scalar_one_or_none()
+
+        end = datetime.now(timezone.utc)
+        if oldest_latest is None:
+            return end - timedelta(days=fallback_days)
+        # Small overlap buffer so we don't miss the boundary candle
+        return oldest_latest - timedelta(hours=1)
+
     async def fetch_bars(self, symbols: list[str], timeframe: str = "1Day", limit: int = 60) -> int:
         """Fetch OHLCV bars for a list of symbols and save to DB. Returns count saved."""
         if not self.settings.alpaca_configured:
@@ -121,10 +150,11 @@ class MarketDataService:
         crypto = [s for s in normalized if s in CRYPTO_SYMBOLS]
         stocks = [s for s in normalized if s not in CRYPTO_SYMBOLS]
         saved = 0
-        # Alpaca can return only the latest grouped daily bar without an explicit
-        # historical window. TA needs enough bars, so always request a lookback.
+        # Start from the oldest last-known candle so each run only fetches the gap,
+        # not a fixed historical window that exhausts pagination on the first symbol.
         end = datetime.now(timezone.utc)
-        start = end - timedelta(days=max(limit * 3, 120))
+        fallback_days = max(limit * 3, 120)
+        start = await self._get_start_date(timeframe, fallback_days)
 
         async with httpx.AsyncClient(timeout=30) as client:
             # ── Stocks ────────────────────────────────────────────────────────
