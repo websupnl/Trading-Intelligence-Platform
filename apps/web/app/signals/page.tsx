@@ -17,16 +17,50 @@ const STATUS_VARIANT: Record<string, any> = {
   live_traded: 'success',
   rejected: 'muted',
   risk_rejected: 'danger',
+  skipped_price_invalid: 'danger',
   broker_error: 'danger',
   expired: 'muted',
 };
+
+const TIMEFRAME_COLOR: Record<string, string> = {
+  intraday: 'bg-purple-500/15 text-purple-400',
+  swing: 'bg-blue-500/15 text-blue-400',
+  positional: 'bg-amber-500/15 text-amber-400',
+};
+
+function RiskBar({ entry, stop, tp }: { entry?: number; stop?: number; tp?: number }) {
+  if (!entry || !stop || !tp) return null;
+  const low = Math.min(stop, entry, tp);
+  const high = Math.max(stop, entry, tp);
+  const range = high - low || 1;
+  const pct = (v: number) => ((v - low) / range * 100).toFixed(1) + '%';
+  const rr = (tp - entry) / (entry - stop);
+  return (
+    <div className="mt-1.5">
+      <div className="relative h-2 bg-muted/40 rounded-full overflow-hidden">
+        {/* Loss zone: stop → entry */}
+        <div className="absolute top-0 h-full bg-red-500/40 rounded-full" style={{ left: pct(stop), width: pct(entry) }} />
+        {/* Profit zone: entry → tp */}
+        <div className="absolute top-0 h-full bg-green-500/40 rounded-full" style={{ left: pct(entry), width: `${((tp - entry) / range * 100).toFixed(1)}%` }} />
+        {/* Entry marker */}
+        <div className="absolute top-0 w-0.5 h-full bg-white/80" style={{ left: pct(entry) }} />
+      </div>
+      <div className="flex justify-between mt-0.5 text-[9px] font-mono">
+        <span className="text-red-400">SL ${stop.toFixed(2)}</span>
+        <span className={rr >= 1.5 ? 'text-green-400' : 'text-yellow-400'}>R/R {rr.toFixed(1)}x</span>
+        <span className="text-green-400">TP ${tp.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function SignalsPage() {
   const { data: signals, loading, reload } = useApi(() => api.getSignals(100), []);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'traded' | 'rejected'>('all');
+  const [generatingScalp, setGeneratingScalp] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'pending' | 'traded' | 'rejected' | 'scalp'>('all');
   const { toast } = useToast();
 
   async function handlePaperTrade(id: string) {
@@ -70,12 +104,28 @@ export default function SignalsPage() {
     }
   }
 
+  async function handleGenerateScalp() {
+    setGeneratingScalp(true);
+    try {
+      await api.triggerTask('generate_scalp_signals');
+      toast('⚡ Scalp signals gestart — duurt ~20s', 'info');
+      setTimeout(reload, 12000);
+      setTimeout(reload, 25000);
+    } catch (e: any) {
+      toast(`❌ ${e?.detail || 'Scalp generatie mislukt'}`, 'error');
+    } finally {
+      setGeneratingScalp(false);
+    }
+  }
+
   const filtered = (signals || []).filter((s: any) => {
     if (filter === 'pending') return s.status === 'pending';
     if (filter === 'traded') return s.status === 'paper_traded' || s.status === 'live_traded';
-    if (filter === 'rejected') return s.status === 'rejected' || s.status === 'risk_rejected';
+    if (filter === 'rejected') return s.status === 'rejected' || s.status === 'risk_rejected' || s.status === 'skipped_price_invalid';
+    if (filter === 'scalp') return s.timeframe === 'intraday';
     return true;
   });
+  const scalpCount = (signals || []).filter((s: any) => s.timeframe === 'intraday').length;
 
   const pendingCount = (signals || []).filter((s: any) => s.status === 'pending').length;
 
@@ -89,10 +139,13 @@ export default function SignalsPage() {
             </span>
           )}
         </h1>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={reload}>Vernieuwen</Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={reload}>↻</Button>
+          <Button variant="outline" size="sm" onClick={handleGenerateScalp} disabled={generatingScalp} className="text-purple-400 border-purple-500/30">
+            {generatingScalp ? '⏳' : '⚡'} Scalp
+          </Button>
           <Button variant="success" size="sm" onClick={handleGenerate} disabled={generating}>
-            {generating ? '⏳ Bezig...' : '⚡ Genereer'}
+            {generating ? '⏳' : '⚡'} Swing
           </Button>
         </div>
       </div>
@@ -102,6 +155,7 @@ export default function SignalsPage() {
         {[
           { key: 'all', label: `Alles (${signals?.length || 0})` },
           { key: 'pending', label: `⏳ Pending (${(signals || []).filter((s: any) => s.status === 'pending').length})` },
+          { key: 'scalp', label: `⚡ Scalp (${scalpCount})` },
           { key: 'traded', label: `✅ Getraded` },
           { key: 'rejected', label: `❌ Afgewezen` },
         ].map(({ key, label }) => (
@@ -138,16 +192,21 @@ export default function SignalsPage() {
                   onClick={() => setExpanded(isExpanded ? null : s.id)}
                 >
                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <AssetLabel symbol={s.asset} />
                       <Badge variant={s.direction === 'buy' ? 'success' : 'danger'}>
                         {s.direction?.toUpperCase()}
                       </Badge>
-                      <span className={cn('text-sm', confidenceColor(s.confidence))}>
+                      {s.timeframe && (
+                        <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded uppercase', TIMEFRAME_COLOR[s.timeframe] || 'bg-muted/40 text-muted-foreground')}>
+                          {s.timeframe}
+                        </span>
+                      )}
+                      <span className={cn('text-sm font-mono font-bold tabular-nums', confidenceColor(s.confidence))}>
                         {(s.confidence * 100).toFixed(0)}%
                       </span>
                       {hasBullBear && (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-[10px] text-muted-foreground font-mono">
                           🐂{(ai.bull_score * 100).toFixed(0)} 🐻{(ai.bear_score * 100).toFixed(0)}
                         </span>
                       )}
@@ -177,8 +236,11 @@ export default function SignalsPage() {
                       <span className="text-xs text-muted-foreground">{isExpanded ? '▲' : '▼'}</span>
                     </div>
                   </div>
-                  {!isExpanded && s.reason && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{s.reason}</p>
+                  {!isExpanded && (
+                    <>
+                      {s.reason && <p className="text-xs text-muted-foreground mt-1 truncate">{s.reason}</p>}
+                      <RiskBar entry={s.suggested_entry} stop={s.suggested_stop} tp={s.suggested_take_profit} />
+                    </>
                   )}
                 </div>
 
