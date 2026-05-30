@@ -28,14 +28,14 @@ MIN_MENTIONS_SOCIAL = 2
 
 # Always-monitored assets — generate signals even without news/social data
 DEFAULT_WATCHLIST: set[str] = {
-    # Crypto
-    "BTC", "ETH", "SOL", "DOGE", "AVAX", "XRP", "ADA",
+    # Crypto large-cap
+    "BTC", "ETH", "SOL", "DOGE", "AVAX", "XRP", "ADA", "LINK", "LTC",
+    # Crypto mid-cap (meme/volatile)
+    "AAVE", "UNI", "ALGO", "BAT", "CRV", "BCH",
     # US equities & ETFs
     "SPY", "QQQ", "NVDA", "TSLA", "META", "AAPL", "MSFT", "MSTR", "AMZN", "GOOGL",
     # High-momentum tech
-    "AMD", "COIN", "PLTR", "CRWD", "SHOP", "SNOW", "HOOD",
-    # Defense / Energy
-    "LMT", "RTX", "XOM", "CVX", "XLE",
+    "AMD", "COIN", "PLTR", "CRWD", "HOOD",
 }
 
 SIGNAL_SYSTEM_PROMPT = """Je bent een actieve trading analist voor een LONG-ONLY systeem. Je doel is om tradeable setups te vinden en kapitaal actief in te zetten.
@@ -265,14 +265,17 @@ class SignalGeneratorService:
                     continue
 
                 candles = await self._get_candles(asset)
+                candles_4h = await self._get_candles_4h(asset)
                 ta_result = ta_analyze(candles) if candles else None
-                price = candles[-1].close if candles else None
+                ta_4h = ta_analyze(candles_4h) if candles_4h else None
+                price = candles[-1].close if candles else (candles_4h[-1].close if candles_4h else None)
 
-                # In crypto session mode, skip only if BOTH TA and price are missing
-                if data.get("_watchlist_only") and ta_result is None and not crypto_session_mode:
+                # Skip only if we have truly no data at all (no daily, no 4H, no price)
+                effective_ta = ta_result or ta_4h
+                if data.get("_watchlist_only") and effective_ta is None and not crypto_session_mode:
                     continue
-                if data.get("_watchlist_only") and ta_result is None and price is None:
-                    continue  # Truly no data at all
+                if data.get("_watchlist_only") and effective_ta is None and price is None:
+                    continue
 
                 if self._context_is_stale(data, hours=8, crypto_session_mode=crypto_session_mode, asset=asset, ta_result=ta_result):
                     await self._log_signal_skip(
@@ -306,25 +309,32 @@ class SignalGeneratorService:
                 ]) or "Geen social media data"
 
                 ta_summary = "Geen technische data"
-                if ta_result:
-                    rsi_str = f"{ta_result.rsi:.0f}" if ta_result.rsi is not None else "N/A"
-                    ema_info = ""
-                    if ta_result.ema20:
-                        ema_info += f" | EMA20: ${ta_result.ema20:.2f}"
-                        if ta_result.pct_from_ema20 is not None:
-                            ema_info += f" ({ta_result.pct_from_ema20:+.1f}%)"
-                    if ta_result.ema50:
-                        ema_info += f" | EMA50: ${ta_result.ema50:.2f}"
-                        if ta_result.pct_from_ema50 is not None:
-                            ema_info += f" ({ta_result.pct_from_ema50:+.1f}%)"
-                    setup_hint = f" | Setup: {ta_result.setup_type}" if ta_result.setup_type != "none" else ""
-                    ta_summary = (
-                        f"Score: {ta_result.score:.2f} | RSI: {rsi_str} | "
-                        f"MACD: {ta_result.macd_signal} | Trend: {ta_result.trend}{ema_info}{setup_hint} | {ta_result.summary}"
-                    )
+                if ta_result or ta_4h:
+                    parts = []
+                    if ta_result:
+                        rsi_str = f"{ta_result.rsi:.0f}" if ta_result.rsi is not None else "N/A"
+                        ema_info = ""
+                        if ta_result.ema20 and ta_result.pct_from_ema20 is not None:
+                            ema_info += f" | EMA20 {ta_result.pct_from_ema20:+.1f}%"
+                        if ta_result.ema50 and ta_result.pct_from_ema50 is not None:
+                            ema_info += f" | EMA50 {ta_result.pct_from_ema50:+.1f}%"
+                        setup_hint = f" [{ta_result.setup_type}]" if ta_result.setup_type != "none" else ""
+                        parts.append(
+                            f"[1D] Score:{ta_result.score:.2f} | RSI:{rsi_str} | MACD:{ta_result.macd_signal} | {ta_result.trend}{ema_info}{setup_hint} | {ta_result.summary}"
+                        )
+                    if ta_4h:
+                        rsi_4h = f"{ta_4h.rsi:.0f}" if ta_4h.rsi is not None else "N/A"
+                        setup_4h = f" [{ta_4h.setup_type}]" if ta_4h.setup_type != "none" else ""
+                        parts.append(
+                            f"[4H] Score:{ta_4h.score:.2f} | RSI:{rsi_4h} | MACD:{ta_4h.macd_signal} | {ta_4h.trend}{setup_4h}"
+                        )
+                        # Use 4H TA as fallback if daily has no data
+                        if not ta_result:
+                            ta_result = ta_4h
+                    ta_summary = "\n".join(parts)
 
                 if lessons:
-                    ta_summary += f"\n\n🧠 Geheugen — eerdere trades {asset}:\n" + "\n".join(f"  {l}" for l in lessons)
+                    ta_summary += f"\n\n🧠 Geheugen {asset}:\n" + "\n".join(f"  {l}" for l in lessons)
 
                 price_str = f"{price:.4f}" if price else "onbekend"
 
@@ -501,7 +511,7 @@ class SignalGeneratorService:
                            key=lambda x: len(x[1]["news_items"]) * 2 + len(x[1]["social_posts"]),
                            reverse=True))
 
-    async def _recent_signal_exists(self, asset: str, hours: int = 3) -> bool:
+    async def _recent_signal_exists(self, asset: str, hours: int = 2) -> bool:
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
         async with AsyncSessionLocal() as db:
             result = await db.execute(
@@ -518,7 +528,12 @@ class SignalGeneratorService:
     async def _get_candles(self, symbol: str) -> list:
         from app.services.market_data_service import MarketDataService
         svc = MarketDataService()
-        return await svc.get_candles(symbol, "1Day", 50)
+        return await svc.get_candles(symbol, "1Day", 60)
+
+    async def _get_candles_4h(self, symbol: str) -> list:
+        from app.services.market_data_service import MarketDataService
+        svc = MarketDataService()
+        return await svc.get_candles(symbol, "4Hour", 60)
 
     async def _get_memory_lessons(self, asset: str, limit: int = 6) -> list[str]:
         """Fetch recent trade lessons for this asset, including rule suggestions."""

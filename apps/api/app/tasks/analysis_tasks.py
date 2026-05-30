@@ -91,11 +91,15 @@ def fetch_market_data():
             return 0
 
         svc = MarketDataService()
-        return await svc.fetch_bars(valid, "1Day", 60)
+        daily = await svc.fetch_bars(valid, "1Day", 60)
+        # 4H candles for crypto only (24/7 available) — used for more frequent signal detection
+        crypto_valid = [t for t in valid if is_crypto(t)]
+        four_h = await svc.fetch_bars(crypto_valid, "4Hour", 120) if crypto_valid else 0
+        return daily + four_h
 
     try:
         count = asyncio.run(_run())
-        logger.info(f"Market data: {count} candles opgeslagen")
+        logger.info(f"Market data: {count} candles opgeslagen (daily + 4H)")
         return {"status": "ok", "candles": count}
     except Exception as e:
         logger.error(f"Market data fout: {e}")

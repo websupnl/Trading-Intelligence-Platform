@@ -56,6 +56,9 @@ class PositionMonitorService:
         if price is None:
             return False
 
+        # Trailing stop: adjust SL upward as trade profits
+        await self._apply_trailing_stop(trade, price)
+
         # SL/TP check
         if trade.stop_loss or trade.take_profit:
             triggered, reason, exit_price = self._is_triggered(trade, price)
@@ -63,7 +66,7 @@ class PositionMonitorService:
                 await self._execute_close(trade, exit_price, reason)
                 return True
 
-        # Max hold time: sluit altijd na MAX_HOLD_HOURS als er geen exit is geraakt
+        # Max hold time
         if trade.opened_at:
             age = datetime.now(timezone.utc) - trade.opened_at
             if age > timedelta(hours=self.MAX_HOLD_HOURS):
@@ -72,6 +75,57 @@ class PositionMonitorService:
                 return True
 
         return False
+
+    async def _apply_trailing_stop(self, trade: Trade, price: float) -> None:
+        """Move SL up as position profits: breakeven at +2%, trail at +4%."""
+        if trade.side.lower() not in ("buy", "long"):
+            return
+        if not trade.entry_price or trade.entry_price <= 0:
+            return
+
+        entry = trade.entry_price
+        profit_pct = (price - entry) / entry * 100
+
+        new_sl: float | None = None
+        reason = ""
+
+        if profit_pct >= 4.0:
+            # Trail at 1.5% below current price — lock in gains
+            trail = price * 0.985
+            if trade.stop_loss is None or trail > trade.stop_loss:
+                new_sl = round(trail, 6)
+                reason = f"Trailing stop {profit_pct:.1f}% winst → SL=${new_sl:.4f}"
+        elif profit_pct >= 2.0:
+            # Move to breakeven
+            if trade.stop_loss is None or trade.stop_loss < entry:
+                new_sl = round(entry * 1.001, 6)  # slightly above entry
+                reason = f"Breakeven stop {profit_pct:.1f}% winst → SL=${new_sl:.4f}"
+
+        if new_sl is None:
+            return
+
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(Trade).where(Trade.id == trade.id))
+                db_trade = result.scalar_one_or_none()
+                if db_trade and db_trade.status == "open":
+                    old_sl = db_trade.stop_loss
+                    db_trade.stop_loss = new_sl
+                    db.add(AuditLog(
+                        action="trailing_stop_updated",
+                        actor="position_monitor",
+                        entity_type="trade",
+                        entity_id=trade.id,
+                        details={"symbol": trade.symbol, "old_sl": old_sl, "new_sl": new_sl, "profit_pct": profit_pct},
+                        status="success",
+                        message=f"{trade.symbol}: {reason}",
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    ))
+                    await db.commit()
+                    logger.info(f"Trailing stop bijgewerkt: {trade.symbol} {reason}")
+        except Exception as e:
+            logger.warning(f"Trailing stop update fout voor {trade.symbol}: {e}")
 
     def _is_triggered(self, trade: Trade, price: float) -> tuple[bool, str, float]:
         is_long = trade.side.lower() in ("buy", "long")

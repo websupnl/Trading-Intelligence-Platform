@@ -47,9 +47,10 @@ celery_app.conf.update(
         },
 
         # === MARKET DATA ===
-        "fetch-market-data-every-30min": {
+        # Every 15 min: fresh candles (daily + 4H crypto) for more signals
+        "fetch-market-data-every-15min": {
             "task": "app.tasks.analysis_tasks.fetch_market_data",
-            "schedule": 1800.0,
+            "schedule": 900.0,
         },
         "evaluate-outcomes-hourly": {
             "task": "app.tasks.analysis_tasks.evaluate_signal_outcomes",
@@ -57,10 +58,10 @@ celery_app.conf.update(
         },
 
         # === SIGNAL GENERATION & EXECUTION ===
-        # Every 5 min: generate signals; task immediately fires auto_trade if signals found
-        "generate-signals-every-5min": {
+        # Every 3 min: more frequent signal checks with 4H + daily data
+        "generate-signals-every-3min": {
             "task": "app.tasks.signal_tasks.generate_signals",
-            "schedule": 300.0,
+            "schedule": 180.0,
         },
         # Every 2 min: fallback sweep for any unexecuted pending signals
         "auto-trade-every-2min": {
