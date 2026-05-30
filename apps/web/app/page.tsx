@@ -13,6 +13,11 @@ function fmt(p: number): string {
   return p.toFixed(5);
 }
 
+// Alpaca returns 'ETHUSD', 'BTC/USD' — normalize to 'ETH', 'BTC'
+function cleanSym(s: string): string {
+  return (s || '').split('/')[0].replace(/USD[CT]?$/, '');
+}
+
 function StatCard({ label, value, sub, color, href }: {
   label: string; value: string; sub?: string; color?: string; href?: string;
 }) {
@@ -66,7 +71,7 @@ export default function Dashboard() {
   const totalPnl = openPositions.reduce((sum: number, p: any) => sum + parseFloat(p.unrealized_pl ?? '0'), 0);
 
   const aiPaused = bot?.ai_guard?.paused;
-  const crypto247 = status?.crypto_24_7_enabled;
+  const crypto247 = (bot as any)?.crypto_session?.crypto_24_7_enabled;
   const tradingMode = status?.trading_mode ?? 'paper';
 
   return (
@@ -114,7 +119,7 @@ export default function Dashboard() {
           {openPositions.slice(0, 5).map((pos: any, i: number) => {
             const pnl = parseFloat(pos.unrealized_pl ?? '0');
             const pct = parseFloat(pos.unrealized_plpc ?? '0') * 100;
-            const sym = pos.symbol.split('/')[0];
+            const sym = cleanSym(pos.symbol);
             const entry = parseFloat(pos.avg_entry_price ?? '0');
             return (
               <div key={i} className={cn('flex items-center gap-3 px-4 py-2.5 border-b border-border/40 last:border-0', pnl >= 0 ? 'hover:bg-green-500/5' : 'hover:bg-red-500/5')}>

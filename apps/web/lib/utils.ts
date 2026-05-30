@@ -30,3 +30,17 @@ export function confidenceColor(c: number): string {
   if (c >= 0.5) return 'text-yellow-400';
   return 'text-red-400';
 }
+
+/** Normalize Alpaca symbols: 'ETHUSD' or 'ETH/USD' → 'ETH' */
+export function cleanSym(s: string | null | undefined): string {
+  return (s || '').split('/')[0].replace(/USD[CT]?$/, '');
+}
+
+/** Format price with appropriate decimals */
+export function fmtPrice(p: number | null | undefined): string {
+  if (p == null) return '—';
+  if (p >= 10000) return p.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (p >= 100) return p.toFixed(2);
+  if (p >= 1) return p.toFixed(3);
+  return p.toFixed(5);
+}

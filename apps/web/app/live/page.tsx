@@ -9,6 +9,17 @@ import { useToast } from '@/contexts/toast';
 import { CandlestickChart } from '@/components/live/CandlestickChart';
 import { X, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Zap, BarChart2, Wallet, Activity } from 'lucide-react';
 
+function cleanSym(s: string): string {
+  return (s || '').split('/')[0].replace(/USD[CT]?$/, '');
+}
+
+function fmt(p: number): string {
+  if (p >= 10000) return p.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  if (p >= 100) return p.toFixed(2);
+  if (p >= 1) return p.toFixed(3);
+  return p.toFixed(5);
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface OHLCVCandle { time: number; open: number; high: number; low: number; close: number; volume: number; }
@@ -45,13 +56,6 @@ const NAMES: Record<string, string> = {
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function fmt(p: number) {
-  if (p >= 10000) return p.toLocaleString('en-US', { maximumFractionDigits: 0 });
-  if (p >= 100) return p.toFixed(2);
-  if (p >= 1) return p.toFixed(3);
-  return p.toFixed(5);
-}
 function isPending(s?: SignalData) { return s && (!s.status || s.status === 'pending'); }
 function relTime(iso: string) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -345,7 +349,7 @@ function PositionRow({ pos, onClose, closing, signal }: {
 }) {
   const pnl = parseFloat(pos.unrealized_pl ?? '0');
   const pct = parseFloat(pos.unrealized_plpc ?? '0') * 100;
-  const sym = pos.symbol.split('/')[0];
+  const sym = cleanSym(pos.symbol);
   const qty = parseFloat(pos.qty ?? '0');
   const entry = parseFloat(pos.avg_entry_price ?? '0');
   const currentPrice = entry * (1 + pct / 100);
@@ -806,7 +810,7 @@ export default function LivePage() {
                       </p>
                     </div>
                     {positions.map((p, i) => {
-                      const sym = p.symbol.split('/')[0];
+                      const sym = cleanSym(p.symbol);
                       const relSignal = signals.find(s => s.asset === sym && s.status === 'paper_traded');
                       return <PositionRow key={i} pos={p} onClose={doClose} closing={closing} signal={relSignal} />;
                     })}
