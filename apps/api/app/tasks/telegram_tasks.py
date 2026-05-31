@@ -29,18 +29,33 @@ def poll_telegram():
 def monitor_telegram_channels():
     """Scrape configured public Telegram channels for market signals. Elke 30 minuten."""
     from app.config import get_settings
-    if not get_settings().telegram_monitor_channel_list:
+    settings = get_settings()
+    if not settings.telegram_monitor_channel_list:
         return {"status": "skipped", "reason": "no_channels_configured"}
 
     from app.services.telegram_monitor_service import TelegramMonitorService
+    import redis as _redis
 
     async def _run():
         svc = TelegramMonitorService()
         count = await svc.monitor_all()
-        return {"status": "ok", "count": count}
+        return count
 
     try:
-        return asyncio.run(_run())
+        count = asyncio.run(_run())
+        # Event-driven: trigger signal generation when new channel content arrives
+        if count and count > 0:
+            _COOLDOWN_KEY = "trading_os:tg_monitor_signal_trigger_cooldown"
+            try:
+                _r = _redis.Redis.from_url(settings.redis_url, socket_connect_timeout=0.3, socket_timeout=0.3)
+                if not _r.exists(_COOLDOWN_KEY):
+                    _r.set(_COOLDOWN_KEY, "1", ex=600)  # 10-minute cooldown
+                    celery_app.send_task("app.tasks.analysis_tasks.analyze_news")
+                    celery_app.send_task("app.tasks.signal_tasks.generate_signals")
+                    logger.info(f"Signal generatie getriggerd door {count} Telegram item(s)")
+            except Exception as _e:
+                logger.debug(f"Telegram monitor trigger fout: {_e}")
+        return {"status": "ok", "count": count}
     except Exception as exc:
         logger.error("Telegram channel monitoring fout: %s", exc)
         return {"status": "error", "message": str(exc)}

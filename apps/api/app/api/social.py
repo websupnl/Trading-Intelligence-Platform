@@ -31,4 +31,12 @@ async def fetch_reddit():
 
 @router.post("/x/fetch")
 async def fetch_x():
-    return {"status": "not_configured", "message": "X/Twitter integratie vereist X_BEARER_TOKEN"}
+    from app.services.x_monitor_service import XMonitorService
+    svc = XMonitorService()
+    if not svc.configured:
+        return {"status": "skipped", "message": "X_BEARER_TOKEN niet ingesteld in Coolify"}
+    try:
+        count = await svc.fetch_all()
+        return {"status": "ok", "fetched": count}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

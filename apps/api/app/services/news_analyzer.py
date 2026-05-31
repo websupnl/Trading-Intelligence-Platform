@@ -258,20 +258,41 @@ class NewsAnalyzerService:
                             db_item.status = "noise"
                         await flush_usage(db, [usage_record(self.settings.anthropic_model, "news_analysis", resp.usage)])
                         await db.commit()
+                        tickers_str = ", ".join(db_item.tickers or []) or "geen ticker"
                         if (
                             not analysis.get("is_noise")
                             and float(analysis.get("impact_score", 0)) >= 8
                             and analysis.get("urgency") == "high"
                         ):
-                            tickers = ", ".join(db_item.tickers or []) or "geen ticker"
                             await NotificationService(db).send(
                                 "high_impact_news",
-                                f"Trading OS - Hoog-impact nieuws: {tickers}",
-                                f"{db_item.source}: {db_item.title[:300]}",
+                                f"📰 Breaking nieuws: {tickers_str}",
+                                f"{db_item.source}\n\n{db_item.title[:400]}",
                                 severity="warning",
                                 entity_type="news",
                                 entity_id=db_item.id,
                             )
+
+                        if analysis.get("gok_opportunity") and not analysis.get("is_noise"):
+                            sentiment_icon = "📈" if analysis.get("sentiment") == "bullish" else "📉"
+                            gok_tickers = ", ".join(db_item.tickers or []) or "onbekend"
+                            await NotificationService(db).send(
+                                "gok_opportunity_detected",
+                                f"🎰 Gok kans gedetecteerd: {gok_tickers}",
+                                f"{sentiment_icon} {db_item.title[:300]}\n\nBron: {db_item.source}\n"
+                                f"Impact: {analysis.get('impact_score', 0):.0f}/10 | "
+                                f"Urgentie: {analysis.get('urgency', 'onbekend')}\n\n"
+                                f"→ Open het dashboard → Gok om te handelen",
+                                severity="info",
+                                entity_type="news",
+                                entity_id=db_item.id,
+                            )
+                            # Trigger gok scan via Celery
+                            try:
+                                from app.workers.celery_app import celery_app as _capp
+                                _capp.send_task("app.tasks.analysis_tasks.run_gok_scan")
+                            except Exception:
+                                pass
 
                 analyzed += 1
                 # Rate limit: ~40 req/min for claude-haiku is fine, but be conservative

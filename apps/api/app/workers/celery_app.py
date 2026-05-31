@@ -35,6 +35,10 @@ celery_app.conf.update(
             "task": "app.tasks.social_tasks.fetch_reddit",
             "schedule": 1800.0,
         },
+        "fetch-x-every-30min": {
+            "task": "app.tasks.social_tasks.fetch_x",
+            "schedule": 1800.0,
+        },
 
         # === AI ANALYSIS (Claude) ===
         # Faster: every 2 min so fresh news gets analyzed quickly

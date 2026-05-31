@@ -12,10 +12,13 @@ logger = logging.getLogger(__name__)
 TELEGRAM_EVENT_TYPES = {
     "ai_provider_paused", "ai_provider_resumed",
     "auto_trade_executed", "auto_trade_broker_error",
-    "position_closed", "position_close_failed",
+    "position_opened", "position_closed", "position_close_failed",
     "order_submitted", "order_failed",
     "trade_reflection_written", "daily_summary", "trade_summary",
     "circuit_breaker_triggered", "telegram_test",
+    # News & signals
+    "high_impact_news", "gok_opportunity_detected",
+    "signal_generated", "gok_executed",
 }
 
 class NotificationService:
