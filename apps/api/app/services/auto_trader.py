@@ -98,7 +98,7 @@ class AutoTraderService:
         executed = 0
         for signal in signals:
             try:
-                notional = await self._get_notional(signal.asset)
+                notional = await self._get_notional(signal.asset, confidence=signal.confidence)
                 if notional < MIN_NOTIONAL:
                     logger.warning(f"{signal.asset}: notional ${notional:.2f} te laag — overgeslagen")
                     continue
@@ -183,9 +183,25 @@ class AutoTraderService:
         except Exception:
             return 0.0
 
-    async def _get_notional(self, symbol: str | None = None) -> float:
-        """Equity-based position sizing per asset profile.
-        Stocks use the runtime position_size_pct setting; crypto and speculative use fixed profile percentages."""
+    @staticmethod
+    def _confidence_multiplier(confidence: float) -> float:
+        """AI-driven sizing: the model's conviction directly scales the position.
+        Higher confidence = bigger bet. This is the AI deciding its own stake."""
+        if confidence >= 0.85:
+            return 2.5
+        elif confidence >= 0.78:
+            return 2.0
+        elif confidence >= 0.70:
+            return 1.6
+        elif confidence >= 0.65:
+            return 1.3
+        elif confidence >= 0.60:
+            return 1.1
+        return 1.0
+
+    async def _get_notional(self, symbol: str | None = None, confidence: float | None = None) -> float:
+        """Equity-based position sizing per asset profile, scaled by AI confidence.
+        Stocks use the runtime position_size_pct setting; crypto/speculative use fixed profile %."""
         try:
             equity = await self._get_equity()
             if equity <= 0:
@@ -203,7 +219,8 @@ class AutoTraderService:
                 pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
                 cap = MAX_AUTO_NOTIONAL
 
-            notional = round(equity * float(pct), 2)
+            multiplier = self._confidence_multiplier(confidence) if confidence is not None else 1.0
+            notional = round(equity * float(pct) * multiplier, 2)
             return max(MIN_NOTIONAL, min(notional, cap))
         except Exception:
             return MIN_NOTIONAL
@@ -255,7 +272,7 @@ class AutoTraderService:
             ))
             await db.commit()
 
-    MAX_OPEN_POSITIONS = 8  # Hard cap on simultaneous open positions
+    MAX_OPEN_POSITIONS = 20  # raised — profiles and daily-loss circuit breaker are the real guards
 
     async def _execute_signal(self, signal: Signal, notional: float, session_autonomy: bool = False) -> bool:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)

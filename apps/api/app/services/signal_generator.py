@@ -305,7 +305,14 @@ class SignalGeneratorService:
             market_ctx = await get_market_context()
             market_ctx_text = format_for_prompt(market_ctx)
         except Exception as e:
-            logger.debug("Market context ophalen mislukt: %s", e)
+            pass
+
+        # Fetch portfolio context: balance + open positions for AI awareness
+        portfolio_ctx_text = ""
+        try:
+            portfolio_ctx_text = await self._get_portfolio_context()
+        except Exception as e:
+            logger.debug("Portfolio context ophalen mislukt: %s", e)
 
         if not self.settings.anthropic_api_key:
             logger.warning("ANTHROPIC_API_KEY niet geconfigureerd - signaal generatie overgeslagen")
@@ -314,7 +321,7 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        limit = 8 if crypto_session_mode else 15
+        limit = 20 if crypto_session_mode else 30
         for asset, data in list(ticker_data.items())[:limit]:
             if is_ai_paused():
                 logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")
@@ -404,6 +411,7 @@ class SignalGeneratorService:
                     client, asset, price_str, news_summary, social_summary, ta_summary,
                     crypto_session_mode=crypto_session_mode,
                     market_context=market_ctx_text,
+                    portfolio_context=portfolio_ctx_text,
                 )
 
                 # Track token usage
@@ -463,7 +471,7 @@ class SignalGeneratorService:
         # Long-only strategy: no point analyzing neutral/bearish setups without news catalyst.
         if data.get("_watchlist_only"):
             if ta_result is not None and ta_result.score is not None:
-                return ta_result.score < 0.10  # stale when score < 0.10; proceed when >= 0.10
+                return ta_result.score < 0.05  # only skip truly bearish/flat; analyze everything with slight bullish bias
             return True  # no TA data at all → skip
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         timestamps = []
@@ -515,14 +523,19 @@ class SignalGeneratorService:
     def _call_signal_agent(self, client, asset: str, price: str,
                             news_summary: str, social_summary: str, ta_summary: str,
                             crypto_session_mode: bool = False,
-                            market_context: str = "") -> tuple[dict, any]:
-        context_block = f"\n\n═══ MARKTCONTEXT ═══\n{market_context}" if market_context else ""
+                            market_context: str = "",
+                            portfolio_context: str = "") -> tuple[dict, any]:
+        extra_blocks = ""
+        if market_context:
+            extra_blocks += f"\n\n═══ MARKTCONTEXT ═══\n{market_context}"
+        if portfolio_context:
+            extra_blocks += f"\n\n═══ PORTFOLIO STATUS ═══\n{portfolio_context}"
         user_prompt = SIGNAL_USER_PROMPT.format(
             asset=asset,
             price=price,
             news_summary=news_summary,
             social_summary=social_summary,
-            ta_summary=ta_summary + context_block,
+            ta_summary=ta_summary + extra_blocks,
         )
         profile = get_asset_profile(asset)
         if profile.tier == AssetTier.SPECULATIVE:
@@ -581,25 +594,34 @@ class SignalGeneratorService:
                            key=lambda x: len(x[1]["news_items"]) * 2 + len(x[1]["social_posts"]),
                            reverse=True))
 
-    async def _recent_signal_exists(self, asset: str, hours: int = 6) -> bool:
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    async def _recent_signal_exists(self, asset: str) -> bool:
+        """Two-tier cooldown: executed signals block for 4h; AI-skipped block for 90min only."""
+        now = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
+            # Active/executed: 4h cooldown — don't re-enter the same asset too soon
+            executed = await db.execute(
                 select(Signal).where(
                     Signal.asset == asset,
-                    Signal.created_at >= since,
-                    # Include "skipped" so AI-analyzed-but-skipped assets are not re-analyzed
-                    # every 10 minutes (was causing 84 AI calls/hour instead of ~8)
-                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped_funds", "broker_error", "skipped"]),
+                    Signal.created_at >= now - timedelta(hours=4),
+                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped_funds", "broker_error"]),
                 ).limit(1)
             )
-            return result.scalar_one_or_none() is not None
+            if executed.scalar_one_or_none():
+                return True
+            # Skipped: only 90-minute cooldown — market can change, re-evaluate sooner
+            skipped = await db.execute(
+                select(Signal).where(
+                    Signal.asset == asset,
+                    Signal.created_at >= now - timedelta(minutes=90),
+                    Signal.status == "skipped",
+                ).limit(1)
+            )
+            return skipped.scalar_one_or_none() is not None
 
     async def _save_skipped_signal(self, asset: str, signal_data: dict, ta_result, price) -> None:
-        """Save a minimal Signal with status='skipped' so the 6h cooldown applies.
-        Without this, AI-skipped assets are re-analyzed every 10 minutes."""
+        """Save a minimal Signal with status='skipped' so the 90-min cooldown applies."""
         try:
-            expires = datetime.now(timezone.utc) + timedelta(hours=6)
+            expires = datetime.now(timezone.utc) + timedelta(hours=2)
             signal = Signal(
                 asset=asset,
                 direction="skip",
@@ -752,6 +774,47 @@ class SignalGeneratorService:
                 ).limit(1)
             )
             return result.scalar_one_or_none() is not None
+
+    async def _get_portfolio_context(self) -> str:
+        """Build a portfolio status string for the AI: balance, open positions, daily P&L."""
+        try:
+            from app.services.alpaca_broker import AlpacaBroker
+            from app.database import AsyncSessionLocal
+            from app.models.trades import Trade
+            from sqlalchemy import select, func
+            broker = AlpacaBroker()
+            lines = []
+            try:
+                account = await broker.get_account()
+                equity = float(account.get("equity") or 0)
+                buying_power = float(account.get("buying_power") or 0)
+                lines.append(f"Equity: ${equity:.2f} | Beschikbaar saldo: ${buying_power:.2f}")
+            except Exception:
+                pass
+
+            async with AsyncSessionLocal() as db:
+                open_trades = (await db.execute(
+                    select(Trade).where(Trade.status == "open")
+                )).scalars().all()
+                if open_trades:
+                    symbols = ", ".join(t.symbol for t in open_trades)
+                    lines.append(f"Open posities ({len(open_trades)}): {symbols}")
+                else:
+                    lines.append("Geen open posities")
+
+                today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                daily_pnl = (await db.execute(
+                    select(func.sum(Trade.pnl)).where(
+                        Trade.status == "closed",
+                        Trade.pnl.isnot(None),
+                        Trade.closed_at >= today,
+                    )
+                )).scalar() or 0
+                lines.append(f"Gerealiseerde P&L vandaag: ${float(daily_pnl):.2f}")
+
+            return "\n".join(lines)
+        except Exception:
+            return ""
 
     async def _get_candles(self, symbol: str) -> list:
         from app.services.market_data_service import MarketDataService
