@@ -49,8 +49,6 @@ class PositionMonitorService:
 
         return closed
 
-    MAX_HOLD_HOURS = 24  # sluit altijd na 24u — snellere rotatie, AI leert sneller
-
     async def _check_and_close(self, trade: Trade) -> bool:
         price = await self.market.get_latest_price(trade.symbol)
         if price is None:
@@ -66,11 +64,13 @@ class PositionMonitorService:
                 await self._execute_close(trade, exit_price, reason)
                 return True
 
-        # Max hold time
+        # Per-profile max hold time: stocks 120h, crypto core 48h, speculative 8h
         if trade.opened_at:
+            from app.services.asset_profile import get_asset_profile
+            max_hold_hours = get_asset_profile(trade.symbol).max_hold_hours
             age = datetime.now(timezone.utc) - trade.opened_at
-            if age > timedelta(hours=self.MAX_HOLD_HOURS):
-                reason = f"Max hold tijd ({self.MAX_HOLD_HOURS}u) bereikt @ ${price:.4f}"
+            if age > timedelta(hours=max_hold_hours):
+                reason = f"Max hold tijd ({max_hold_hours}u) bereikt @ ${price:.4f}"
                 await self._execute_close(trade, price, reason)
                 return True
 

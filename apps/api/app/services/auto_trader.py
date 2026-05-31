@@ -16,10 +16,10 @@ from app.services.crypto_session import crypto_session_allows_autonomy, get_cryp
 
 logger = logging.getLogger(__name__)
 
-AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.55
+AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.55   # global floor; per-profile threshold is the real gate
 CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.52
-MAX_AUTO_NOTIONAL = 500.0
-MIN_NOTIONAL = 50.0      # Never trade less than $50 — below this commissions eat profit
+MAX_AUTO_NOTIONAL = 2000.0   # raised — profiles cap per tier (stocks $2000, crypto $1000, spec $300)
+MIN_NOTIONAL = 30.0          # lower floor so speculative 3% sizing works on small accounts
 
 
 class AutoTraderService:
@@ -95,14 +95,13 @@ class AutoTraderService:
         if not signals:
             return 0
 
-        notional = await self._get_notional()
-        if notional < MIN_NOTIONAL:
-            logger.warning(f"Berekende notional ${notional:.2f} is te laag voor een order — auto trader gestopt")
-            return 0
-
         executed = 0
         for signal in signals:
             try:
+                notional = await self._get_notional(signal.asset)
+                if notional < MIN_NOTIONAL:
+                    logger.warning(f"{signal.asset}: notional ${notional:.2f} te laag — overgeslagen")
+                    continue
                 session_cap = float(crypto_session.get("max_notional_per_trade") or notional) if session_autonomy and not crypto_24_7 else notional
                 result = await self._execute_signal(
                     signal,
@@ -184,15 +183,28 @@ class AutoTraderService:
         except Exception:
             return 0.0
 
-    async def _get_notional(self) -> float:
-        """Equity-based position sizing: position_size_pct % of account, floored at MIN_NOTIONAL, capped at MAX_AUTO_NOTIONAL."""
+    async def _get_notional(self, symbol: str | None = None) -> float:
+        """Equity-based position sizing per asset profile.
+        Stocks use the runtime position_size_pct setting; crypto and speculative use fixed profile percentages."""
         try:
             equity = await self._get_equity()
             if equity <= 0:
                 return MIN_NOTIONAL
-            pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
+
+            if symbol:
+                from app.services.asset_profile import get_asset_profile
+                profile = get_asset_profile(symbol)
+                if profile.use_runtime_position_size:
+                    pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
+                else:
+                    pct = profile.position_size_pct
+                cap = profile.max_notional_usd
+            else:
+                pct = get_runtime_value("position_size_pct", self.settings.position_size_pct)
+                cap = MAX_AUTO_NOTIONAL
+
             notional = round(equity * float(pct), 2)
-            return max(MIN_NOTIONAL, min(notional, MAX_AUTO_NOTIONAL))
+            return max(MIN_NOTIONAL, min(notional, cap))
         except Exception:
             return MIN_NOTIONAL
 
@@ -323,6 +335,17 @@ class AutoTraderService:
                         f"{signal.asset}: onvoldoende koopkracht na afschaling (${buying_power:.2f} beschikbaar)",
                     )
                     return False
+
+        # Per-profile confidence gate — each tier has its own threshold
+        from app.services.asset_profile import get_asset_profile
+        asset_profile = get_asset_profile(signal.asset)
+        if signal.confidence < asset_profile.confidence_threshold and not is_closing:
+            await self._skip_signal(
+                signal,
+                "skipped_low_confidence",
+                f"{signal.asset} ({asset_profile.label}): confidence {signal.confidence:.0%} < profiel drempel {asset_profile.confidence_threshold:.0%}",
+            )
+            return False
 
         risk_req = RiskCheckRequest(
             symbol=signal.asset,

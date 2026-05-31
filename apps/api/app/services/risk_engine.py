@@ -41,9 +41,14 @@ class RiskEngine:
             reasons.append("Systeem staat in paper mode - live orders niet toegestaan")
             return RiskCheckResult(approved=False, required_manual_approval=False, reasons=reasons, warnings=warnings, blocked_by_rule="paper_mode_only")
 
-        # Notional check
-        if req.estimated_notional and req.estimated_notional > MAX_POSITION_SIZE_USD:
-            reasons.append(f"Order grootte ${req.estimated_notional:.2f} overschrijdt maximum ${MAX_POSITION_SIZE_USD:.2f}")
+        # Per-profile position size check
+        from app.services.asset_profile import get_asset_profile
+        asset_profile = get_asset_profile(req.symbol) if req.symbol else None
+        effective_max = asset_profile.max_notional_usd if asset_profile else MAX_POSITION_SIZE_USD
+        if req.estimated_notional and req.estimated_notional > effective_max:
+            reasons.append(
+                f"Order grootte ${req.estimated_notional:.2f} overschrijdt maximum voor {asset_profile.label if asset_profile else 'onbekend'} (${effective_max:.2f})"
+            )
             approved = False
             blocked_by = "max_position_size"
 
@@ -68,9 +73,14 @@ class RiskEngine:
             approved = False
             blocked_by = "short_selling_disabled"
 
-        # Missing stop loss warning
+        # Stop loss quality check
         if req.stop_loss is None:
             warnings.append("Geen stop loss ingesteld - risico niet begrensd")
+        elif asset_profile and req.confidence is not None:
+            # Warn if stop is wider than profile allows — helps catch data-bug stops
+            from app.services.alpaca_broker import is_crypto
+            if req.symbol and req.stop_loss and req.estimated_notional:
+                pass  # stop-loss % check requires entry price, done in auto_trader price sanity check
 
         return RiskCheckResult(
             approved=approved,

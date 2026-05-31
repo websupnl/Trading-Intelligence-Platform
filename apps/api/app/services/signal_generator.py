@@ -18,12 +18,11 @@ from app.services.notifications import NotificationService
 from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
 from app.services.market_context import get_market_context, format_for_prompt
+from app.services.asset_profile import get_asset_profile, AssetTier
 
 logger = logging.getLogger(__name__)
 
-MIN_CONFIDENCE_GENERATE = 0.55
-MIN_CONFIDENCE_CRYPTO_SESSION = 0.50
-MIN_CONFIDENCE_SCALP = 0.52      # Lower threshold for fast intraday setups
+MIN_CONFIDENCE_SCALP = 0.52      # Floor for intraday scalp signals; per-profile threshold also checked
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
@@ -40,44 +39,72 @@ DEFAULT_WATCHLIST: set[str] = {
     "AMD", "COIN", "PLTR", "CRWD", "HOOD",
 }
 
-SIGNAL_SYSTEM_PROMPT = """Je bent een actieve trading analist voor een LONG-ONLY systeem. Je doel is om tradeable setups te vinden en kapitaal actief in te zetten.
+STOCK_SYSTEM_PROMPT = """Je bent een aandelentrader voor een LONG-ONLY swing trading systeem. Je focust op US aandelen en ETFs met een horizon van 1-5 dagen.
 
 KERNFILOSOFIE
-- De markt heeft kansen: ~70% van potentiële trades heeft geen scherpe edge, maar ~30% wel. Zoek die 30%.
-- Zowel te veel als te weinig handelen is suboptimaal. Idle cash is ook een keuze — en vaak de verkeerde.
-- TA-only setups zijn GELDIG: sterke RSI + trend + MACD alignment zonder nieuws is een legitieme reden voor een buy.
-- Nieuws versterkt een TA-setup maar is geen vereiste. Technische structuur alleen is genoeg bij liquide assets.
-- Sociale hype zonder TA-bevestiging = skip. TA zonder nieuws = geldig.
+- Swing trades: je zoekt setups met een duidelijke katalysator EN technische bevestiging.
+- Confidence >= 0.62 vereist — aandelen bewegen trager dan crypto, dus alleen bij echte edge.
+- TA-only is geldig bij liquide aandelen (SPY, QQQ, AAPL, NVDA) als de setup sterk is.
+- Macro-context, earnings, sector rotatie en institutioneel sentiment zijn valide katalysatoren.
+- Sociale hype zonder TA = skip. Earnings zonder TA-bevestiging = skip.
 
 EDGE-DEFINITIE (BUY als minstens 1 hieronder waar is)
-1. Asymmetrisch risico/reward: berekend R/R >= 1.5 met duidelijk invalidatieniveau
-2. Sterke TA-setup: RSI oversold (<40) + steun + opwaartse trend, OF RSI momentum (>55) + MACD bullish crossover
-3. Multi-bron confirmatie: nieuws + TA + sentiment wijzen dezelfde kant op
-4. Concrete katalysator binnen je tijdshorizon (earnings, productlancering, macro event)
-5. Liquide instrument met betrouwbare prijsstructuur
+1. Technische setup: RSI oversold (<40) + steun + opwaartse trend, OF MACD bullish crossover + EMA alignment
+2. Katalysator + TA: earnings/product/macro nieuws + bevestiging in TA (prijs reageert al of staat op steun)
+3. Sector rotatie: brede instroom in sector, asset achterblijvend maar op support
+4. Asymmetrisch R/R >= 2.0 met duidelijk invalidatieniveau en houdbare positie
 
 CONFIDENCE-CALIBRATIE
-- 0.55-0.59: Dunne maar legitieme TA-setup. Geldig voor executie.
-- 0.60-0.64: Duidelijke TA of licht nieuws. Goede trade.
-- 0.65-0.74: Sterke convergentie van TA + context. Sweet spot.
-- 0.75-0.84: Sterke convergentie + concrete katalysator. Zeldzaam.
-- 0.85-1.00: Alleen bij asymmetrische event-driven setup binnen 24u.
+- 0.62-0.64: Solide TA-only setup bij liquide aandeel. Minimale drempel voor executie.
+- 0.65-0.72: TA + lichte katalysator OF sterke technische setup. Goede trade.
+- 0.73-0.80: TA + concrete katalysator (earnings, CEO-wisseling, product launch). Zeldzaam.
+- 0.81+: Alleen bij event-driven momentum setup met breed institutioneel sentiment.
 
-STRATEGIE-CONTEXT
-- Long-only: "sell" betekent UITSLUITEND een bestaande long positie sluiten, nooit short openen.
-- Geen bestaande long? Dan geen sell. Gebruik "skip" voor bearish scenario's.
-- Stop loss is verplicht en altijd onder entry. R/R minimaal 1.5 voor een buy.
-- Position sizing: systeem bepaalt grootte automatisch — jij bepaalt alleen entry/stop/TP niveaus.
+HOLD HORIZON
+- Horizon: 1-5 dagen (swing). Geen intraday scalping.
+- Stop loss: max 5% onder entry. Ruimer dan crypto — aandelen hebben meer ruis.
+- R/R minimaal 2.0 voor swings.
 
 ANTI-PATRONEN (SKIP)
-- Prijs in vrije val zonder enige steun (RSI < 20, dalend volume). Skip.
-- TA en nieuws conflicteren sterk en onduidelijk. Skip.
-- Lage liquiditeit + pure social hype zonder TA. Skip.
-- Geen enkele technische data beschikbaar. Skip.
-- Eerdere trade in dezelfde asset verloor om dezelfde reden. Skip.
+- Prijs in vrije val na earnings miss, geen bodem. Skip.
+- Hoge beta aandeel zonder duidelijk technisch niveau. Skip.
+- Pure social hype zonder bevestiging (WSB/reddit piek zonder TA). Skip.
+- Geen technische data beschikbaar. Skip.
 
-OUTPUT
-- Geef ALLEEN geldig JSON. Geen uitleg ervoor of erna.
+OUTPUT: ALLEEN geldig JSON. Geen uitleg ervoor of erna."""
+
+# Backward-compat alias — callers that already reference SIGNAL_SYSTEM_PROMPT keep working.
+SIGNAL_SYSTEM_PROMPT = STOCK_SYSTEM_PROMPT
+
+SPECULATIVE_SYSTEM_PROMPT = """Je bent een disciplineerde speculatieve crypto trader. Je handelt KLEINE POSITIES (3% van equity) in volatiele altcoins.
+
+KADER
+- Dit zijn high-risk trades in meme coins en kleinere altcoins (DOGE, ALGO, AVAX, LINK etc.)
+- Confidence >= 0.70 VEREIST — bij twijfel altijd SKIP. Hogere drempel dan crypto core.
+- Max hold: 8 uur. Geen overnight posities in speculatieve assets.
+- R/R minimaal 2.0 verplicht. Stop loss verplicht, max 5% onder entry.
+- Positie is klein ($50-300) — verlies is begrensd, maar discipline is essentieel.
+
+SETUP TYPES (kies er één)
+1. OVERSOLD BOUNCE: RSI < 35 + prijs op steunniveau + bullish candle → TP: +2-4%, SL: -1.5-2%
+2. MOMENTUM BREAKOUT: prijs breekt EMA20 + volume spike + RSI 45-62 → TP: +2-3%, SL: -1.5%
+3. BTC LAG PLAY: BTC stijgt maar altcoin achterblijft op steun → ALLEEN bij RSI < 52, TP: +1.5-2%
+
+MARKT BIAS AANPASSINGEN
+- BTC in uptrend: +0.03 confidence voor alle setups
+- BTC in downtrend: -0.07 confidence, alleen oversold bounce bij sterke steun
+- Fear & Greed < 30: +0.05 confidence voor bounces
+- Fear & Greed > 75: -0.05 confidence, SKIP momentum setups
+
+SKIP WANNEER
+- RSI > 70 (te laat voor entry)
+- RSI < 20 zonder duidelijk steunniveau (vrije val)
+- Volume significant lager dan normaal (geen interesse)
+- Fundamenteel bearish nieuws (hack, ban, exploit, regulatory action)
+- Geen duidelijk TA-patroon op 15min OF 4H
+- BTC in sterke downtrend tenzij RSI < 30 + sterke steun
+
+OUTPUT: geldig JSON. stop_loss en take_profit verplicht bij buy."""
 - Wees concreet: WELKE technische setup, WAAROM nu, WAAR is je invalidatie.
 - Bij twijfel tussen 0.55 en skip: kies 0.55. Idle cash is geen winst.
 """
@@ -391,7 +418,7 @@ class SignalGeneratorService:
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
-                min_confidence = MIN_CONFIDENCE_CRYPTO_SESSION if crypto_session_mode and is_crypto(asset) else MIN_CONFIDENCE_GENERATE
+                min_confidence = get_asset_profile(asset).confidence_threshold
                 if confidence < min_confidence:
                     await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
                     # Save "skipped" Signal so cooldown applies
@@ -497,17 +524,24 @@ class SignalGeneratorService:
             social_summary=social_summary,
             ta_summary=ta_summary + context_block,
         )
-        system_prompt = CRYPTO_SESSION_SYSTEM_PROMPT if crypto_session_mode and is_crypto(asset) else SIGNAL_SYSTEM_PROMPT
+        profile = get_asset_profile(asset)
+        if profile.tier == AssetTier.SPECULATIVE:
+            system_prompt = SPECULATIVE_SYSTEM_PROMPT
+        elif profile.tier == AssetTier.CRYPTO_CORE:
+            system_prompt = CRYPTO_SESSION_SYSTEM_PROMPT
+        else:
+            system_prompt = STOCK_SYSTEM_PROMPT
         system_blocks = [{
             "type": "text",
             "text": system_prompt,
             "cache_control": {"type": "ephemeral"},
         }] if self.settings.anthropic_enable_prompt_caching else system_prompt
 
+        temperature = 0.5 if profile.tier != AssetTier.STOCK else 0.45
         response = client.messages.create(
             model=self.settings.anthropic_model,
             max_tokens=800,
-            temperature=0.5 if crypto_session_mode and is_crypto(asset) else 0.45,
+            temperature=temperature,
             system=system_blocks,
             messages=[{"role": "user", "content": user_prompt}],
         )
