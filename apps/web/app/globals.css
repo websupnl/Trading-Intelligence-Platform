@@ -97,6 +97,59 @@
 }
 
 /* ── Mobile ───────────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  button, a { min-height: 36px; }
+
+/* Remove iOS tap highlight flash — we handle active states ourselves */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
+
+/* Prevent accidental text selection on buttons/links */
+button, a, [role="button"] {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+/* Minimum 44px tap targets on mobile (Apple HIG) */
+@media (max-width: 768px) {
+  button, a { min-height: 44px; }
+
+  /* Prevent iOS zoom on input focus — must be 16px+ */
+  input, textarea, select { font-size: 16px !important; }
+
+  /* Hide desktop scrollbars on mobile */
+  ::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+
+  /* Momentum scrolling for scroll containers */
+  .overflow-y-auto, .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* Native press feedback — subtle scale on active */
+@media (hover: none) and (pointer: coarse) {
+  button:active, a:active {
+    transform: scale(0.97);
+    opacity: 0.85;
+    transition: transform 0.08s ease, opacity 0.08s ease;
+  }
+}
+
+/* Bottom nav safe area — accounts for iPhone home indicator */
+.pb-nav {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Bottom nav height + safe area */
+.bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Top safe area (status bar in standalone/PWA mode) */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+

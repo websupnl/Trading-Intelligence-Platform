@@ -51,6 +51,13 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // Safe area + bottom nav spacing
+      spacing: {
+        'safe-b': 'env(safe-area-inset-bottom, 0px)',
+        'safe-t': 'env(safe-area-inset-top, 0px)',
+        // bottom nav height (64px) + safe area
+        'nav': 'calc(4.5rem + env(safe-area-inset-bottom, 0px))',
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],
