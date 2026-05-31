@@ -1,246 +1,257 @@
 'use client';
 
-import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
-import { cn, fmtUSD } from '@/lib/utils';
+import { useApi } from '@/hooks/useApi';
+import { useToast } from '@/contexts/toast';
+import { cn, fmtUSD, cleanSym } from '@/lib/utils';
 import Link from 'next/link';
-import { Zap, Activity, Radio, BarChart2, Cpu, ArrowRight, Dice5, TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Dice5, Shield, Activity, Zap } from 'lucide-react';
 
-function fmt(p: number): string {
-  if (p >= 10000) return p.toLocaleString('en-US', { maximumFractionDigits: 0 });
-  if (p >= 100) return p.toFixed(2);
-  if (p >= 1) return p.toFixed(3);
-  return p.toFixed(5);
-}
+export default function DashboardPage() {
+  const { toast } = useToast();
 
-// Alpaca returns 'ETHUSD', 'BTC/USD' — normalize to 'ETH', 'BTC'
-function cleanSym(s: string): string {
-  return (s || '').split('/')[0].replace(/USD[CT]?$/, '');
-}
+  const { data: account } = useApi(() => api.getAccount(), [], { pollIntervalMs: 30000 });
+  const { data: pnl } = useApi(() => api.getPnlSummary(), [], { pollIntervalMs: 60000 });
+  const { data: positions } = useApi(() => api.getPositions(), [], { pollIntervalMs: 20000 });
+  const { data: signals } = useApi(() => api.getSignals(10), [], { pollIntervalMs: 60000 });
+  const { data: status } = useApi(() => api.apiStatus(), [], { pollIntervalMs: 30000 });
+  const { data: botHealth } = useApi(() => api.getBotHealth(), [], { pollIntervalMs: 30000 });
+  const { data: aiUsage } = useApi(() => api.getAiUsage(), [], { pollIntervalMs: 120000 });
+  const { data: auditLogs } = useApi(() => api.getAuditLogs(20), [], { pollIntervalMs: 30000 });
+  const { data: trades } = useApi(() => api.getTrades(5), [], { pollIntervalMs: 60000 });
 
-function StatCard({ label, value, sub, color, href }: {
-  label: string; value: string; sub?: string; color?: string; href?: string;
-}) {
-  const inner = (
-    <div className={cn(
-      'bg-card border border-border rounded-xl p-4 transition-all',
-      href && 'hover:border-primary/40 hover:shadow-md cursor-pointer',
-    )}>
-      <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">{label}</p>
-      <p className={cn('text-2xl font-bold font-num tabular-nums', color ?? 'text-foreground')}>{value}</p>
-      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-    </div>
+  const equity = parseFloat((account as any)?.equity || '0');
+  const lastEquity = parseFloat((account as any)?.last_equity || (account as any)?.equity || '0');
+  const dayPnl = equity - lastEquity;
+  const dayPnlPct = lastEquity > 0 ? (dayPnl / lastEquity) * 100 : 0;
+
+  const openPositions: any[] = Array.isArray(positions) ? positions : [];
+  const pendingSignals = (Array.isArray(signals) ? signals as any[] : []).filter(
+    (s: any) => !s.status || s.status === 'pending'
   );
-  return href ? <Link href={href}>{inner}</Link> : inner;
-}
 
-function QuickLink({ href, icon, label, desc, badge }: {
-  href: string; icon: React.ReactNode; label: string; desc: string; badge?: string;
-}) {
-  return (
-    <Link href={href} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:border-primary/40 hover:shadow-sm transition-all group">
-      <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 group-hover:bg-accent transition-colors">
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold">{label}</p>
-          {badge && <span className="text-[9px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{badge}</span>}
-        </div>
-        <p className="text-xs text-muted-foreground truncate">{desc}</p>
-      </div>
-      <ArrowRight size={14} className="text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
-    </Link>
-  );
-}
+  const killSwitch = !!(status as any)?.kill_switch_enabled;
+  const aiPaused = !!(botHealth as any)?.ai_guard?.paused;
+  const blockers: string[] = (botHealth as any)?.blockers ?? [];
+  const botActive = !killSwitch && !aiPaused && blockers.length === 0;
 
-export default function Dashboard() {
-  const { data: status } = useApi(() => api.apiStatus(), []);
-  const { data: bot } = useApi(() => api.getBotHealth(), []);
-  const { data: account } = useApi(() => api.getAccount(), [], { pollIntervalMs: 15000 });
-  const { data: positions } = useApi(() => api.getPositions(), [], { pollIntervalMs: 15000 });
-  const { data: signals } = useApi(() => api.getSignals(20), [], { pollIntervalMs: 30000 });
-  const { data: aiUsage } = useApi(() => api.getAiUsage(), [], { pollIntervalMs: 60000 });
-  const { data: trades } = useApi(() => api.getTrades(100), [], { pollIntervalMs: 30000 });
+  const totalPnl = (pnl as any)?.total_pnl ?? 0;
+  const winRate = (pnl as any)?.win_rate ?? null;
+  const aiSpend: number = (aiUsage as any)?.today_usd ?? 0;
+  const roi = aiSpend > 0 ? totalPnl / aiSpend : null;
+  const unrealizedTotal = openPositions.reduce((s, p) => s + parseFloat(p.unrealized_pl || 0), 0);
 
-  const equity = account?.equity ? parseFloat(account.equity) : null;
-  const buyingPower = account?.buying_power ? parseFloat(account.buying_power) : null;
-  const lastEquity = account?.last_equity ? parseFloat(account.last_equity) : null;
-  const dayPnl = equity !== null && lastEquity !== null ? equity - lastEquity : null;
+  const recentTrades: any[] = Array.isArray(trades) ? trades : [];
+  const recentLogs: any[] = Array.isArray(auditLogs) ? (auditLogs as any[]).slice(0, 15) : [];
 
-  const openPositions = Array.isArray(positions) ? positions : [];
-  const pendingSignals = (Array.isArray(signals) ? signals : []).filter((s: any) => s.status === 'pending');
-  const totalPnl = openPositions.reduce((sum: number, p: any) => sum + parseFloat(p.unrealized_pl ?? '0'), 0);
-
-  const aiPaused = bot?.ai_guard?.paused;
-  const crypto247 = (bot as any)?.crypto_session?.crypto_24_7_enabled;
-  const tradingMode = status?.trading_mode ?? 'paper';
+  async function toggleKillSwitch() {
+    try {
+      if (killSwitch) {
+        await api.disableKillSwitch();
+        toast('Kill switch uitgeschakeld — bot kan handelen', 'success');
+      } else {
+        await api.enableKillSwitch();
+        toast('Kill switch AAN — alle handel gestopt', 'warning');
+      }
+    } catch (e: any) {
+      toast(e?.detail || 'Fout', 'error');
+    }
+  }
 
   return (
-    <div className="space-y-5 max-w-5xl mx-auto">
+    <div className="max-w-2xl mx-auto space-y-4">
 
-      {/* Status bar */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className={cn('flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full border', aiPaused ? 'border-red-500/30 bg-red-500/10 text-red-400' : 'border-green-500/30 bg-green-500/10 text-green-400')}>
-          <span className={cn('w-1.5 h-1.5 rounded-full', aiPaused ? 'bg-red-400' : 'bg-green-400 animate-pulse')} />
-          AI {aiPaused ? 'gepauzeerd' : 'actief'}
-        </div>
-        <div className={cn('flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full border', tradingMode === 'paper' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' : 'border-green-500/30 bg-green-500/10 text-green-400')}>
-          {tradingMode === 'paper' ? '📄 Paper' : '💰 Live'}
-        </div>
-        {crypto247 && (
-          <div className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-400">
-            🌙 24/7
+      {/* Portfolio hero */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Portfolio</p>
+            <p className="text-4xl font-bold font-num">{fmtUSD(equity)}</p>
+            <div className="flex items-center gap-2 mt-1.5">
+              {dayPnl >= 0
+                ? <TrendingUp size={13} className="text-green-400" />
+                : <TrendingDown size={13} className="text-red-400" />}
+              <span className={cn('text-sm font-bold font-num', dayPnl >= 0 ? 'text-green-400' : 'text-red-400')}>
+                {dayPnl >= 0 ? '+' : ''}{fmtUSD(dayPnl)} ({dayPnlPct >= 0 ? '+' : ''}{dayPnlPct.toFixed(2)}%)
+              </span>
+              <span className="text-xs text-muted-foreground">vandaag</span>
+            </div>
           </div>
-        )}
-        {pendingSignals.length > 0 && (
-          <Link href="/live" className="ml-auto flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors border border-amber-500/20">
-            <Zap size={11} className="animate-pulse" />
-            {pendingSignals.length} signaal{pendingSignals.length > 1 ? 'en' : ''} — handel nu
-          </Link>
-        )}
+          <div className="text-right shrink-0">
+            <span className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border',
+              botActive ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+              killSwitch ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+              'bg-amber-500/10 text-amber-400 border-amber-500/20'
+            )}>
+              <span className={cn('w-1.5 h-1.5 rounded-full',
+                botActive ? 'bg-green-400 animate-pulse' : killSwitch ? 'bg-red-400' : 'bg-amber-400')} />
+              {botActive ? 'Bot actief' : killSwitch ? 'Kill switch' : 'Gepauzeerd'}
+            </span>
+            <p className="text-xs text-muted-foreground mt-2">
+              All-time: <span className={cn('font-bold font-num', totalPnl >= 0 ? 'text-green-400' : 'text-red-400')}>
+                {totalPnl >= 0 ? '+' : ''}{fmtUSD(totalPnl)}
+              </span>
+            </p>
+            {winRate !== null && (
+              <p className="text-xs text-muted-foreground">
+                Win rate: <span className="font-bold">{(winRate * 100).toFixed(0)}%</span>
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Portfolio" value={equity !== null ? fmtUSD(equity) : '—'} sub={buyingPower !== null ? `${fmtUSD(buyingPower)} vrij` : undefined} href="/live" />
-        <StatCard label="Vandaag" value={dayPnl !== null ? `${dayPnl >= 0 ? '+' : ''}${fmtUSD(dayPnl)}` : '—'} color={dayPnl !== null ? (dayPnl >= 0 ? 'text-green-400' : 'text-red-400') : undefined} />
-        <StatCard label="Posities" value={String(openPositions.length)} sub={openPositions.length > 0 ? `${totalPnl >= 0 ? '+' : ''}${fmtUSD(totalPnl)}` : 'Geen open'} color={openPositions.length > 0 ? (totalPnl >= 0 ? 'text-green-400' : 'text-red-400') : 'text-muted-foreground'} href="/live" />
-        <StatCard label="Signalen" value={String(pendingSignals.length)} sub={pendingSignals.length > 0 ? 'Wachten op actie' : 'Geen actief'} color={pendingSignals.length > 0 ? 'text-amber-400' : 'text-muted-foreground'} href="/signals" />
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3">
+        <Link href="/posities">
+          <StatCard label="Open posities" value={openPositions.length.toString()}
+            sub={unrealizedTotal !== 0 ? `${unrealizedTotal >= 0 ? '+' : ''}${fmtUSD(unrealizedTotal)}` : 'Geen open'}
+            subColor={unrealizedTotal >= 0 ? 'green' : 'red'} />
+        </Link>
+        <Link href="/signals">
+          <StatCard label="Signalen" value={pendingSignals.length.toString()}
+            sub={pendingSignals.length > 0 ? 'Wachten' : 'Niets pending'}
+            subColor={pendingSignals.length > 0 ? 'amber' : 'muted'} />
+        </Link>
+        <StatCard label="AI ROI"
+          value={roi !== null ? `${roi.toFixed(1)}×` : '—'}
+          sub={`$${aiSpend.toFixed(2)} AI kosten`}
+          subColor={roi !== null && roi > 1 ? 'green' : 'muted'} />
       </div>
 
-      {/* Open positions */}
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 gap-3">
+        <Link href="/gok"
+          className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-3 hover:bg-amber-500/15 transition-colors">
+          <Dice5 size={22} className="text-amber-400 shrink-0" />
+          <div>
+            <p className="font-bold text-sm">Gok Modus</p>
+            <p className="text-xs text-muted-foreground">AI-gedreven speculatieve bet</p>
+          </div>
+        </Link>
+        <button onClick={toggleKillSwitch}
+          className={cn(
+            'rounded-2xl p-4 flex items-center gap-3 transition-colors text-left w-full',
+            killSwitch
+              ? 'bg-green-500/10 border border-green-500/20 hover:bg-green-500/15'
+              : 'bg-red-500/10 border border-red-500/20 hover:bg-red-500/15'
+          )}>
+          <Shield size={22} className={cn('shrink-0', killSwitch ? 'text-green-400' : 'text-red-400')} />
+          <div>
+            <p className="font-bold text-sm">{killSwitch ? 'Handel hervatten' : 'Kill switch'}</p>
+            <p className="text-xs text-muted-foreground">{killSwitch ? 'Kill switch staat aan' : 'Alles direct stoppen'}</p>
+          </div>
+        </button>
+      </div>
+
+      {/* Pending signals alert */}
+      {pendingSignals.length > 0 && (
+        <Link href="/signals"
+          className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl p-4 hover:bg-primary/10 transition-colors">
+          <Zap size={18} className="text-primary shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-bold">{pendingSignals.length} signaal{pendingSignals.length !== 1 ? 'en' : ''} wachten</p>
+            <p className="text-xs text-muted-foreground">
+              {pendingSignals.slice(0, 3).map((s: any) => s.asset || s.symbol).join(' · ')}
+              {pendingSignals.length > 3 ? ` +${pendingSignals.length - 3}` : ''}
+            </p>
+          </div>
+          <span className="text-xs text-primary font-bold">Bekijk →</span>
+        </Link>
+      )}
+
+      {/* Open positions preview */}
       {openPositions.length > 0 && (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <p className="text-sm font-semibold">Open Posities</p>
-            <Link href="/live" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-              Alles bekijken <ArrowRight size={11} />
-            </Link>
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <p className="text-sm font-semibold">Open posities</p>
+            <Link href="/posities" className="text-xs text-primary hover:underline">Alle →</Link>
           </div>
-          {openPositions.slice(0, 5).map((pos: any, i: number) => {
-            const pnl = parseFloat(pos.unrealized_pl ?? '0');
-            const pct = parseFloat(pos.unrealized_plpc ?? '0') * 100;
-            const sym = cleanSym(pos.symbol);
-            const entry = parseFloat(pos.avg_entry_price ?? '0');
+          {openPositions.slice(0, 5).map((pos: any) => {
+            const pl = parseFloat(pos.unrealized_pl || '0');
+            const plPct = parseFloat(pos.unrealized_plpc || '0') * 100;
             return (
-              <div key={i} className={cn('flex items-center gap-3 px-4 py-2.5 border-b border-border/40 last:border-0', pnl >= 0 ? 'hover:bg-green-500/5' : 'hover:bg-red-500/5')}>
-                <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0 text-[10px] font-bold">
-                  {sym.slice(0, 2)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-sm">{sym}</p>
-                  <p className="text-[10px] text-muted-foreground font-num">Entry ${fmt(entry)}</p>
-                </div>
-                <div className="text-right">
-                  <p className={cn('text-sm font-bold font-num', pnl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                    {pnl >= 0 ? '+' : ''}{fmtUSD(pnl)}
-                  </p>
-                  <p className={cn('text-[10px] font-num', pct >= 0 ? 'text-green-400/70' : 'text-red-400/70')}>
-                    {pct >= 0 ? '+' : ''}{pct.toFixed(2)}%
-                  </p>
-                </div>
+              <div key={pos.symbol} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0">
+                <p className="font-bold text-sm w-16">{cleanSym(pos.symbol)}</p>
+                <p className="text-xs text-muted-foreground font-num flex-1">{fmtUSD(parseFloat(pos.market_value || '0'))}</p>
+                <p className={cn('text-sm font-bold font-num', pl >= 0 ? 'text-green-400' : 'text-red-400')}>
+                  {pl >= 0 ? '+' : ''}{fmtUSD(pl)}
+                </p>
+                <p className={cn('text-xs font-num w-12 text-right', pl >= 0 ? 'text-green-400' : 'text-red-400')}>
+                  {plPct >= 0 ? '+' : ''}{plPct.toFixed(2)}%
+                </p>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Pending signals */}
-      {pendingSignals.length > 0 && (
-        <div className="bg-card border border-amber-500/20 rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <p className="text-sm font-semibold flex items-center gap-2">
-              <Zap size={14} className="text-amber-400" /> Actieve Signalen
-            </p>
-            <Link href="/live" className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors">
-              Handel nu <ArrowRight size={11} />
-            </Link>
+      {/* Recent trades */}
+      {recentTrades.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <p className="text-sm font-semibold">Recente trades</p>
+            <Link href="/posities" className="text-xs text-primary hover:underline">Alle →</Link>
           </div>
-          {pendingSignals.slice(0, 3).map((sig: any) => (
-            <div key={sig.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-border/40 last:border-0">
-              <span className={cn('text-xs font-bold px-2 py-0.5 rounded-full shrink-0', sig.direction === 'buy' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400')}>
-                {sig.direction === 'buy' ? '▲' : '▼'} {sig.asset}
-              </span>
-              <span className="text-xs text-muted-foreground">{(sig.confidence * 100).toFixed(0)}% conf</span>
-              <span className="text-xs text-muted-foreground ml-auto font-num">
-                {sig.suggested_entry ? `$${fmt(sig.suggested_entry)}` : ''}
-                {sig.risk_reward ? ` · R/R ${sig.risk_reward.toFixed(1)}` : ''}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Kosten vs Winst */}
-      {aiUsage && (
-        <div className="bg-card border border-border rounded-xl p-4">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">AI Kosten vs Trading Winst</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <p className="text-[10px] text-muted-foreground">AI Kosten Vandaag</p>
-              <p className="text-lg font-bold font-num text-red-400 mt-0.5">${(aiUsage as any).today_cost?.toFixed(2) ?? '—'}</p>
-              <p className="text-[10px] text-muted-foreground">{(aiUsage as any).today_calls ?? 0} calls</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground">AI Kosten Deze Week</p>
-              <p className="text-lg font-bold font-num text-red-400 mt-0.5">${(aiUsage as any).week_cost?.toFixed(2) ?? '—'}</p>
-              <p className="text-[10px] text-muted-foreground">{(aiUsage as any).total_calls ?? 0} totaal</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground">Trading P&L (gesloten)</p>
-              {(() => {
-                const closed = (Array.isArray(trades) ? trades : []).filter((t: any) => t.status === 'closed' && t.pnl != null);
-                const totalPnl = closed.reduce((s: number, t: any) => s + parseFloat(t.pnl || '0'), 0);
-                return (
-                  <>
-                    <p className={cn('text-lg font-bold font-num mt-0.5', totalPnl >= 0 ? 'text-green-400' : 'text-red-400')}>{totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}</p>
-                    <p className="text-[10px] text-muted-foreground">{closed.length} trades</p>
-                  </>
-                );
-              })()}
-            </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground">Netto (P&L - Kosten)</p>
-              {(() => {
-                const closed = (Array.isArray(trades) ? trades : []).filter((t: any) => t.status === 'closed' && t.pnl != null);
-                const tradePnl = closed.reduce((s: number, t: any) => s + parseFloat(t.pnl || '0'), 0);
-                const costs = (aiUsage as any).week_cost ?? 0;
-                const net = tradePnl - costs;
-                return (
-                  <>
-                    <p className={cn('text-lg font-bold font-num mt-0.5', net >= 0 ? 'text-green-400' : 'text-red-400')}>{net >= 0 ? '+' : ''}${net.toFixed(2)}</p>
-                    <p className={cn('text-[10px]', net >= 0 ? 'text-green-400/70' : 'text-red-400/70')}>{net >= 0 ? '✅ Winstgevend' : '❌ Verlies'}</p>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-          {(() => {
-            const costs = (aiUsage as any).today_cost ?? 0;
-            if (costs > 5) return (
-              <div className="mt-3 text-xs text-amber-400 bg-amber-500/10 rounded-lg p-2 border border-amber-500/20">
-                ⚠️ AI kosten zijn hoog (${costs.toFixed(2)}/dag). De bot moet minimaal ${costs.toFixed(2)}/dag winnen om break-even te draaien.
+          {recentTrades.map((t: any) => {
+            const pnlVal = t.pnl ?? 0;
+            return (
+              <div key={t.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0">
+                <div className={cn('w-1 h-6 rounded-full shrink-0', pnlVal >= 0 ? 'bg-green-400' : 'bg-red-400')} />
+                <p className="font-bold text-sm w-14">{t.symbol}</p>
+                <p className="text-xs text-muted-foreground flex-1 truncate">{t.exit_reason?.slice(0, 45) || t.side}</p>
+                <p className={cn('text-sm font-bold font-num shrink-0', pnlVal >= 0 ? 'text-green-400' : 'text-red-400')}>
+                  {pnlVal >= 0 ? '+' : ''}{fmtUSD(pnlVal)}
+                </p>
               </div>
             );
-            return null;
-          })()}
+          })}
         </div>
       )}
 
-      {/* Quick links */}
-      <div>
-        <p className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wider">Snel navigeren</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <QuickLink href="/live" icon={<Activity size={16} className="text-green-400" />} label="Live Sessie" desc="Realtime markt, grafieken en posities" badge="LIVE" />
-          <QuickLink href="/gok" icon={<Dice5 size={16} className="text-amber-400" />} label="Gok Modus" desc="High-risk meme coin plays — jij bepaalt de inzet" />
-          <QuickLink href="/signals" icon={<Zap size={16} className="text-amber-400" />} label="Alle Signalen" desc="Overzicht van alle AI-gegenereerde signalen" />
-          <QuickLink href="/crypto-session" icon={<Radio size={16} className="text-blue-400" />} label="Crypto Sessie" desc="24/7 modus beheren en sessie starten" />
-          <QuickLink href="/ai-war-room" icon={<BarChart2 size={16} className="text-purple-400" />} label="AI War Room" desc="Bull vs Bear debat, geheugen en lessen" />
-          <QuickLink href="/pipeline" icon={<Cpu size={16} className="text-muted-foreground" />} label="Pipeline Status" desc="Nieuwsingest, signalen, trades — alles live" />
+      {/* Bot activiteit */}
+      {recentLogs.length > 0 && (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+            <Activity size={14} className="text-muted-foreground" />
+            <p className="text-sm font-semibold">Bot activiteit</p>
+          </div>
+          <div className="divide-y divide-border max-h-64 overflow-y-auto">
+            {recentLogs.map((log: any) => (
+              <div key={log.id} className="px-4 py-2 flex items-start gap-3">
+                <span className="text-[10px] text-muted-foreground font-num shrink-0 mt-0.5 tabular-nums w-10">
+                  {new Date(log.created_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <p className="flex-1 text-xs leading-snug truncate">{log.message || log.action}</p>
+                <span className={cn('text-[9px] font-bold shrink-0 uppercase',
+                  log.status === 'success' ? 'text-green-400' :
+                  log.status === 'error' ? 'text-red-400' : 'text-muted-foreground')}>
+                  {log.status}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+    </div>
+  );
+}
 
+function StatCard({ label, value, sub, subColor = 'muted' }: {
+  label: string; value: string; sub: string; subColor?: string;
+}) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-3.5 text-center hover:border-primary/30 transition-colors h-full">
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-2xl font-bold font-num">{value}</p>
+      <p className={cn('text-[11px] mt-1 font-medium truncate',
+        subColor === 'green' ? 'text-green-400' :
+        subColor === 'red' ? 'text-red-400' :
+        subColor === 'amber' ? 'text-amber-400' :
+        'text-muted-foreground')}>
+        {sub}
+      </p>
     </div>
   );
 }
