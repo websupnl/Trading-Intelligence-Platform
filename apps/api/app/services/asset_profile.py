@@ -39,6 +39,8 @@ STOCK_SYMBOLS: frozenset[str] = frozenset({
     "NVDA", "AMD", "TSLA", "MSTR",
     # High-beta growth
     "COIN", "PLTR", "CRWD", "HOOD",
+    # NL / European exposure
+    "ASML",
 })
 
 CRYPTO_CORE_SYMBOLS: frozenset[str] = frozenset({
