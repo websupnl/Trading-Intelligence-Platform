@@ -179,8 +179,8 @@ class RumourDetectorService:
             if self.settings.anthropic_enable_prompt_caching else RUMOUR_SYSTEM_PROMPT
         )
         response = client.messages.create(
-            model=self.settings.anthropic_model,
-            max_tokens=700,
+            model=self.settings.anthropic_analysis_model,
+            max_tokens=400,
             temperature=0.2,
             system=system_blocks,
             messages=[{"role": "user", "content": user_prompt}],

@@ -33,6 +33,7 @@ async def get_settings_endpoint():
         "default_ai_provider": s.default_ai_provider,
         "anthropic_model": s.anthropic_model,
         "alpaca_configured": s.alpaca_configured,
+        "bitvavo_configured": s.bitvavo_configured,
         "anthropic_configured": s.anthropic_configured,
         "openai_configured": s.openai_configured,
         "reddit_configured": s.reddit_configured,

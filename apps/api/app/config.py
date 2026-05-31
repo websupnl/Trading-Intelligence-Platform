@@ -34,11 +34,18 @@ class Settings(BaseSettings):
     max_daily_loss_pct: float = 0.10  # 10% daily loss triggers circuit breaker
     crypto_24_7_enabled: bool = True  # 24/7 crypto trading — persists across restarts
 
-    # Alpaca
+    # Alpaca (US stocks + crypto fallback)
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
     alpaca_data_url: str = "https://data.alpaca.markets"
+
+    # Bitvavo (crypto — NL, EUR-based, via CCXT)
+    bitvavo_api_key: str = ""
+    bitvavo_api_secret: str = ""
+
+    # AI budget guard (daily limit in USD — 0 = unlimited)
+    ai_daily_budget_usd: float = 0.0
 
     # Anthropic
     anthropic_api_key: str = ""
@@ -89,6 +96,10 @@ class Settings(BaseSettings):
     @property
     def alpaca_configured(self) -> bool:
         return bool(self.alpaca_api_key and self.alpaca_secret_key)
+
+    @property
+    def bitvavo_configured(self) -> bool:
+        return bool(self.bitvavo_api_key and self.bitvavo_api_secret)
 
     @property
     def anthropic_configured(self) -> bool:
