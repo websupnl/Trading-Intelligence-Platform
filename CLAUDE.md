@@ -146,6 +146,9 @@ Alpaca als fallback als Bitvavo niet geconfigureerd.
 | `DATABASE_URL` | — | PostgreSQL |
 | `REDIS_URL` | — | Redis |
 | `TELEGRAM_BOT_TOKEN` | — | Notificaties (optioneel) |
+| `TELEGRAM_CHAT_ID` | — | Chat ID voor Telegram notificaties |
+| `TELEGRAM_MONITOR_CHANNELS` | — | Publieke kanalen om te monitoren (bv. `trading,stockbot,futures`) |
+| `CRYPTOPANIC_API_KEY` | — | CryptoPanic (optioneel — paid tier) |
 | `AI_DAILY_BUDGET_USD` | 10.0 | Max AI kosten per dag |
 
 **NOOIT** `.env` committen. Alle vars via Coolify UI.

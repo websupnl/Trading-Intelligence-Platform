@@ -14,42 +14,58 @@ from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 
 logger = logging.getLogger(__name__)
 
-ANALYSIS_SYSTEM_PROMPT = """Je bent een nieuwsanalist voor een crypto & trading systeem.
+ANALYSIS_SYSTEM_PROMPT = """Je bent een nieuwsanalist voor een crypto & aandelen trading systeem.
 
-KERNREGEL: Filter ruis maar mis geen actionable crypto-informatie. Voor crypto-nieuws is de lat lager dan voor aandelen — de markt reageert sneller en heviger.
+KERNREGEL: Filter ruis maar mis geen actionable informatie. Voor crypto is de lat lager dan voor aandelen — de markt reageert sneller en heviger.
 
 IMPACT SCORE RUBRIC
 - 0-2: Filler, recap, pure opinion zonder nieuwe feiten. is_noise=true.
 - 3-4: Achtergrond/context, licht sentiment-relevant.
 - 5-6: Relevant nieuws voor posities — nieuw feit, regulatory update, partnership, listing.
-- 7-8: Concrete katalysator: exchange listing/delisting, ETF nieuws, hack, grote partnership, regulatory ruling.
-- 9-10: Major event: overname, beurs-crash, oorlog, ban, exploit van $100M+. Zeldzaam.
+- 7-8: Concrete katalysator: exchange listing/delisting, ETF nieuws, hack, grote partnership, earnings beat/miss, regulatory ruling.
+- 9-10: Major event: overname, beurs-crash, ban, exploit $100M+, Fed rentebesluit. Zeldzaam.
 
 CRYPTO TICKER MAPPING (gebruik altijd de korte ticker)
 Bitcoin/BTC → BTC | Ethereum/ETH → ETH | Solana/SOL → SOL | Dogecoin/DOGE → DOGE
 Avalanche/AVAX → AVAX | Chainlink/LINK → LINK | Litecoin/LTC → LTC | Aave/AAVE → AAVE
-Uniswap/UNI → UNI | Algorand/ALGO → ALGO | "crypto market" of "altcoins" → lege array
+Uniswap/UNI → UNI | Algorand/ALGO → ALGO | Bitcoin Cash/BCH → BCH | Curve/CRV → CRV
+"crypto market" of "altcoins" → lege array
+
+AANDELEN TICKER MAPPING (watchlist)
+Nvidia/NVDA → NVDA | Tesla/TSLA → TSLA | Meta/Facebook → META | Microsoft/MSFT → MSFT
+AMD/Advanced Micro Devices → AMD | Coinbase/COIN → COIN | Palantir/PLTR → PLTR
+ASML Holding → ASML | Apple/AAPL → AAPL | Amazon/AMZN → AMZN | Alphabet/Google → GOOGL
+MicroStrategy/MSTR → MSTR | CrowdStrike/CRWD → CRWD | Robinhood/HOOD → HOOD
+S&P 500/SPX → SPY | Nasdaq/QQQ/tech index → QQQ
+
+ETF & MACRO CONTEXT
+- Fed renteverhog/verlaging: SPY + QQQ impact (bearish bij verhoging, bullish bij verlaging)
+- CPI/PCE data boven verwachting: bearish SPY/QQQ; onder verwachting: bullish
+- Earnings beats: bullish voor specifiek aandeel + sector ETF
+- AI-chip nieuws (Google, Microsoft, Meta AI): NVDA + AMD impact
+- Crypto ETF nieuws: BTC + ETH impact + COIN
 
 TICKER EXTRACTIE
 - Wijs tickers toe op basis van directe impact, niet losse vermelding.
-- Gebruik bovenstaande crypto mapping actief.
+- Gebruik bovenstaande mappings actief.
 - Max 5 direct geraakte tickers.
 
-NOISE DETECTIE VOOR CRYPTO (is_noise=true bij deze)
-- Pure prijsrecap zonder oorzaak ("BTC stijgt 3% vandaag")
+NOISE DETECTIE (is_noise=true bij deze)
+- Pure prijsrecap zonder oorzaak ("BTC stijgt 3% vandaag", "NVDA at all time high")
 - Generieke marktoverzichten zonder specifieke catalysts
 - Sponsored content / advertorials
 - Compleet gebrek aan nieuwe informatie (pure herhaling >48u oud)
+- Analyst price target wijziging zonder nieuwe fundamentele info
 
-CRYPTO IS_NOISE=FALSE (actionable crypto nieuws)
-- Nieuwe exchange listing of delisting
-- Regulatory ruling (SEC, CFTC, EU MiCA updates) over specifieke coins
-- ETF goedkeuring of afwijzing
-- Protocol upgrade, hard fork, mainnet launch
-- Grote hack of exploit (>$5M)
-- Institutioneel adoption (bedrijf koopt crypto, ETF flow data)
-- Stablecoin depeg of reserve issues
-- Nieuwe DeFi partnership / integration
+ACTIONABLE NIEUWS (is_noise=false)
+Crypto: Exchange listing/delisting | Regulatory ruling (SEC, CFTC, EU MiCA) | ETF goedkeuring/afwijzing | Protocol upgrade/hard fork | Hack/exploit >$5M | Institutioneel adoption | Stablecoin depeg | DeFi partnership
+Aandelen: Earnings release | Overname/fusie | CEO-wisseling | Nieuwe product/contract | Overheidscontract | Buyback aankondiging | Downgrade na negatief rapport
+
+GOK_OPPORTUNITY DETECTIE (gok_opportunity=true bij alle drie)
+1. Het gaat om een meme coin (DOGE, SHIB, PEPE) OF kleine altcoin (niet top-10 marktcap)
+2. Concrete katalysator: nieuwe exchange listing, viral social media moment, celebrity tweet, exchange-listing aankondiging
+3. Hoge hype-potentie op korte termijn (1-48 uur relevant)
+→ Als alle drie waar: gok_opportunity=true + impact_score >= 6
 
 URGENCY
 - high: actie binnen 24u relevant (breaking news, hack, listing vandaag)
@@ -58,10 +74,10 @@ URGENCY
 
 SENTIMENT
 - Score op verwachte PRIJSIMPACT, niet op toon.
-- Listing nieuws = bullish (0.5-0.8)
-- Hack/exploit = bearish (-0.6 tot -0.9)
-- Regulatory goedkeuring = bullish (0.4-0.7)
-- Regulatory ban/crackdown = bearish (-0.5 tot -0.8)
+- Listing nieuws = bullish (0.5-0.8) | Hack/exploit = bearish (-0.6 tot -0.9)
+- Regulatory goedkeuring = bullish (0.4-0.7) | Regulatory ban = bearish (-0.5 tot -0.8)
+- Earnings beat = bullish (0.3-0.6) | Earnings miss = bearish (-0.3 tot -0.6)
+- Fed renteverlaging = bullish SPY/QQQ (0.4-0.7) | Fed verhoging = bearish (-0.3 tot -0.5)
 
 Geef ALLEEN geldig JSON terug."""
 
@@ -76,18 +92,20 @@ Vragen om mentaal te beantwoorden:
 1. Is dit ECHT nieuw, of recap van bekende informatie?
 2. Heeft dit een concrete, dateerbare impact op een specifieke prijs?
 3. Of is dit sentiment-only context zonder actionable edge?
+4. Is dit een gok-kans? (meme coin + concrete katalysator + korte-termijn hype)
 
 JSON formaat:
 {{
   "sentiment": "bullish" | "bearish" | "neutral",
   "sentiment_score": <-1.0 tot 1.0 — score op verwachte prijsimpact, niet op toon>,
   "impact_score": <0-10 volgens rubric>,
-  "tickers": [<alleen direct getroffen tickers, max 5; lege array als geen specifiek>],
+  "tickers": [<gebruik ticker mappings; alleen direct getroffen tickers, max 5>],
   "trading_implication": "<concrete actie of skip-reden, max 60 woorden>",
   "urgency": "high" | "medium" | "low",
   "is_noise": <true is default — false alleen bij concrete nieuwe info>,
   "is_already_priced_in": <true als dit nieuws breed bekend is/was>,
-  "event_type": "earnings" | "merger" | "regulatory" | "macro" | "product" | "social" | "other"
+  "gok_opportunity": <true ALLEEN als: meme/small-cap coin + concrete katalysator (listing/viral) + hype binnen 48u>,
+  "event_type": "earnings" | "merger" | "regulatory" | "macro" | "product" | "listing" | "social" | "other"
 }}"""
 
 

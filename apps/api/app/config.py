@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     bitvavo_api_key: str = ""
     bitvavo_api_secret: str = ""
 
+    # CryptoPanic (free tier: 1000 req/day — cryptopanic.com)
+    cryptopanic_api_key: str = ""
+
     # AI budget guard (daily limit in USD — 0 = unlimited)
     ai_daily_budget_usd: float = 0.0
 
@@ -80,6 +83,9 @@ class Settings(BaseSettings):
     # Alerts
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    # Public Telegram channels to monitor for market signals (comma-separated usernames)
+    # Example: "trading,stockbot,futures,interest"
+    telegram_monitor_channels: str = ""
 
     # Feeds
     news_feeds: str = ""
@@ -120,6 +126,10 @@ class Settings(BaseSettings):
     @property
     def telegram_configured(self) -> bool:
         return bool(self.telegram_bot_token and self.telegram_chat_id)
+
+    @property
+    def telegram_monitor_channel_list(self) -> list[str]:
+        return [c.strip().lstrip("@") for c in self.telegram_monitor_channels.split(",") if c.strip()]
 
     @property
     def news_feed_list(self) -> list[str]:
