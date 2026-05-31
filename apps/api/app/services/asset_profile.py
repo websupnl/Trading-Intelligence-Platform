@@ -55,33 +55,33 @@ SPECULATIVE_SYMBOLS: frozenset[str] = frozenset({
 STOCK_PROFILE = AssetProfile(
     tier=AssetTier.STOCK,
     label="Aandelen",
-    confidence_threshold=0.62,        # higher bar — fundamentals + catalyst required
-    position_size_pct=0.15,           # ignored; runtime position_size_pct is used
-    use_runtime_position_size=True,
-    max_hold_hours=120,               # up to 5 days for swing trades
-    max_notional_usd=2000.0,
+    confidence_threshold=0.65,         # raised — needs catalyst + TA confirmation
+    position_size_pct=0.30,            # 30% of equity — swing trades, fewer but bigger
+    use_runtime_position_size=False,   # profile controls sizing, not runtime toggle
+    max_hold_hours=120,
+    max_notional_usd=3000.0,
     stop_loss_warning_pct=0.05,
 )
 
 CRYPTO_CORE_PROFILE = AssetProfile(
     tier=AssetTier.CRYPTO_CORE,
     label="Crypto kern",
-    confidence_threshold=0.55,
-    position_size_pct=0.08,           # 8% of equity — crypto is more volatile than stocks
+    confidence_threshold=0.60,         # raised from 0.55 — quality over quantity
+    position_size_pct=0.25,            # 25% of equity — 3 max positions = 75% deployed
     use_runtime_position_size=False,
     max_hold_hours=48,
-    max_notional_usd=1000.0,
+    max_notional_usd=3000.0,
     stop_loss_warning_pct=0.08,
 )
 
 SPECULATIVE_PROFILE = AssetProfile(
     tier=AssetTier.SPECULATIVE,
     label="Speculatief",
-    confidence_threshold=0.70,        # much higher bar — high risk requires high conviction
-    position_size_pct=0.03,           # 3% of equity — small bets, fast in/out
+    confidence_threshold=0.72,         # high conviction required for volatile assets
+    position_size_pct=0.12,            # 12% of equity — meaningful bet but bounded
     use_runtime_position_size=False,
-    max_hold_hours=8,                 # must close same session
-    max_notional_usd=300.0,
+    max_hold_hours=12,                 # must close within half a day
+    max_notional_usd=1200.0,
     stop_loss_warning_pct=0.05,
 )
 

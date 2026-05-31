@@ -7,7 +7,9 @@ from app.database import AsyncSessionLocal
 from app.models.trades import Trade
 from app.models.audit import AuditLog
 from app.services.market_data_service import MarketDataService
-from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError, CRYPTO_SYMBOLS
+from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
+from app.services.asset_universe import CRYPTO_SYMBOLS, prefers_bitvavo
+from app.services.ccxt_broker import CCXTBroker, BitvavoAPIError
 from app.services.notifications import NotificationService
 from app.services.runtime_state import get_runtime_value
 from app.config import get_settings
@@ -21,7 +23,13 @@ class PositionMonitorService:
     def __init__(self):
         self.settings = get_settings()
         self.broker = AlpacaBroker()
+        self.ccxt = CCXTBroker()
         self.market = MarketDataService()
+
+    def _broker_for(self, symbol: str):
+        if prefers_bitvavo(symbol) and self.ccxt._configured:
+            return self.ccxt
+        return self.broker
 
     async def monitor(self, crypto_only: bool = False) -> int:
         """Check all open trades; close those that hit SL or TP. Returns count closed.
@@ -68,10 +76,10 @@ class PositionMonitorService:
                 await self._execute_close(trade, exit_price, reason)
                 return True
 
-        # Per-profile max hold time: stocks 120h, crypto core 48h, speculative 8h
+        # Per-profile max hold time — gok sessies always 4h
         if trade.opened_at:
             from app.services.asset_profile import get_asset_profile
-            max_hold_hours = get_asset_profile(trade.symbol).max_hold_hours
+            max_hold_hours = 4 if trade.mode == "gok" else get_asset_profile(trade.symbol).max_hold_hours
             age = datetime.now(timezone.utc) - trade.opened_at
             if age > timedelta(hours=max_hold_hours):
                 reason = f"Max hold tijd ({max_hold_hours}u) bereikt @ ${price:.4f}"
@@ -157,15 +165,15 @@ class PositionMonitorService:
         return False, "", price
 
     async def _execute_close(self, trade: Trade, exit_price: float, reason: str) -> None:
-        # Try to close via Alpaca for real orders; fall through to DB-only for simulated
         broker_closed = False
-        if trade.alpaca_order_id and self.broker._configured:
+        active_broker = self._broker_for(trade.symbol)
+        if trade.alpaca_order_id and active_broker._configured:
             try:
-                await self.broker.close_position(trade.symbol)
+                await active_broker.close_position(trade.symbol)
                 broker_closed = True
-                logger.info(f"Alpaca positie gesloten: {trade.symbol} — {reason}")
-            except (AlpacaNotConfiguredError, AlpacaAPIError) as e:
-                logger.warning(f"Alpaca positie sluiten mislukt ({trade.symbol}): {e} — P&L berekend lokaal")
+                logger.info(f"Positie gesloten via broker: {trade.symbol} — {reason}")
+            except (AlpacaNotConfiguredError, AlpacaAPIError, BitvavoAPIError) as e:
+                logger.warning(f"Broker positie sluiten mislukt ({trade.symbol}): {e} — P&L berekend lokaal")
 
         is_long = trade.side.lower() in ("buy", "long")
         entry = trade.entry_price or exit_price

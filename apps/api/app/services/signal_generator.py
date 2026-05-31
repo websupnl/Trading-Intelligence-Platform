@@ -111,6 +111,8 @@ TA: {ta_summary}
 
 Weeg bull vs bear. Kies BUY alleen als er duidelijke edge is én R/R >= 2.0. SKIP is het juiste antwoord in 80% van de gevallen.
 
+Stop loss regel: gebruik 1.5 × ATR(14) onder entry als structureel niveau niet beschikbaar is. ATR staat in de TA-data.
+
 JSON:
 {{
   "direction": "buy" | "skip",
@@ -120,7 +122,7 @@ JSON:
   "timeframe": "intraday" | "swing" | "positional",
   "reason": "<katalysator + waarom nu, max 40 woorden>",
   "suggested_entry": <getal of null>,
-  "suggested_stop": <getal onder structuur of null>,
+  "suggested_stop": <getal — 1.5×ATR onder entry of onder structuur>,
   "suggested_take_profit": <getal of null>,
   "risk_reward": <ratio of null>
 }}"""
@@ -811,6 +813,19 @@ class SignalGeneratorService:
                 )).scalar() or 0
                 lines.append(f"Gerealiseerde P&L vandaag: ${float(daily_pnl):.2f}")
 
+                # AI budget awareness — AI knows its own cost vs return
+                try:
+                    from app.services.budget_manager import get_daily_budget_status
+                    budget = await get_daily_budget_status(db)
+                    ai_spend = budget.get("ai_spend_usd", 0)
+                    roi = budget.get("roi_pnl_per_ai_dollar")
+                    roi_str = f" (ROI: {roi:.1f}×)" if roi and roi > 0 else ""
+                    lines.append(f"AI kosten vandaag: ${ai_spend:.3f}{roi_str}")
+                    if budget.get("over_budget"):
+                        lines.append("⚠️ AI dagbudget bereikt — wees spaarzaam met calls")
+                except Exception:
+                    pass
+
             return "\n".join(lines)
         except Exception:
             return ""
@@ -866,6 +881,24 @@ class SignalGeneratorService:
                             rules.append(f"📌 Regel: {rule}")
                     except Exception:
                         pass
+                # Append pattern win-rate stats from Redis
+                try:
+                    import redis as _redis
+                    from app.config import get_settings as _gs
+                    _r = _redis.Redis.from_url(_gs().redis_url, socket_connect_timeout=0.2, socket_timeout=0.2)
+                    pattern_keys = _r.keys("trading_os:pattern_stats:*")
+                    for _k in pattern_keys[:5]:
+                        _raw = _r.get(_k)
+                        if _raw:
+                            _s = json.loads(_raw)
+                            _total = _s.get("wins", 0) + _s.get("losses", 0)
+                            if _total >= 3:
+                                _pct = int(_s["wins"] / _total * 100)
+                                _pat = _k.decode().split(":")[-1]
+                                _pnl = _s.get("total_pnl", 0)
+                                rules.append(f"📊 Pattern '{_pat}': {_pct}% winst ({_total} trades, P&L ${_pnl:.2f})")
+                except Exception:
+                    pass
                 return rules + winning + losing
         except Exception:
             return []
