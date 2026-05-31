@@ -223,6 +223,47 @@ def sync_closed_trades():
         return {"status": "error", "message": str(e)}
 
 
+@celery_app.task(name="app.tasks.analysis_tasks.run_gok_scan")
+def run_gok_scan():
+    """Triggered when gok_opportunity is detected in news. Scans and auto-executes if high confidence."""
+    from app.services.gok_session import GokSessionService
+    from app.services.runtime_state import get_runtime_value
+
+    if get_runtime_value("kill_switch_enabled", False):
+        return {"status": "skipped", "reason": "kill_switch"}
+
+    async def _run():
+        svc = GokSessionService()
+        status = await svc.get_status()
+        if not status.get("available"):
+            return {"status": "skipped", "reason": status.get("reason", "not_available")}
+
+        result = await svc.scan()
+        if not result:
+            return {"status": "no_opportunity"}
+
+        score = result.get("opportunity_score", 0)
+        if score >= 0.75:
+            # High confidence — auto-execute
+            asset = result.get("asset")
+            budget = result.get("suggested_budget_eur", 50)
+            price = result.get("current_price")
+            if asset and price:
+                exec_result = await svc.execute(asset=asset, budget_eur=budget, price=price)
+                logger.info(f"Auto gok uitgevoerd: {asset} score={score:.2f} result={exec_result}")
+                return {"status": "auto_executed", "asset": asset, "score": score}
+        else:
+            logger.info(f"Gok scan: score {score:.2f} te laag voor auto-execute (drempel 0.75)")
+
+        return {"status": "scanned", "score": score}
+
+    try:
+        return asyncio.run(_run())
+    except Exception as e:
+        logger.error(f"Gok scan fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @celery_app.task(name="app.tasks.analysis_tasks.run_micro_trader")
 def run_micro_trader():
     """Rule-based micro trader — scans for 15min setups, executes without AI. Crypto only."""
