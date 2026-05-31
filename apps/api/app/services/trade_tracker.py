@@ -452,6 +452,23 @@ class TradeTrackerService:
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
                 ))
+                # Update pattern win-rate counter in Redis so AI can learn "X% of Y setups win"
+                try:
+                    import redis as _redis, json as _json
+                    from app.config import get_settings as _gs
+                    _r = _redis.Redis.from_url(_gs().redis_url, socket_connect_timeout=0.3, socket_timeout=0.3)
+                    _key = f"trading_os:pattern_stats:{pattern}"
+                    _raw = _r.get(_key)
+                    _stats = _json.loads(_raw) if _raw else {"wins": 0, "losses": 0, "total_pnl": 0.0}
+                    if pnl and pnl > 0:
+                        _stats["wins"] = _stats.get("wins", 0) + 1
+                    else:
+                        _stats["losses"] = _stats.get("losses", 0) + 1
+                    _stats["total_pnl"] = round(_stats.get("total_pnl", 0) + (pnl or 0), 4)
+                    _r.set(_key, _json.dumps(_stats))
+                except Exception:
+                    pass
+
                 await db.commit()
                 await NotificationService(db).send(
                     "trade_reflection_written",

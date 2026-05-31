@@ -135,6 +135,12 @@ export const api = {
   startCryptoSession: (data: any) => apiFetch('/api/crypto-session/start', { method: 'POST', body: JSON.stringify(data) }),
   stopCryptoSession: () => apiFetch('/api/crypto-session/stop', { method: 'POST' }),
 
+  // ── Gok Sessie ───────────────────────────────────────────────────────────
+  getGokStatus: () => apiFetch('/api/gok/status'),
+  scanGokOpportunity: (budget: number) => apiFetch(`/api/gok/scan?budget=${budget}`),
+  executeGok: (data: { asset: string; budget_eur: number; price: number }) =>
+    apiFetch('/api/gok/execute', { method: 'POST', body: JSON.stringify(data) }),
+
   // ── Chat (SSE) ───────────────────────────────────────────────────────────
   chatStream: async (messages: {role: string; content: string}[], context?: string): Promise<Response> => {
     const pin = getPin();

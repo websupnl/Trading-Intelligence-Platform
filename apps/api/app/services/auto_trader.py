@@ -18,8 +18,8 @@ from app.services.crypto_session import crypto_session_allows_autonomy, get_cryp
 
 logger = logging.getLogger(__name__)
 
-AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.55   # global floor; per-profile threshold is the real gate
-CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.52
+AUTO_TRADE_CONFIDENCE_THRESHOLD = 0.65   # raised — profile thresholds are the real gate
+CRYPTO_SESSION_CONFIDENCE_THRESHOLD = 0.60
 MAX_AUTO_NOTIONAL = 2000.0   # raised — profiles cap per tier (stocks $2000, crypto $1000, spec $300)
 MIN_NOTIONAL = 30.0          # lower floor so speculative 3% sizing works on small accounts
 
@@ -310,7 +310,7 @@ class AutoTraderService:
             ))
             await db.commit()
 
-    MAX_OPEN_POSITIONS = 20  # raised — profiles and daily-loss circuit breaker are the real guards
+    MAX_OPEN_POSITIONS = 5   # max 5 positions — 3× crypto core (25% each) + 2× speculative/stock
 
     async def _execute_signal(self, signal: Signal, notional: float, session_autonomy: bool = False) -> bool:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)
