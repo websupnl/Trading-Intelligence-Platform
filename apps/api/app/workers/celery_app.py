@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.analysis_tasks",
         "app.tasks.telegram_tasks",
         "app.tasks.gok_tasks",
+        "app.tasks.oracle_tasks",
     ],
 )
 
@@ -69,8 +70,8 @@ celery_app.conf.update(
             "task": "app.tasks.signal_tasks.generate_signals",
             "schedule": 600.0,
         },
-        # Scalp signals: 15min chart analysis every 15 min (crypto 24/7)
-        "generate-scalp-signals-every-15min": {
+        # Scalp signals: 15min chart analysis every 15 min (crypto 24/7) — was 5min, 3x too expensive
+        "generate-scalp-signals-every-5min": {
             "task": "app.tasks.signal_tasks.generate_scalp_signals",
             "schedule": 900.0,
         },
@@ -110,6 +111,18 @@ celery_app.conf.update(
         "daily-summary-after-close": {
             "task": "app.tasks.analysis_tasks.send_activity_summary",
             "schedule": crontab(hour=21, minute=30),
+        },
+
+        # === ORACLE BRAIN ===
+        # Morning brief: 06:01 UTC — na regime check (06:00), vóór Europese opening
+        "oracle-morning-brief-daily": {
+            "task": "app.tasks.oracle_tasks.oracle_morning_brief",
+            "schedule": crontab(hour=6, minute=1),
+        },
+        # EOD review: 22:00 UTC — na US markt close
+        "oracle-eod-review-daily": {
+            "task": "app.tasks.oracle_tasks.oracle_eod_review",
+            "schedule": crontab(hour=22, minute=0),
         },
 
         # === TELEGRAM BOT ===
