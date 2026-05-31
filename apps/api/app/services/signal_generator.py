@@ -291,6 +291,8 @@ class SignalGeneratorService:
             if ticker not in ticker_data:
                 ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0, "_watchlist_only": True}
 
+        # Always filter to crypto-only in crypto_session_mode — don't generate stock signals
+        # on closed markets (weekends, after-hours) with stale daily candles
         if crypto_session_mode:
             ticker_data = {ticker: data for ticker, data in ticker_data.items() if is_crypto(ticker)}
 
@@ -313,6 +315,17 @@ class SignalGeneratorService:
             portfolio_ctx_text = await self._get_portfolio_context()
         except Exception as e:
             logger.debug("Portfolio context ophalen mislukt: %s", e)
+
+        # Market regime: dynamically adjust confidence thresholds
+        regime_adjustment = 0.0
+        try:
+            from app.services.market_regime import get_market_regime, get_regime_confidence_adjustment
+            regime = await get_market_regime()
+            regime_adjustment = get_regime_confidence_adjustment(regime)
+            if regime_adjustment != 0.0:
+                logger.info(f"Marktregime '{regime}': confidence drempel aangepast met {regime_adjustment:+.2f}")
+        except Exception:
+            pass
 
         if not self.settings.anthropic_api_key:
             logger.warning("ANTHROPIC_API_KEY niet geconfigureerd - signaal generatie overgeslagen")
@@ -402,6 +415,25 @@ class SignalGeneratorService:
                 if lessons:
                     ta_summary += f"\n\n🧠 Geheugen {asset}:\n" + "\n".join(f"  {l}" for l in lessons)
 
+                # Candle freshness guard: skip if best available candle is too stale
+                freshness_limit = timedelta(minutes=30) if is_crypto(asset) else timedelta(minutes=90)
+                latest_candle_time = None
+                if candles:
+                    latest_candle_time = candles[-1].timestamp if hasattr(candles[-1], "timestamp") else None
+                if not latest_candle_time and candles_4h:
+                    latest_candle_time = candles_4h[-1].timestamp if hasattr(candles_4h[-1], "timestamp") else None
+                if latest_candle_time:
+                    candle_age = datetime.now(timezone.utc) - latest_candle_time.replace(tzinfo=timezone.utc) if latest_candle_time.tzinfo is None else datetime.now(timezone.utc) - latest_candle_time
+                    if candle_age > freshness_limit:
+                        await self._log_signal_skip(
+                            asset,
+                            f"Candle te oud ({candle_age.seconds // 60}min) — signaal overgeslagen",
+                            {"direction": "skip", "confidence": 0, "reason": "stale_candle"},
+                            data,
+                            ta_result,
+                        )
+                        continue
+
                 price_str = f"{price:.4f}" if price else "onbekend"
 
                 if is_ai_paused():
@@ -426,7 +458,7 @@ class SignalGeneratorService:
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
-                min_confidence = get_asset_profile(asset).confidence_threshold
+                min_confidence = max(0.45, get_asset_profile(asset).confidence_threshold + regime_adjustment)
                 if confidence < min_confidence:
                     await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
                     # Save "skipped" Signal so cooldown applies
@@ -664,8 +696,9 @@ class SignalGeneratorService:
                     continue
 
                 candles_15m = await self._get_candles_15m(asset)
-                candles_1h = await self._get_candles(asset)  # reuse daily helper, but 1H
-                candles_1h_data = await self._get_candles_4h(asset)  # 4H as proxy when no 1H
+                candles_1h_data = await self._get_candles_1h(asset)
+                if not candles_1h_data:
+                    candles_1h_data = await self._get_candles_4h(asset)  # fallback to 4H if no 1H
 
                 ta_15m = ta_analyze(candles_15m) if candles_15m else None
                 ta_1h = ta_analyze(candles_1h_data) if candles_1h_data else None
@@ -815,6 +848,11 @@ class SignalGeneratorService:
             return "\n".join(lines)
         except Exception:
             return ""
+
+    async def _get_candles_1h(self, symbol: str) -> list:
+        from app.services.market_data_service import MarketDataService
+        svc = MarketDataService()
+        return await svc.get_candles(symbol, "1Hour", 60)
 
     async def _get_candles(self, symbol: str) -> list:
         from app.services.market_data_service import MarketDataService

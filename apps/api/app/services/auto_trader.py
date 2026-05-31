@@ -79,16 +79,24 @@ class AutoTraderService:
 
         async with AsyncSessionLocal() as db:
             threshold = CRYPTO_SESSION_CONFIDENCE_THRESHOLD if autonomous else AUTO_TRADE_CONFIDENCE_THRESHOLD
-            # broker_error = transient API failure → retry; skipped_funds = niet genoeg saldo → niet retrien
+            # broker_error signals: only retry after 5-minute cooldown to prevent hammering a broken API
+            broker_retry_cutoff = now - timedelta(minutes=5)
             query = select(Signal).where(
-                Signal.status.in_(["pending", "broker_error"]),
                 Signal.confidence >= threshold,
                 Signal.expires_at > now,
+            ).where(
+                # pending: always eligible; broker_error: only after 5-min cooldown
+                (Signal.status == "pending") |
+                ((Signal.status == "broker_error") & (Signal.updated_at < broker_retry_cutoff))
             )
             if crypto_only:
                 query = query.where(Signal.asset.in_(CRYPTO_SYMBOLS))
+            # Rank by confidence (75%) + age (25%) so older signals don't starve
             result = await db.execute(
-                query.order_by(Signal.confidence.desc()).limit(remaining_session_trades or 15)
+                query.order_by(
+                    (Signal.confidence * 0.75).desc(),
+                    Signal.created_at.asc(),
+                ).limit(remaining_session_trades or 20)
             )
             signals = result.scalars().all()
 
@@ -220,6 +228,13 @@ class AutoTraderService:
                 cap = MAX_AUTO_NOTIONAL
 
             multiplier = self._confidence_multiplier(confidence) if confidence is not None else 1.0
+            # Apply market regime size multiplier — reads cached value from Redis (no async needed)
+            try:
+                from app.services.market_regime import get_regime_size_multiplier, REGIME_KEY
+                cached_regime = get_runtime_value(REGIME_KEY, "ranging")
+                multiplier *= get_regime_size_multiplier(cached_regime)
+            except Exception:
+                pass
             notional = round(equity * float(pct) * multiplier, 2)
             return max(MIN_NOTIONAL, min(notional, cap))
         except Exception:
