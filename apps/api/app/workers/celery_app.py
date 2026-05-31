@@ -114,5 +114,10 @@ celery_app.conf.update(
             "task": "app.tasks.telegram_tasks.poll_telegram",
             "schedule": 3.0,
         },
+        # === TELEGRAM CHANNEL MONITOR ===
+        "monitor-telegram-channels-every-30min": {
+            "task": "app.tasks.telegram_tasks.monitor_telegram_channels",
+            "schedule": 1800.0,
+        },
     },
 )

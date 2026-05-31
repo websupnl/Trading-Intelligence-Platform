@@ -23,3 +23,24 @@ def poll_telegram():
     except Exception as exc:
         logger.error("Telegram polling fout: %s", exc)
         return {"status": "error", "message": str(exc)}
+
+
+@celery_app.task(name="app.tasks.telegram_tasks.monitor_telegram_channels")
+def monitor_telegram_channels():
+    """Scrape configured public Telegram channels for market signals. Elke 30 minuten."""
+    from app.config import get_settings
+    if not get_settings().telegram_monitor_channel_list:
+        return {"status": "skipped", "reason": "no_channels_configured"}
+
+    from app.services.telegram_monitor_service import TelegramMonitorService
+
+    async def _run():
+        svc = TelegramMonitorService()
+        count = await svc.monitor_all()
+        return {"status": "ok", "count": count}
+
+    try:
+        return asyncio.run(_run())
+    except Exception as exc:
+        logger.error("Telegram channel monitoring fout: %s", exc)
+        return {"status": "error", "message": str(exc)}
