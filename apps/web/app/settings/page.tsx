@@ -151,7 +151,8 @@ export default function SettingsPage() {
             <CardHeader><CardTitle>🔌 Integraties</CardTitle></CardHeader>
             <CardContent>
               {[
-                { label: 'Alpaca', ok: settings.alpaca_configured },
+                { label: 'Alpaca (stocks)', ok: settings.alpaca_configured },
+                { label: 'Bitvavo (crypto NL)', ok: settings.bitvavo_configured },
                 { label: 'Anthropic Claude', ok: settings.anthropic_configured },
                 { label: 'OpenAI', ok: settings.openai_configured },
                 { label: 'Reddit', ok: settings.reddit_configured },

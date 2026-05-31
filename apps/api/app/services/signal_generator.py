@@ -16,7 +16,7 @@ from app.services.technical_analysis import analyze as ta_analyze
 from app.services.token_tracker import usage_record, flush_usage
 from app.services.notifications import NotificationService
 from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
-from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
+from app.services.asset_universe import CRYPTO_SYMBOLS, is_crypto, CRYPTO_CORE, CRYPTO_SPECULATIVE, STOCKS_FOCUS
 from app.services.market_context import get_market_context, format_for_prompt
 from app.services.asset_profile import get_asset_profile, AssetTier
 
@@ -26,18 +26,9 @@ MIN_CONFIDENCE_SCALP = 0.52      # Floor for intraday scalp signals; per-profile
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
-# Always-monitored assets — generate signals even without news/social data
-# XRP/ADA removed: no longer in CRYPTO_SYMBOLS (Alpaca returned wrong prices causing data bugs)
-DEFAULT_WATCHLIST: set[str] = {
-    # Crypto large-cap
-    "BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK", "LTC",
-    # Crypto mid-cap (meme/volatile)
-    "AAVE", "UNI", "ALGO", "BAT", "CRV", "BCH",
-    # US equities & ETFs
-    "SPY", "QQQ", "NVDA", "TSLA", "META", "AAPL", "MSFT", "MSTR", "AMZN", "GOOGL",
-    # High-momentum tech
-    "AMD", "COIN", "PLTR", "CRWD", "HOOD",
-}
+# Focused 3-strategy watchlist — quality over quantity
+# Crypto core: 24/7 momentum | Stocks: swing long | Speculative: event-driven
+DEFAULT_WATCHLIST: set[str] = CRYPTO_CORE | STOCKS_FOCUS | CRYPTO_SPECULATIVE
 
 STOCK_SYSTEM_PROMPT = """Je bent een aandelentrader voor een LONG-ONLY swing trading systeem. Je focust op US aandelen en ETFs met een horizon van 1-5 dagen.
 
@@ -218,6 +209,11 @@ class SignalGeneratorService:
 
     async def generate_signals(self, lookback_hours: int = 24, crypto_session_mode: bool = False) -> int:
         """Generate signals via Bull/Bear debate. Returns count generated."""
+        from app.services.budget_manager import is_over_budget
+        async with AsyncSessionLocal() as db:
+            if await is_over_budget(db):
+                logger.warning("AI dagbudget bereikt — signaal generatie overgeslagen")
+                return 0
         if is_ai_paused():
             logger.warning("AI analyse gepauzeerd - signaal generatie overgeslagen")
             return 0

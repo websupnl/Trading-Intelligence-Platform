@@ -7,7 +7,9 @@ from app.models.signals import Signal
 from app.models.trades import Trade
 from app.models.audit import AuditLog
 from app.services.risk_engine import RiskEngine
-from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError, CRYPTO_SYMBOLS
+from app.services.alpaca_broker import AlpacaBroker, AlpacaNotConfiguredError, AlpacaAPIError
+from app.services.asset_universe import CRYPTO_SYMBOLS, prefers_bitvavo
+from app.services.ccxt_broker import CCXTBroker, BitvavoAPIError
 from app.schemas.risk import RiskCheckRequest
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 from app.services.order_recorder import record_submitted_order
@@ -26,7 +28,14 @@ class AutoTraderService:
     def __init__(self):
         self.settings = get_settings()
         self.risk_engine = RiskEngine()
-        self.broker = AlpacaBroker()
+        self.broker = AlpacaBroker()       # US stocks + crypto fallback
+        self.ccxt = CCXTBroker()           # Bitvavo — crypto preferred when configured
+
+    def _broker_for(self, symbol: str):
+        """Route crypto to Bitvavo when configured; stocks always go to Alpaca."""
+        if prefers_bitvavo(symbol) and self.ccxt._configured:
+            return self.ccxt
+        return self.broker
 
     async def process_pending_signals(self, crypto_only: bool = False) -> int:
         """Auto-trade high-confidence signals. Returns count traded.
@@ -174,22 +183,36 @@ class AutoTraderService:
         return False
 
     async def _get_equity(self) -> float:
-        """Get account equity from Alpaca. Returns 0.0 on failure so sizing fails safe."""
+        """Combined equity across all configured brokers. Fails safe to 0."""
+        total = 0.0
         try:
-            account = await self.broker.get_account()
-            equity = float(account.get("equity") or account.get("portfolio_value") or 0)
-            return equity if equity > 0 else 0.0
+            acc = await self.broker.get_account()
+            total += float(acc.get("equity") or acc.get("portfolio_value") or 0)
         except Exception:
-            return 0.0
+            pass
+        if self.ccxt._configured:
+            try:
+                acc = await self.ccxt.get_account()
+                total += float(acc.get("equity") or 0)
+            except Exception:
+                pass
+        return total if total > 0 else 0.0
 
     async def _get_buying_power(self) -> float:
-        """Return available buying power (cash not tied up in open positions)."""
+        """Combined cash/buying power across all configured brokers."""
+        total = 0.0
         try:
-            account = await self.broker.get_account()
-            bp = float(account.get("buying_power") or account.get("cash") or 0)
-            return bp if bp > 0 else 0.0
+            acc = await self.broker.get_account()
+            total += float(acc.get("buying_power") or acc.get("cash") or 0)
         except Exception:
-            return 0.0
+            pass
+        if self.ccxt._configured:
+            try:
+                acc = await self.ccxt.get_account()
+                total += float(acc.get("cash") or 0)
+            except Exception:
+                pass
+        return total if total > 0 else 0.0
 
     @staticmethod
     def _confidence_multiplier(confidence: float) -> float:
@@ -443,13 +466,12 @@ class AutoTraderService:
                     logger.warning(f"Prijs sanity check mislukt voor {signal.asset}: {price_err}")
 
             try:
-                order = await self.broker.submit_order(
+                active_broker = self._broker_for(signal.asset)
+                order = await active_broker.submit_order(
                     symbol=signal.asset,
                     qty=order_qty,
                     notional=order_notional,
                     side=signal.direction,
-                    stop_price=signal.suggested_stop,
-                    take_profit_price=signal.suggested_take_profit,
                 )
                 status_label = "paper_traded" if mode == "paper" else "live_traded"
                 db_signal.status = status_label
@@ -529,7 +551,7 @@ class AutoTraderService:
                 logger.info(f"Auto {mode} trade uitgevoerd: {signal.asset} {signal.direction} ${notional:.0f}")
                 return True
 
-            except AlpacaNotConfiguredError:
+            except (AlpacaNotConfiguredError, BitvavoAPIError) as broker_cfg_err:
                 db_signal.status = "broker_error"
                 db.add(AuditLog(
                     action="auto_trade_broker_error",
@@ -537,7 +559,7 @@ class AutoTraderService:
                     entity_type="signal",
                     entity_id=signal.id,
                     status="error",
-                    message="Alpaca niet geconfigureerd",
+                    message=f"Broker niet geconfigureerd: {broker_cfg_err}",
                     created_at=datetime.now(timezone.utc),
                     updated_at=datetime.now(timezone.utc),
                 ))

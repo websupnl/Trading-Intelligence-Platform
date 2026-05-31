@@ -8,24 +8,15 @@ from app.services.runtime_state import get_runtime_value
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Alpaca-supported crypto base symbols — only coins with reliable Alpaca data
-# XRP/ADA/DOT/MATIC/ATOM/FIL/LRC removed: Alpaca returned wrong prices causing data bugs
-CRYPTO_SYMBOLS = {
-    "BTC", "ETH", "SOL", "DOGE", "AVAX", "LINK", "LTC", "BCH", "UNI",
-    "AAVE", "CRV", "BAT", "ALGO", "XTZ", "MKR", "SUSHI", "YFI",
-}
+# Re-export from asset_universe — single source of truth
+from app.services.asset_universe import CRYPTO_SYMBOLS, is_crypto  # noqa: F401
 
-
+# Alpaca only supports USD pairs for crypto
 def to_alpaca_symbol(symbol: str) -> str:
     base = symbol.upper().split("/")[0]
     if base in CRYPTO_SYMBOLS:
         return f"{base}/USD"
     return symbol.upper()
-
-
-def is_crypto(symbol: str) -> bool:
-    base = symbol.upper().split("/")[0]
-    return base in CRYPTO_SYMBOLS or "/" in symbol
 
 
 class AlpacaNotConfiguredError(Exception):
