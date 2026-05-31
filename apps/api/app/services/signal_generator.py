@@ -110,59 +110,29 @@ OUTPUT: geldig JSON. stop_loss en take_profit verplicht bij buy."""
 """
 
 
-SIGNAL_USER_PROMPT = """Analyseer dit handelsidee voor {asset}.
+SIGNAL_USER_PROMPT = """Analyseer {asset} @ ${price}.
 
-═══ MARKTDATA ═══
-Asset: {asset}
-Huidige prijs: ${price}
+NIEUWS: {news_summary}
 
-═══ NIEUWS (laatste 24u) ═══
-{news_summary}
+SOCIAL: {social_summary}
 
-═══ SOCIAL SENTIMENT ═══
-{social_summary}
+TA: {ta_summary}
 
-═══ TECHNISCHE ANALYSE ═══
-{ta_summary}
+Weeg bull vs bear. Kies BUY alleen als er duidelijke edge is én R/R >= 2.0. SKIP is het juiste antwoord in 80% van de gevallen.
 
-═══ INSTRUCTIE ═══
-Voer een interne bull/bear debate uit met deze stappen:
-
-1. CHECK BASE RATE: Is er iets unieks aan deze setup, of past het in het 95% skip-bucket?
-2. CHECK ALREADY-PRICED-IN: Is dit nieuws bekend? Is de prijs al bewogen? Wat is je niet-consensus inzicht?
-3. BULL CASE: 2-3 sterkste argumenten met concrete katalysatoren en tijdshorizon
-4. BEAR CASE: 2-3 sterkste tegenargumenten + grootste tail risk
-5. SCORE: weeg objectief — als bear binnen 10 punten van bull is, kies SKIP (geen edge)
-6. ALS BUY: bereken entry/stop/TP op realistische niveaus. R/R moet >= 2.0 zijn op je eigen getallen.
-7. INVALIDATIE: één concrete observatie die zou bewijzen dat je fout zat (prijsniveau, nieuwsfeit)
-
-Antwoord met dit exacte JSON-schema:
+JSON:
 {{
   "direction": "buy" | "skip",
-  "confidence": <0.60-0.84 — gebruik alleen ankerpunten uit kalibratie>,
+  "confidence": <0.55-0.84>,
   "bull_score": <0.0-1.0>,
   "bear_score": <0.0-1.0>,
-  "bull_won": <true | false>,
-  "already_priced_in": <true | false — eerlijke check>,
-  "edge_criteria_met": <aantal van de 5 edge-criteria, 0-5>,
-  "catalyst_window": "<binnen 24u | binnen 1week | langer | geen> — als 'geen', moet direction skip zijn",
-  "key_catalyst": "<de ÉNE meest concrete bullish trigger, max 25 woorden>",
-  "key_risk": "<het ÉNE grootste tail risk, max 25 woorden>",
-  "bull_arguments": ["<concreet arg1>", "<concreet arg2>"],
-  "bear_arguments": ["<concreet arg1>", "<concreet arg2>"],
-  "price_target": <null of realistisch getal binnen 1-2 weken horizon>,
-  "downside_target": <null of stop-niveau>,
   "timeframe": "intraday" | "swing" | "positional",
-  "reason": "<specifieke synthese: welke katalysator + waarom nu + wat de markt mist, max 80 woorden>",
-  "suggested_entry": <null of getal — liefst pullback/breakout level, niet huidige prijs als die extended is>,
-  "suggested_stop": <null of getal — onder structuur, niet arbitrair %>,
-  "suggested_take_profit": <null of getal — eerste resistance/measured move>,
-  "risk_reward": <null of berekend ratio>,
-  "key_risks": "<concrete tail risks, max 30 woorden>",
-  "invalidation": "<exacte observatie die je fout zou bewijzen, max 20 woorden>"
-}}
-
-Onthoud: SKIP is een geldig, vaak beter antwoord. Het systeem rekent je niet af op gemiste kansen, wel op slechte trades."""
+  "reason": "<katalysator + waarom nu, max 40 woorden>",
+  "suggested_entry": <getal of null>,
+  "suggested_stop": <getal onder structuur of null>,
+  "suggested_take_profit": <getal of null>,
+  "risk_reward": <ratio of null>
+}}"""
 
 CRYPTO_SESSION_SYSTEM_PROMPT = """Je bent een actieve crypto trader voor een paper trading systeem. Je handelt in TWO MODI: bounces EN momentum. Beide zijn even geldig.
 
@@ -585,7 +555,7 @@ class SignalGeneratorService:
         temperature = 0.5 if profile.tier != AssetTier.STOCK else 0.45
         response = client.messages.create(
             model=self.settings.anthropic_model,
-            max_tokens=800,
+            max_tokens=400,
             temperature=temperature,
             system=system_blocks,
             messages=[{"role": "user", "content": user_prompt}],
@@ -745,7 +715,7 @@ class SignalGeneratorService:
 
                 response = client.messages.create(
                     model=self.settings.anthropic_model,
-                    max_tokens=500,
+                    max_tokens=300,
                     temperature=0.4,
                     system=system_blocks,
                     messages=[{"role": "user", "content": user_prompt}],

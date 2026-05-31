@@ -64,10 +64,10 @@ celery_app.conf.update(
             "task": "app.tasks.signal_tasks.generate_signals",
             "schedule": 600.0,
         },
-        # Scalp signals: 15min chart analysis every 5 min (crypto 24/7)
-        "generate-scalp-signals-every-5min": {
+        # Scalp signals: 15min chart analysis every 15 min (crypto 24/7)
+        "generate-scalp-signals-every-15min": {
             "task": "app.tasks.signal_tasks.generate_scalp_signals",
-            "schedule": 300.0,
+            "schedule": 900.0,
         },
         # Every 2 min: fallback sweep for any unexecuted pending signals
         "auto-trade-every-2min": {
