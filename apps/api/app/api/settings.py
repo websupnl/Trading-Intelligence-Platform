@@ -41,6 +41,7 @@ async def get_settings_endpoint():
         "news_feed_count": len(s.news_feed_list),
         "crypto_feed_count": len(s.crypto_feed_list),
         "crypto_24_7_enabled": is_crypto_24_7_enabled(),
+        "micro_trading_enabled": get_runtime_value("micro_trading_enabled", False),
         "runtime_overrides": list(_runtime_overrides.keys()),
     }
 
@@ -53,13 +54,13 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
     Note: kill_switch is managed via /api/risk/kill-switch endpoints.
     """
     audit = AuditLogService(db)
-    allowed_keys = {"require_manual_confirmation", "live_trading_enabled", "trading_mode", "crypto_24_7_enabled"}
+    allowed_keys = {"require_manual_confirmation", "live_trading_enabled", "trading_mode", "crypto_24_7_enabled", "micro_trading_enabled"}
     changed = {}
 
     invalid = {
         key: value for key, value in body.items()
         if (
-            key in {"require_manual_confirmation", "live_trading_enabled", "crypto_24_7_enabled"} and not isinstance(value, bool)
+            key in {"require_manual_confirmation", "live_trading_enabled", "crypto_24_7_enabled", "micro_trading_enabled"} and not isinstance(value, bool)
         ) or (
             key == "trading_mode" and value not in {"paper", "live"}
         )

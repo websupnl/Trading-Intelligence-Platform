@@ -46,7 +46,7 @@ class MicroTraderService:
 
     async def run_cycle(self) -> int:
         """Scan all micro assets for setups and execute if criteria are met."""
-        if not get_runtime_value("micro_trading_enabled", getattr(self.settings, "micro_trading_enabled", False)):
+        if not get_runtime_value("micro_trading_enabled", False):
             return 0
         if get_runtime_value("kill_switch_enabled", self.settings.kill_switch_enabled):
             return 0

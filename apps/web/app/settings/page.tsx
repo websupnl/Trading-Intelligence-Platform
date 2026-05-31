@@ -122,6 +122,13 @@ export default function SettingsPage() {
                 onToggle={() => toggle('require_manual_confirmation', settings.require_manual_confirmation)}
                 loading={saving === 'require_manual_confirmation'}
               />
+              <Toggle
+                label="Micro Trading"
+                value={settings.micro_trading_enabled}
+                description="Rule-based scalping op 15m candles (crypto, 24/7, geen AI)"
+                onToggle={() => toggle('micro_trading_enabled', settings.micro_trading_enabled)}
+                loading={saving === 'micro_trading_enabled'}
+              />
 
               <div className="mt-3 flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Trading Mode:</span>
