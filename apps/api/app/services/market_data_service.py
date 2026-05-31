@@ -206,6 +206,68 @@ class MarketDataService:
 
         return saved
 
+    async def get_latest_prices_batch(self, symbols: list[str]) -> dict[str, float]:
+        """Fetch latest prices for multiple symbols in as few API calls as possible.
+        Returns {symbol: price} dict. Missing symbols are omitted."""
+        if not symbols:
+            return {}
+
+        result: dict[str, float] = {}
+
+        # First: pull from DB (single query for all symbols)
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import func as sqlfunc
+            subq = (
+                select(Candle.symbol, sqlfunc.max(Candle.timestamp).label("max_ts"))
+                .where(Candle.symbol.in_(symbols))
+                .group_by(Candle.symbol)
+                .subquery()
+            )
+            rows = (await db.execute(
+                select(Candle.symbol, Candle.close)
+                .join(subq, (Candle.symbol == subq.c.symbol) & (Candle.timestamp == subq.c.max_ts))
+            )).all()
+            for sym, close in rows:
+                result[sym] = close
+
+        # For any missing symbols, fall back to Alpaca batch endpoints
+        missing = [s for s in symbols if s not in result]
+        if missing and self.settings.alpaca_configured:
+            try:
+                crypto_missing = [s for s in missing if is_crypto(s)]
+                stock_missing = [s for s in missing if not is_crypto(s)]
+                async with httpx.AsyncClient(timeout=10) as client:
+                    if crypto_missing:
+                        pairs = [f"{_normalize_symbol(s)}/USD" for s in crypto_missing]
+                        resp = await client.get(
+                            f"{self.settings.alpaca_data_url}/v1beta3/crypto/us/latest/bars",
+                            headers=self._data_headers(),
+                            params={"symbols": ",".join(pairs)},
+                        )
+                        if resp.status_code == 200:
+                            bars = resp.json().get("bars", {})
+                            for sym in crypto_missing:
+                                pair = f"{_normalize_symbol(sym)}/USD"
+                                bar = bars.get(pair, {})
+                                if bar.get("c"):
+                                    result[sym] = float(bar["c"])
+                    if stock_missing:
+                        resp = await client.get(
+                            f"{self.settings.alpaca_data_url}/v2/stocks/bars/latest",
+                            headers=self._data_headers(),
+                            params={"symbols": ",".join(stock_missing), "feed": "iex"},
+                        )
+                        if resp.status_code == 200:
+                            bars = resp.json().get("bars", {})
+                            for sym in stock_missing:
+                                bar = bars.get(sym, {})
+                                if bar.get("c"):
+                                    result[sym] = float(bar["c"])
+            except Exception as e:
+                logger.warning(f"Batch price fetch fout: {e}")
+
+        return result
+
     async def get_latest_price(self, symbol: str) -> float | None:
         """Get latest close price for a symbol from DB or Alpaca."""
         async with AsyncSessionLocal() as db:

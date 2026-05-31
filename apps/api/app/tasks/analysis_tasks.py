@@ -92,11 +92,12 @@ def fetch_market_data():
 
         svc = MarketDataService()
         daily = await svc.fetch_bars(valid, "1Day", 60)
-        # 4H + 15min candles for crypto only (24/7 available)
+        # 4H + 1H + 15min candles for crypto only (24/7 available)
         crypto_valid = [t for t in valid if is_crypto(t)]
         four_h = await svc.fetch_bars(crypto_valid, "4Hour", 120) if crypto_valid else 0
+        one_h = await svc.fetch_bars(crypto_valid, "1Hour", 120) if crypto_valid else 0
         fifteen_min = await svc.fetch_bars(crypto_valid, "15Min", 200) if crypto_valid else 0
-        return daily + four_h + fifteen_min
+        return daily + four_h + one_h + fifteen_min
 
     try:
         count = asyncio.run(_run())
@@ -219,6 +220,47 @@ def sync_closed_trades():
         return {"status": "ok", "created": created, "closed": closed}
     except Exception as e:
         logger.error(f"Trade sync fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.run_micro_trader")
+def run_micro_trader():
+    """Rule-based micro trader — scans for 15min setups, executes without AI. Crypto only."""
+    from app.services.micro_trader import MicroTraderService
+    try:
+        svc = MicroTraderService()
+        count = asyncio.run(svc.run_cycle())
+        if count:
+            logger.info(f"Micro trader: {count} trades uitgevoerd")
+        return {"status": "ok", "executed": count}
+    except Exception as e:
+        logger.error(f"Micro trader fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.run_micro_monitor")
+def run_micro_monitor():
+    """Fast SL/TP monitor for micro trades — runs every 10 seconds."""
+    from app.services.micro_trader import MicroTraderService
+    try:
+        svc = MicroTraderService()
+        count = asyncio.run(svc.run_micro_monitor())
+        return {"status": "ok", "closed": count}
+    except Exception as e:
+        logger.error(f"Micro monitor fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.analysis_tasks.refresh_market_regime")
+def refresh_market_regime():
+    """Refresh market regime detection from BTC candles. Stored in Redis."""
+    from app.services.market_regime import get_market_regime
+    try:
+        regime = asyncio.run(get_market_regime(force_refresh=True))
+        logger.info(f"Marktregime bijgewerkt: {regime}")
+        return {"status": "ok", "regime": regime}
+    except Exception as e:
+        logger.error(f"Regime refresh fout: {e}")
         return {"status": "error", "message": str(e)}
 
 

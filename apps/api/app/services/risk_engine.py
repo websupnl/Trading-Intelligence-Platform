@@ -17,6 +17,47 @@ MAX_TRADES_PER_DAY = 30
 MIN_CONFIDENCE_FOR_AUTO = 0.55
 MANUAL_APPROVAL_THRESHOLD = 0.5
 
+# Correlation clusters: max 2 simultaneous positions per cluster
+CORRELATION_CLUSTERS: dict[str, frozenset[str]] = {
+    "crypto_majors":  frozenset({"BTC", "ETH", "SOL", "LTC", "BCH"}),
+    "crypto_alts":    frozenset({"DOGE", "ALGO", "AVAX", "LINK", "UNI", "AAVE"}),
+    "crypto_defi":    frozenset({"CRV", "SUSHI", "YFI", "MKR", "BAT", "XTZ"}),
+    "tech_megacap":   frozenset({"AAPL", "MSFT", "AMZN", "GOOGL", "META"}),
+    "tech_momentum":  frozenset({"NVDA", "AMD", "TSLA", "MSTR", "COIN", "PLTR"}),
+}
+MAX_PER_CLUSTER = 2
+
+
+async def _check_correlation_cluster_async(symbol: str) -> list[str]:
+    """Return rejection reasons if adding this symbol would exceed the cluster position limit."""
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models.trades import Trade
+
+    cluster_name = None
+    for name, members in CORRELATION_CLUSTERS.items():
+        if symbol in members:
+            cluster_name = name
+            break
+    if not cluster_name:
+        return []
+
+    cluster_members = CORRELATION_CLUSTERS[cluster_name]
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Trade).where(
+                    Trade.status == "open",
+                    Trade.symbol.in_(list(cluster_members)),
+                ).limit(MAX_PER_CLUSTER + 1)
+            )
+            count = len(result.scalars().all())
+        if count >= MAX_PER_CLUSTER:
+            return [f"{symbol}: cluster '{cluster_name}' heeft al {count}/{MAX_PER_CLUSTER} posities — te veel correlatie"]
+    except Exception as e:
+        logger.warning(f"Correlatie check fout voor {symbol}: {e}")
+    return []
+
 
 class RiskEngine:
     def check(self, req: RiskCheckRequest) -> RiskCheckResult:
@@ -41,9 +82,14 @@ class RiskEngine:
             reasons.append("Systeem staat in paper mode - live orders niet toegestaan")
             return RiskCheckResult(approved=False, required_manual_approval=False, reasons=reasons, warnings=warnings, blocked_by_rule="paper_mode_only")
 
-        # Notional check
-        if req.estimated_notional and req.estimated_notional > MAX_POSITION_SIZE_USD:
-            reasons.append(f"Order grootte ${req.estimated_notional:.2f} overschrijdt maximum ${MAX_POSITION_SIZE_USD:.2f}")
+        # Per-profile position size check
+        from app.services.asset_profile import get_asset_profile
+        asset_profile = get_asset_profile(req.symbol) if req.symbol else None
+        effective_max = asset_profile.max_notional_usd if asset_profile else MAX_POSITION_SIZE_USD
+        if req.estimated_notional and req.estimated_notional > effective_max:
+            reasons.append(
+                f"Order grootte ${req.estimated_notional:.2f} overschrijdt maximum voor {asset_profile.label if asset_profile else 'onbekend'} (${effective_max:.2f})"
+            )
             approved = False
             blocked_by = "max_position_size"
 
@@ -68,9 +114,11 @@ class RiskEngine:
             approved = False
             blocked_by = "short_selling_disabled"
 
-        # Missing stop loss warning
+        # Stop loss quality check
         if req.stop_loss is None:
             warnings.append("Geen stop loss ingesteld - risico niet begrensd")
+
+        # Correlation cluster check is done in check_async() where await is available
 
         return RiskCheckResult(
             approved=approved,
@@ -85,6 +133,20 @@ class RiskEngine:
         result = self.check(req)
         if not result.approved:
             return result
+
+        # Correlation cluster check (async DB query)
+        if req.side == "buy" and req.symbol and not req.is_closing_position:
+            base = req.symbol.upper().split("/")[0]
+            cluster_reasons = await _check_correlation_cluster_async(base)
+            if cluster_reasons:
+                return RiskCheckResult(
+                    approved=False,
+                    required_manual_approval=False,
+                    reasons=cluster_reasons,
+                    warnings=result.warnings,
+                    max_position_size=result.max_position_size,
+                    blocked_by_rule="correlation_cluster",
+                )
 
         rule_result = await evaluate_active_rules(req)
         reasons = [*result.reasons, *rule_result.reasons]

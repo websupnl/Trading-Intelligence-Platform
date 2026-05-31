@@ -18,12 +18,11 @@ from app.services.notifications import NotificationService
 from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
 from app.services.alpaca_broker import CRYPTO_SYMBOLS, is_crypto
 from app.services.market_context import get_market_context, format_for_prompt
+from app.services.asset_profile import get_asset_profile, AssetTier
 
 logger = logging.getLogger(__name__)
 
-MIN_CONFIDENCE_GENERATE = 0.55
-MIN_CONFIDENCE_CRYPTO_SESSION = 0.50
-MIN_CONFIDENCE_SCALP = 0.52      # Lower threshold for fast intraday setups
+MIN_CONFIDENCE_SCALP = 0.52      # Floor for intraday scalp signals; per-profile threshold also checked
 MIN_MENTIONS_NEWS = 1
 MIN_MENTIONS_SOCIAL = 2
 
@@ -40,44 +39,72 @@ DEFAULT_WATCHLIST: set[str] = {
     "AMD", "COIN", "PLTR", "CRWD", "HOOD",
 }
 
-SIGNAL_SYSTEM_PROMPT = """Je bent een actieve trading analist voor een LONG-ONLY systeem. Je doel is om tradeable setups te vinden en kapitaal actief in te zetten.
+STOCK_SYSTEM_PROMPT = """Je bent een aandelentrader voor een LONG-ONLY swing trading systeem. Je focust op US aandelen en ETFs met een horizon van 1-5 dagen.
 
 KERNFILOSOFIE
-- De markt heeft kansen: ~70% van potentiële trades heeft geen scherpe edge, maar ~30% wel. Zoek die 30%.
-- Zowel te veel als te weinig handelen is suboptimaal. Idle cash is ook een keuze — en vaak de verkeerde.
-- TA-only setups zijn GELDIG: sterke RSI + trend + MACD alignment zonder nieuws is een legitieme reden voor een buy.
-- Nieuws versterkt een TA-setup maar is geen vereiste. Technische structuur alleen is genoeg bij liquide assets.
-- Sociale hype zonder TA-bevestiging = skip. TA zonder nieuws = geldig.
+- Swing trades: je zoekt setups met een duidelijke katalysator EN technische bevestiging.
+- Confidence >= 0.62 vereist — aandelen bewegen trager dan crypto, dus alleen bij echte edge.
+- TA-only is geldig bij liquide aandelen (SPY, QQQ, AAPL, NVDA) als de setup sterk is.
+- Macro-context, earnings, sector rotatie en institutioneel sentiment zijn valide katalysatoren.
+- Sociale hype zonder TA = skip. Earnings zonder TA-bevestiging = skip.
 
 EDGE-DEFINITIE (BUY als minstens 1 hieronder waar is)
-1. Asymmetrisch risico/reward: berekend R/R >= 1.5 met duidelijk invalidatieniveau
-2. Sterke TA-setup: RSI oversold (<40) + steun + opwaartse trend, OF RSI momentum (>55) + MACD bullish crossover
-3. Multi-bron confirmatie: nieuws + TA + sentiment wijzen dezelfde kant op
-4. Concrete katalysator binnen je tijdshorizon (earnings, productlancering, macro event)
-5. Liquide instrument met betrouwbare prijsstructuur
+1. Technische setup: RSI oversold (<40) + steun + opwaartse trend, OF MACD bullish crossover + EMA alignment
+2. Katalysator + TA: earnings/product/macro nieuws + bevestiging in TA (prijs reageert al of staat op steun)
+3. Sector rotatie: brede instroom in sector, asset achterblijvend maar op support
+4. Asymmetrisch R/R >= 2.0 met duidelijk invalidatieniveau en houdbare positie
 
 CONFIDENCE-CALIBRATIE
-- 0.55-0.59: Dunne maar legitieme TA-setup. Geldig voor executie.
-- 0.60-0.64: Duidelijke TA of licht nieuws. Goede trade.
-- 0.65-0.74: Sterke convergentie van TA + context. Sweet spot.
-- 0.75-0.84: Sterke convergentie + concrete katalysator. Zeldzaam.
-- 0.85-1.00: Alleen bij asymmetrische event-driven setup binnen 24u.
+- 0.62-0.64: Solide TA-only setup bij liquide aandeel. Minimale drempel voor executie.
+- 0.65-0.72: TA + lichte katalysator OF sterke technische setup. Goede trade.
+- 0.73-0.80: TA + concrete katalysator (earnings, CEO-wisseling, product launch). Zeldzaam.
+- 0.81+: Alleen bij event-driven momentum setup met breed institutioneel sentiment.
 
-STRATEGIE-CONTEXT
-- Long-only: "sell" betekent UITSLUITEND een bestaande long positie sluiten, nooit short openen.
-- Geen bestaande long? Dan geen sell. Gebruik "skip" voor bearish scenario's.
-- Stop loss is verplicht en altijd onder entry. R/R minimaal 1.5 voor een buy.
-- Position sizing: systeem bepaalt grootte automatisch — jij bepaalt alleen entry/stop/TP niveaus.
+HOLD HORIZON
+- Horizon: 1-5 dagen (swing). Geen intraday scalping.
+- Stop loss: max 5% onder entry. Ruimer dan crypto — aandelen hebben meer ruis.
+- R/R minimaal 2.0 voor swings.
 
 ANTI-PATRONEN (SKIP)
-- Prijs in vrije val zonder enige steun (RSI < 20, dalend volume). Skip.
-- TA en nieuws conflicteren sterk en onduidelijk. Skip.
-- Lage liquiditeit + pure social hype zonder TA. Skip.
-- Geen enkele technische data beschikbaar. Skip.
-- Eerdere trade in dezelfde asset verloor om dezelfde reden. Skip.
+- Prijs in vrije val na earnings miss, geen bodem. Skip.
+- Hoge beta aandeel zonder duidelijk technisch niveau. Skip.
+- Pure social hype zonder bevestiging (WSB/reddit piek zonder TA). Skip.
+- Geen technische data beschikbaar. Skip.
 
-OUTPUT
-- Geef ALLEEN geldig JSON. Geen uitleg ervoor of erna.
+OUTPUT: ALLEEN geldig JSON. Geen uitleg ervoor of erna."""
+
+# Backward-compat alias — callers that already reference SIGNAL_SYSTEM_PROMPT keep working.
+SIGNAL_SYSTEM_PROMPT = STOCK_SYSTEM_PROMPT
+
+SPECULATIVE_SYSTEM_PROMPT = """Je bent een disciplineerde speculatieve crypto trader. Je handelt KLEINE POSITIES (3% van equity) in volatiele altcoins.
+
+KADER
+- Dit zijn high-risk trades in meme coins en kleinere altcoins (DOGE, ALGO, AVAX, LINK etc.)
+- Confidence >= 0.70 VEREIST — bij twijfel altijd SKIP. Hogere drempel dan crypto core.
+- Max hold: 8 uur. Geen overnight posities in speculatieve assets.
+- R/R minimaal 2.0 verplicht. Stop loss verplicht, max 5% onder entry.
+- Positie is klein ($50-300) — verlies is begrensd, maar discipline is essentieel.
+
+SETUP TYPES (kies er één)
+1. OVERSOLD BOUNCE: RSI < 35 + prijs op steunniveau + bullish candle → TP: +2-4%, SL: -1.5-2%
+2. MOMENTUM BREAKOUT: prijs breekt EMA20 + volume spike + RSI 45-62 → TP: +2-3%, SL: -1.5%
+3. BTC LAG PLAY: BTC stijgt maar altcoin achterblijft op steun → ALLEEN bij RSI < 52, TP: +1.5-2%
+
+MARKT BIAS AANPASSINGEN
+- BTC in uptrend: +0.03 confidence voor alle setups
+- BTC in downtrend: -0.07 confidence, alleen oversold bounce bij sterke steun
+- Fear & Greed < 30: +0.05 confidence voor bounces
+- Fear & Greed > 75: -0.05 confidence, SKIP momentum setups
+
+SKIP WANNEER
+- RSI > 70 (te laat voor entry)
+- RSI < 20 zonder duidelijk steunniveau (vrije val)
+- Volume significant lager dan normaal (geen interesse)
+- Fundamenteel bearish nieuws (hack, ban, exploit, regulatory action)
+- Geen duidelijk TA-patroon op 15min OF 4H
+- BTC in sterke downtrend tenzij RSI < 30 + sterke steun
+
+OUTPUT: geldig JSON. stop_loss en take_profit verplicht bij buy."""
 - Wees concreet: WELKE technische setup, WAAROM nu, WAAR is je invalidatie.
 - Bij twijfel tussen 0.55 en skip: kies 0.55. Idle cash is geen winst.
 """
@@ -264,6 +291,8 @@ class SignalGeneratorService:
             if ticker not in ticker_data:
                 ticker_data[ticker] = {"news_items": [], "social_posts": [], "news_sentiment_sum": 0, "social_hype_sum": 0, "_watchlist_only": True}
 
+        # Always filter to crypto-only in crypto_session_mode — don't generate stock signals
+        # on closed markets (weekends, after-hours) with stale daily candles
         if crypto_session_mode:
             ticker_data = {ticker: data for ticker, data in ticker_data.items() if is_crypto(ticker)}
 
@@ -278,7 +307,25 @@ class SignalGeneratorService:
             market_ctx = await get_market_context()
             market_ctx_text = format_for_prompt(market_ctx)
         except Exception as e:
-            logger.debug("Market context ophalen mislukt: %s", e)
+            pass
+
+        # Fetch portfolio context: balance + open positions for AI awareness
+        portfolio_ctx_text = ""
+        try:
+            portfolio_ctx_text = await self._get_portfolio_context()
+        except Exception as e:
+            logger.debug("Portfolio context ophalen mislukt: %s", e)
+
+        # Market regime: dynamically adjust confidence thresholds
+        regime_adjustment = 0.0
+        try:
+            from app.services.market_regime import get_market_regime, get_regime_confidence_adjustment
+            regime = await get_market_regime()
+            regime_adjustment = get_regime_confidence_adjustment(regime)
+            if regime_adjustment != 0.0:
+                logger.info(f"Marktregime '{regime}': confidence drempel aangepast met {regime_adjustment:+.2f}")
+        except Exception:
+            pass
 
         if not self.settings.anthropic_api_key:
             logger.warning("ANTHROPIC_API_KEY niet geconfigureerd - signaal generatie overgeslagen")
@@ -287,7 +334,7 @@ class SignalGeneratorService:
         client = anthropic.Anthropic(api_key=self.settings.anthropic_api_key)
         generated = 0
 
-        limit = 8 if crypto_session_mode else 15
+        limit = 20 if crypto_session_mode else 30
         for asset, data in list(ticker_data.items())[:limit]:
             if is_ai_paused():
                 logger.warning("AI analyse tijdens signaalbatch gepauzeerd - resterende assets overgeslagen")
@@ -368,6 +415,25 @@ class SignalGeneratorService:
                 if lessons:
                     ta_summary += f"\n\n🧠 Geheugen {asset}:\n" + "\n".join(f"  {l}" for l in lessons)
 
+                # Candle freshness guard: skip if best available candle is too stale
+                freshness_limit = timedelta(minutes=30) if is_crypto(asset) else timedelta(minutes=90)
+                latest_candle_time = None
+                if candles:
+                    latest_candle_time = candles[-1].timestamp if hasattr(candles[-1], "timestamp") else None
+                if not latest_candle_time and candles_4h:
+                    latest_candle_time = candles_4h[-1].timestamp if hasattr(candles_4h[-1], "timestamp") else None
+                if latest_candle_time:
+                    candle_age = datetime.now(timezone.utc) - latest_candle_time.replace(tzinfo=timezone.utc) if latest_candle_time.tzinfo is None else datetime.now(timezone.utc) - latest_candle_time
+                    if candle_age > freshness_limit:
+                        await self._log_signal_skip(
+                            asset,
+                            f"Candle te oud ({candle_age.seconds // 60}min) — signaal overgeslagen",
+                            {"direction": "skip", "confidence": 0, "reason": "stale_candle"},
+                            data,
+                            ta_result,
+                        )
+                        continue
+
                 price_str = f"{price:.4f}" if price else "onbekend"
 
                 if is_ai_paused():
@@ -377,6 +443,7 @@ class SignalGeneratorService:
                     client, asset, price_str, news_summary, social_summary, ta_summary,
                     crypto_session_mode=crypto_session_mode,
                     market_context=market_ctx_text,
+                    portfolio_context=portfolio_ctx_text,
                 )
 
                 # Track token usage
@@ -391,7 +458,7 @@ class SignalGeneratorService:
                     continue
 
                 confidence = float(signal_data.get("confidence", 0))
-                min_confidence = MIN_CONFIDENCE_CRYPTO_SESSION if crypto_session_mode and is_crypto(asset) else MIN_CONFIDENCE_GENERATE
+                min_confidence = max(0.45, get_asset_profile(asset).confidence_threshold + regime_adjustment)
                 if confidence < min_confidence:
                     await self._log_signal_skip(asset, f"Confidence te laag ({confidence:.0%})", signal_data, data, ta_result)
                     # Save "skipped" Signal so cooldown applies
@@ -436,7 +503,7 @@ class SignalGeneratorService:
         # Long-only strategy: no point analyzing neutral/bearish setups without news catalyst.
         if data.get("_watchlist_only"):
             if ta_result is not None and ta_result.score is not None:
-                return ta_result.score < 0.10  # stale when score < 0.10; proceed when >= 0.10
+                return ta_result.score < 0.05  # only skip truly bearish/flat; analyze everything with slight bullish bias
             return True  # no TA data at all → skip
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         timestamps = []
@@ -488,26 +555,38 @@ class SignalGeneratorService:
     def _call_signal_agent(self, client, asset: str, price: str,
                             news_summary: str, social_summary: str, ta_summary: str,
                             crypto_session_mode: bool = False,
-                            market_context: str = "") -> tuple[dict, any]:
-        context_block = f"\n\n═══ MARKTCONTEXT ═══\n{market_context}" if market_context else ""
+                            market_context: str = "",
+                            portfolio_context: str = "") -> tuple[dict, any]:
+        extra_blocks = ""
+        if market_context:
+            extra_blocks += f"\n\n═══ MARKTCONTEXT ═══\n{market_context}"
+        if portfolio_context:
+            extra_blocks += f"\n\n═══ PORTFOLIO STATUS ═══\n{portfolio_context}"
         user_prompt = SIGNAL_USER_PROMPT.format(
             asset=asset,
             price=price,
             news_summary=news_summary,
             social_summary=social_summary,
-            ta_summary=ta_summary + context_block,
+            ta_summary=ta_summary + extra_blocks,
         )
-        system_prompt = CRYPTO_SESSION_SYSTEM_PROMPT if crypto_session_mode and is_crypto(asset) else SIGNAL_SYSTEM_PROMPT
+        profile = get_asset_profile(asset)
+        if profile.tier == AssetTier.SPECULATIVE:
+            system_prompt = SPECULATIVE_SYSTEM_PROMPT
+        elif profile.tier == AssetTier.CRYPTO_CORE:
+            system_prompt = CRYPTO_SESSION_SYSTEM_PROMPT
+        else:
+            system_prompt = STOCK_SYSTEM_PROMPT
         system_blocks = [{
             "type": "text",
             "text": system_prompt,
             "cache_control": {"type": "ephemeral"},
         }] if self.settings.anthropic_enable_prompt_caching else system_prompt
 
+        temperature = 0.5 if profile.tier != AssetTier.STOCK else 0.45
         response = client.messages.create(
             model=self.settings.anthropic_model,
             max_tokens=800,
-            temperature=0.5 if crypto_session_mode and is_crypto(asset) else 0.45,
+            temperature=temperature,
             system=system_blocks,
             messages=[{"role": "user", "content": user_prompt}],
         )
@@ -547,25 +626,34 @@ class SignalGeneratorService:
                            key=lambda x: len(x[1]["news_items"]) * 2 + len(x[1]["social_posts"]),
                            reverse=True))
 
-    async def _recent_signal_exists(self, asset: str, hours: int = 6) -> bool:
-        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    async def _recent_signal_exists(self, asset: str) -> bool:
+        """Two-tier cooldown: executed signals block for 4h; AI-skipped block for 90min only."""
+        now = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as db:
-            result = await db.execute(
+            # Active/executed: 4h cooldown — don't re-enter the same asset too soon
+            executed = await db.execute(
                 select(Signal).where(
                     Signal.asset == asset,
-                    Signal.created_at >= since,
-                    # Include "skipped" so AI-analyzed-but-skipped assets are not re-analyzed
-                    # every 10 minutes (was causing 84 AI calls/hour instead of ~8)
-                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped_funds", "broker_error", "skipped"]),
+                    Signal.created_at >= now - timedelta(hours=4),
+                    Signal.status.in_(["pending", "paper_traded", "live_traded", "skipped_funds", "broker_error"]),
                 ).limit(1)
             )
-            return result.scalar_one_or_none() is not None
+            if executed.scalar_one_or_none():
+                return True
+            # Skipped: only 90-minute cooldown — market can change, re-evaluate sooner
+            skipped = await db.execute(
+                select(Signal).where(
+                    Signal.asset == asset,
+                    Signal.created_at >= now - timedelta(minutes=90),
+                    Signal.status == "skipped",
+                ).limit(1)
+            )
+            return skipped.scalar_one_or_none() is not None
 
     async def _save_skipped_signal(self, asset: str, signal_data: dict, ta_result, price) -> None:
-        """Save a minimal Signal with status='skipped' so the 6h cooldown applies.
-        Without this, AI-skipped assets are re-analyzed every 10 minutes."""
+        """Save a minimal Signal with status='skipped' so the 90-min cooldown applies."""
         try:
-            expires = datetime.now(timezone.utc) + timedelta(hours=6)
+            expires = datetime.now(timezone.utc) + timedelta(hours=2)
             signal = Signal(
                 asset=asset,
                 direction="skip",
@@ -608,8 +696,9 @@ class SignalGeneratorService:
                     continue
 
                 candles_15m = await self._get_candles_15m(asset)
-                candles_1h = await self._get_candles(asset)  # reuse daily helper, but 1H
-                candles_1h_data = await self._get_candles_4h(asset)  # 4H as proxy when no 1H
+                candles_1h_data = await self._get_candles_1h(asset)
+                if not candles_1h_data:
+                    candles_1h_data = await self._get_candles_4h(asset)  # fallback to 4H if no 1H
 
                 ta_15m = ta_analyze(candles_15m) if candles_15m else None
                 ta_1h = ta_analyze(candles_1h_data) if candles_1h_data else None
@@ -718,6 +807,52 @@ class SignalGeneratorService:
                 ).limit(1)
             )
             return result.scalar_one_or_none() is not None
+
+    async def _get_portfolio_context(self) -> str:
+        """Build a portfolio status string for the AI: balance, open positions, daily P&L."""
+        try:
+            from app.services.alpaca_broker import AlpacaBroker
+            from app.database import AsyncSessionLocal
+            from app.models.trades import Trade
+            from sqlalchemy import select, func
+            broker = AlpacaBroker()
+            lines = []
+            try:
+                account = await broker.get_account()
+                equity = float(account.get("equity") or 0)
+                buying_power = float(account.get("buying_power") or 0)
+                lines.append(f"Equity: ${equity:.2f} | Beschikbaar saldo: ${buying_power:.2f}")
+            except Exception:
+                pass
+
+            async with AsyncSessionLocal() as db:
+                open_trades = (await db.execute(
+                    select(Trade).where(Trade.status == "open")
+                )).scalars().all()
+                if open_trades:
+                    symbols = ", ".join(t.symbol for t in open_trades)
+                    lines.append(f"Open posities ({len(open_trades)}): {symbols}")
+                else:
+                    lines.append("Geen open posities")
+
+                today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                daily_pnl = (await db.execute(
+                    select(func.sum(Trade.pnl)).where(
+                        Trade.status == "closed",
+                        Trade.pnl.isnot(None),
+                        Trade.closed_at >= today,
+                    )
+                )).scalar() or 0
+                lines.append(f"Gerealiseerde P&L vandaag: ${float(daily_pnl):.2f}")
+
+            return "\n".join(lines)
+        except Exception:
+            return ""
+
+    async def _get_candles_1h(self, symbol: str) -> list:
+        from app.services.market_data_service import MarketDataService
+        svc = MarketDataService()
+        return await svc.get_candles(symbol, "1Hour", 60)
 
     async def _get_candles(self, symbol: str) -> list:
         from app.services.market_data_service import MarketDataService

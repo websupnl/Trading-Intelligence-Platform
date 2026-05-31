@@ -39,20 +39,22 @@ class PositionMonitorService:
         if not trades:
             return 0
 
+        # Batch-fetch all prices in one API call instead of N individual calls
+        symbols = list({t.symbol for t in trades})
+        price_map = await self.market.get_latest_prices_batch(symbols)
+
         closed = 0
         for trade in trades:
             try:
-                if await self._check_and_close(trade):
+                if await self._check_and_close(trade, price_map=price_map):
                     closed += 1
             except Exception as e:
                 logger.error(f"Positie monitor fout voor {trade.symbol} ({trade.id}): {e}")
 
         return closed
 
-    MAX_HOLD_HOURS = 24  # sluit altijd na 24u — snellere rotatie, AI leert sneller
-
-    async def _check_and_close(self, trade: Trade) -> bool:
-        price = await self.market.get_latest_price(trade.symbol)
+    async def _check_and_close(self, trade: Trade, price_map: dict[str, float] | None = None) -> bool:
+        price = (price_map or {}).get(trade.symbol) or await self.market.get_latest_price(trade.symbol)
         if price is None:
             return False
 
@@ -66,18 +68,20 @@ class PositionMonitorService:
                 await self._execute_close(trade, exit_price, reason)
                 return True
 
-        # Max hold time
+        # Per-profile max hold time: stocks 120h, crypto core 48h, speculative 8h
         if trade.opened_at:
+            from app.services.asset_profile import get_asset_profile
+            max_hold_hours = get_asset_profile(trade.symbol).max_hold_hours
             age = datetime.now(timezone.utc) - trade.opened_at
-            if age > timedelta(hours=self.MAX_HOLD_HOURS):
-                reason = f"Max hold tijd ({self.MAX_HOLD_HOURS}u) bereikt @ ${price:.4f}"
+            if age > timedelta(hours=max_hold_hours):
+                reason = f"Max hold tijd ({max_hold_hours}u) bereikt @ ${price:.4f}"
                 await self._execute_close(trade, price, reason)
                 return True
 
         return False
 
     async def _apply_trailing_stop(self, trade: Trade, price: float) -> None:
-        """Move SL up as position profits: breakeven at +2%, trail at +4%."""
+        """Move SL upward as position profits. SL can only increase, never decrease."""
         if trade.side.lower() not in ("buy", "long"):
             return
         if not trade.entry_price or trade.entry_price <= 0:
@@ -85,21 +89,30 @@ class PositionMonitorService:
 
         entry = trade.entry_price
         profit_pct = (price - entry) / entry * 100
+        current_sl = trade.stop_loss or 0.0
 
-        new_sl: float | None = None
+        candidate_sl: float | None = None
         reason = ""
 
         if profit_pct >= 4.0:
-            # Trail at 1.5% below current price — lock in gains
-            trail = price * 0.985
-            if trade.stop_loss is None or trail > trade.stop_loss:
-                new_sl = round(trail, 6)
-                reason = f"Trailing stop {profit_pct:.1f}% winst → SL=${new_sl:.4f}"
+            # Trail at 1.5% below current price
+            trail = round(price * 0.985, 6)
+            # Always use max() — SL can only move up, never down
+            candidate_sl = max(trail, current_sl)
+            if candidate_sl > current_sl:
+                reason = f"Trailing stop {profit_pct:.1f}% winst → SL=${candidate_sl:.4f}"
+            else:
+                candidate_sl = None  # already higher, no update needed
         elif profit_pct >= 2.0:
-            # Move to breakeven
-            if trade.stop_loss is None or trade.stop_loss < entry:
-                new_sl = round(entry * 1.001, 6)  # slightly above entry
-                reason = f"Breakeven stop {profit_pct:.1f}% winst → SL=${new_sl:.4f}"
+            # Move to breakeven — but never lower than current SL
+            breakeven = round(entry * 1.001, 6)
+            candidate_sl = max(breakeven, current_sl)
+            if candidate_sl > current_sl:
+                reason = f"Breakeven stop {profit_pct:.1f}% winst → SL=${candidate_sl:.4f}"
+            else:
+                candidate_sl = None
+
+        new_sl = candidate_sl
 
         if new_sl is None:
             return
