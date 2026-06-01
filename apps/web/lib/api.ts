@@ -122,6 +122,11 @@ export const api = {
   refreshRegime: () => apiFetch('/api/v1/regime/refresh', { method: 'POST' }),
   getRegimeHistory: (limit = 30) => apiFetch(`/api/v1/regime/history?limit=${limit}`),
 
+  // ── Oracle Morning Brief ─────────────────────────────────────────────────
+  getOracleBrief: () => apiFetch('/api/system/oracle/brief'),
+  getOracleHistory: (limit = 7) => apiFetch(`/api/system/oracle/history?limit=${limit}`),
+  runOracleBrief: () => apiFetch('/api/system/oracle/brief/run', { method: 'POST' }),
+
   // ── Bot health ──────────────────────────────────────────────────────────
   getBotHealth: () => apiFetch('/api/health/bot'),
   pauseAiGuard: (minutes = 360, reason = 'Handmatige AI stop door gebruiker') =>
