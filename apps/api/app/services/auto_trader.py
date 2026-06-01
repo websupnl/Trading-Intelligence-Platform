@@ -310,7 +310,7 @@ class AutoTraderService:
             ))
             await db.commit()
 
-    MAX_OPEN_POSITIONS = 5   # max 5 positions — 3× crypto core (25% each) + 2× speculative/stock
+    MAX_OPEN_POSITIONS = 4   # max 4 positions — concentrate capital, larger sizes per trade
 
     async def _execute_signal(self, signal: Signal, notional: float, session_autonomy: bool = False) -> bool:
         mode = get_runtime_value("trading_mode", self.settings.trading_mode)
@@ -584,14 +584,23 @@ class AutoTraderService:
                     ))
                 else:
                     logger.error(f"Broker fout voor {signal.asset}: {e}")
-                    db_signal.status = "broker_error"
+                    # Track retry count in ai_analysis JSON — no schema change needed
+                    analysis = dict(db_signal.ai_analysis or {})
+                    retry_count = analysis.get("broker_retry_count", 0) + 1
+                    analysis["broker_retry_count"] = retry_count
+                    db_signal.ai_analysis = analysis
+                    if retry_count >= 3:
+                        db_signal.status = "failed_permanently"
+                        logger.warning(f"{signal.asset}: 3 broker fouten — permanent gefaald")
+                    else:
+                        db_signal.status = "broker_error"
                     db.add(AuditLog(
                         action="auto_trade_broker_error",
                         actor="auto_trader",
                         entity_type="signal",
                         entity_id=signal.id,
                         status="error",
-                        message=err_str[:500],
+                        message=f"Poging {retry_count}/3: {err_str[:500]}",
                         created_at=datetime.now(timezone.utc),
                         updated_at=datetime.now(timezone.utc),
                     ))
