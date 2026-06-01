@@ -92,7 +92,7 @@ export function Sidebar() {
       </aside>
 
       {/* ── Mobile bottom nav ────────────────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border flex z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border flex z-50 bottom-nav">
         {mobileNav.map(({ href, label, icon: Icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (
@@ -100,12 +100,16 @@ export function Sidebar() {
               key={href}
               href={href}
               className={cn(
-                'flex-1 flex flex-col items-center justify-center py-2.5 gap-1 transition-colors',
+                'flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors relative',
                 active ? 'text-primary' : 'text-muted-foreground'
               )}
             >
-              <Icon size={18} />
-              <span className="text-[10px] font-medium">{label}</span>
+              {/* Active indicator dot */}
+              {active && (
+                <span className="absolute top-1 w-1 h-1 rounded-full bg-primary" />
+              )}
+              <Icon size={active ? 20 : 18} strokeWidth={active ? 2.5 : 1.8} />
+              <span className={cn('text-[10px] font-medium', active && 'font-bold')}>{label}</span>
             </Link>
           );
         })}

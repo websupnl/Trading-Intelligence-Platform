@@ -8,12 +8,27 @@ import { ToastProvider } from '@/contexts/toast';
 
 export const metadata: Metadata = {
   title: 'Trading OS',
-  description: 'Trading Intelligence Platform',
+  description: 'Autonome trading intelligence platform',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Trading OS',
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+  },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#0f1117',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +40,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <TopBar />
             <div className="flex flex-1 overflow-hidden">
               <Sidebar />
-              <main className="flex-1 overflow-auto p-3 md:p-4 pb-20 md:pb-4">
+              {/* pb-nav accounts for bottom nav + safe area on iPhone */}
+              <main className="flex-1 overflow-y-auto overscroll-none p-3 md:p-4 pb-nav md:pb-4">
                 {children}
               </main>
             </div>
