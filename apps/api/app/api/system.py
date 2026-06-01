@@ -158,14 +158,55 @@ async def get_errors(limit: int = Query(100, ge=1, le=500), db: AsyncSession = D
 
 
 @router.get("/activity")
-async def get_activity(limit: int = Query(100, ge=1, le=500), db: AsyncSession = Depends(get_db)):
-    audits = await db.execute(select(AuditLog).order_by(desc(AuditLog.created_at)).limit(limit))
-    notifications = await db.execute(select(Notification).order_by(desc(Notification.created_at)).limit(limit))
+async def get_activity(
+    limit: int = Query(200, ge=1, le=1000),
+    action: str = Query(None),
+    severity: str = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    audit_q = select(AuditLog).order_by(desc(AuditLog.created_at))
+    if action:
+        audit_q = audit_q.where(AuditLog.action == action)
+    if severity:
+        audit_q = audit_q.where(AuditLog.status == severity)
+    audit_q = audit_q.limit(limit)
+
+    notif_q = select(Notification).order_by(desc(Notification.created_at))
+    if severity:
+        notif_q = notif_q.where(Notification.severity == severity)
+    notif_q = notif_q.limit(min(limit, 200))
+
+    audits = await db.execute(audit_q)
+    notifications = await db.execute(notif_q)
+
     events = []
     for item in audits.scalars().all():
-        events.append({"kind": "audit", "type": item.action, "severity": item.status, "title": item.action, "message": item.message, "created_at": item.created_at})
-    for item in notifications.scalars().all():
-        events.append({"kind": "notification", "type": item.event_type, "severity": item.severity, "title": item.title, "message": item.message, "created_at": item.created_at})
+        events.append({
+            "kind": "audit",
+            "type": item.action,
+            "severity": item.status,
+            "title": item.action,
+            "message": item.message,
+            "entity_type": item.entity_type,
+            "entity_id": item.entity_id,
+            "details": item.details,
+            "actor": item.actor,
+            "created_at": item.created_at,
+        })
+    if not action:
+        for item in notifications.scalars().all():
+            events.append({
+                "kind": "notification",
+                "type": item.event_type,
+                "severity": item.severity,
+                "title": item.title,
+                "message": item.message,
+                "entity_type": item.entity_type,
+                "entity_id": item.entity_id,
+                "details": None,
+                "actor": None,
+                "created_at": item.created_at,
+            })
     events.sort(key=lambda x: x["created_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     return events[:limit]
 

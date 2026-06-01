@@ -110,6 +110,8 @@ export default function FeedPage() {
 
 function NewsCard({ item }: { item: any }) {
   const sentiment: string = item.sentiment || 'neutral';
+  const [expanded, setExpanded] = useState(false);
+  const body: string = item.summary || item.content || '';
   return (
     <div className="bg-card border border-border rounded-2xl p-3.5">
       <div className="flex items-start gap-3">
@@ -125,6 +127,20 @@ function NewsCard({ item }: { item: any }) {
             )}
           </div>
           <p className="text-sm font-medium leading-snug">{item.title}</p>
+          {body && (
+            <p
+              className={cn('text-xs text-muted-foreground mt-1 leading-relaxed cursor-pointer', !expanded && 'line-clamp-2')}
+              onClick={() => setExpanded(e => !e)}
+            >
+              {body}
+            </p>
+          )}
+          {item.url && (
+            <a href={item.url} target="_blank" rel="noopener noreferrer"
+               className="text-[10px] text-blue-400 hover:underline mt-0.5 block">
+              Lees artikel →
+            </a>
+          )}
           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
             {(item.tickers || []).slice(0, 4).map((t: string) => (
               <span key={t} className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-bold">{t}</span>

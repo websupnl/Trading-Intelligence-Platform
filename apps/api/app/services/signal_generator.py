@@ -349,10 +349,11 @@ class SignalGeneratorService:
                 news_items_asset = data["news_items"][:5]
                 social_posts_asset = data["social_posts"][:5]
 
-                news_summary = "\n".join([
-                    f"- [{n.source}] {n.title[:80]} (sentiment: {n.sentiment}, impact: {n.impact_score:.0f}/10)"
-                    for n in news_items_asset
-                ]) or "Geen recent nieuws"
+                def _fmt_news(n) -> str:
+                    body = (n.content or n.summary or "").strip()
+                    snippet = f" — {body[:200]}" if body else ""
+                    return f"- [{n.source}] {n.title[:120]} (sentiment: {n.sentiment}, impact: {n.impact_score:.0f}/10){snippet}"
+                news_summary = "\n".join([_fmt_news(n) for n in news_items_asset]) or "Geen recent nieuws"
 
                 social_summary = "\n".join([
                     f"- r/{p.subreddit}: score={p.score}, hype={p.hype_score:.2f} — {p.content[:80]}"

@@ -123,7 +123,12 @@ export const api = {
   getRegimeHistory: (limit = 30) => apiFetch(`/api/v1/regime/history?limit=${limit}`),
 
   // ── System logs ──────────────────────────────────────────────────────────
-  getSystemActivity: (limit = 100) => apiFetch(`/api/system/activity?limit=${limit}`),
+  getSystemActivity: (limit = 200, action?: string, severity?: string) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (action) params.set('action', action);
+    if (severity) params.set('severity', severity);
+    return apiFetch(`/api/system/activity?${params}`);
+  },
   getSystemErrors: (limit = 100) => apiFetch(`/api/system/errors?limit=${limit}`),
 
   // ── Oracle Morning Brief ─────────────────────────────────────────────────
