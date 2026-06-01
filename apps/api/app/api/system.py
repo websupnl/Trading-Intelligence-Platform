@@ -9,7 +9,6 @@ from app.models.memory import MemoryEntry
 from app.models.notifications import Notification
 from app.models.signals import Signal
 from app.models.trades import Trade
-from app.models.memory import MemoryEntry
 from app.services.ai_guard import ai_pause_status, manual_pause_ai, resume_ai
 from app.services.notifications import NotificationService
 
