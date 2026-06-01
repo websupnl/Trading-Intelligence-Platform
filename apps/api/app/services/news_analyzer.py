@@ -10,7 +10,7 @@ from app.models.news import NewsItem
 from app.models.social import SocialPost
 from app.services.notifications import NotificationService
 from app.services.token_tracker import usage_record, flush_usage
-from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
+from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai, check_daily_budget
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +217,10 @@ class NewsAnalyzerService:
             logger.warning("AI analyse gepauzeerd - news analyse overgeslagen na stale cleanup")
             return 0
 
+        if not await check_daily_budget():
+            logger.warning("Dagelijks AI-budget bereikt — news analyse overgeslagen")
+            return 0
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(
                 select(NewsItem)
@@ -354,6 +358,10 @@ class NewsAnalyzerService:
 
         if is_ai_paused():
             logger.warning("AI analyse gepauzeerd - social analyse overgeslagen na stale cleanup")
+            return 0
+
+        if not await check_daily_budget():
+            logger.warning("Dagelijks AI-budget bereikt — social analyse overgeslagen")
             return 0
 
         async with AsyncSessionLocal() as db:

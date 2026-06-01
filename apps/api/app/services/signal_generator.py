@@ -15,7 +15,7 @@ from app.models.audit import AuditLog
 from app.services.technical_analysis import analyze as ta_analyze
 from app.services.token_tracker import usage_record, flush_usage
 from app.services.notifications import NotificationService
-from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai
+from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai, check_daily_budget
 from app.services.asset_universe import CRYPTO_SYMBOLS, is_crypto, CRYPTO_CORE, CRYPTO_SPECULATIVE, STOCKS_FOCUS
 from app.services.market_context import get_market_context, format_for_prompt
 from app.services.asset_profile import get_asset_profile, AssetTier
@@ -95,7 +95,7 @@ SKIP WANNEER
 - Geen duidelijk TA-patroon op 15min OF 4H
 - BTC in sterke downtrend tenzij RSI < 30 + sterke steun
 
-OUTPUT: geldig JSON. stop_loss en take_profit verplicht bij buy."""
+OUTPUT: geldig JSON. stop_loss en take_profit verplicht bij buy.
 - Wees concreet: WELKE technische setup, WAAROM nu, WAAR is je invalidatie.
 - Bij twijfel tussen 0.55 en skip: kies 0.55. Idle cash is geen winst.
 """
@@ -218,6 +218,10 @@ class SignalGeneratorService:
                 return 0
         if is_ai_paused():
             logger.warning("AI analyse gepauzeerd - signaal generatie overgeslagen")
+            return 0
+
+        if not await check_daily_budget():
+            logger.warning("Dagelijks AI-budget bereikt — signaal generatie overgeslagen")
             return 0
 
         # In crypto session mode: look back 24h for news regardless of the passed lookback_hours
@@ -672,6 +676,17 @@ class SignalGeneratorService:
                 ta_1h = ta_analyze(candles_1h_data) if candles_1h_data else None
 
                 if not ta_15m and not ta_1h:
+                    continue
+
+                # TA pre-filter: skip AI call when no setup detected (saves ~$25/dag)
+                ta_primary = ta_15m or ta_1h
+                has_setup = (
+                    (ta_primary.score >= 0.15)
+                    or (ta_15m and ta_15m.bb_squeeze)
+                    or (ta_primary.rsi is not None and ta_primary.rsi < 38)
+                )
+                if not has_setup:
+                    await self._save_skipped_signal(asset, {"timeframe": "intraday", "direction": "skip"}, ta_primary, None)
                     continue
 
                 price = candles_15m[-1].close if candles_15m else (candles_1h_data[-1].close if candles_1h_data else None)

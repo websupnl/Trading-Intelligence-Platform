@@ -42,14 +42,14 @@ celery_app.conf.update(
         },
 
         # === AI ANALYSIS (Claude) ===
-        # Faster: every 2 min so fresh news gets analyzed quickly
-        "analyze-content-every-2min": {
+        # 1x per uur max — budget cap in ai_guard voorkomt onbeperkte calls
+        "analyze-content-every-hour": {
             "task": "app.tasks.analysis_tasks.analyze_news",
-            "schedule": 120.0,
+            "schedule": 3600.0,
         },
-        "detect-rumours-every-15min": {
+        "detect-rumours-every-6h": {
             "task": "app.tasks.analysis_tasks.detect_rumours",
-            "schedule": 900.0,
+            "schedule": 21600.0,
         },
 
         # === MARKET DATA ===
@@ -92,15 +92,9 @@ celery_app.conf.update(
             "schedule": 120.0,
         },
 
-        # === MICRO TRADING (rule-based, no AI) ===
-        "micro-trader-every-20sec": {
-            "task": "app.tasks.analysis_tasks.run_micro_trader",
-            "schedule": 20.0,
-        },
-        "micro-monitor-every-10sec": {
-            "task": "app.tasks.analysis_tasks.run_micro_monitor",
-            "schedule": 10.0,
-        },
+        # === MICRO TRADING — disabled (break-even at €1000, not worth it) ===
+        # "micro-trader-every-20sec": { ... }  # disabled
+        # "micro-monitor-every-10sec": { ... } # disabled
 
         # === MARKET REGIME ===
         "refresh-regime-every-hour": {

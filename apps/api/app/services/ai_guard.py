@@ -2,8 +2,10 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
+from sqlalchemy import select, func
 from app.database import AsyncSessionLocal
 from app.models.audit import AuditLog
+from app.models.token_usage import TokenUsage
 from app.services.notifications import NotificationService
 from app.services.runtime_state import get_runtime_value, set_runtime_value
 
@@ -12,6 +14,9 @@ logger = logging.getLogger(__name__)
 PAUSE_KEY = "anthropic_disabled_until"
 REASON_KEY = "anthropic_disabled_reason"
 LAST_ALERT_KEY = "anthropic_last_alert_at"
+
+# Hard daily AI budget — auto-pause when exceeded
+DAILY_BUDGET_USD = 2.00  # ~€1.85/dag max
 
 
 def _now() -> datetime:
@@ -42,6 +47,37 @@ def ai_pause_status() -> dict:
 
 def is_ai_paused() -> bool:
     return bool(ai_pause_status()["paused"])
+
+
+async def get_daily_spend_usd() -> float:
+    """Return total AI spend in USD since midnight UTC."""
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(func.sum(TokenUsage.estimated_cost_usd))
+                .where(TokenUsage.created_at >= today)
+            )
+            return float(result.scalar() or 0)
+    except Exception:
+        return 0.0
+
+
+async def check_daily_budget() -> bool:
+    """Returns True als we nog budget hebben. Auto-pauzeert als budget overschreden."""
+    if is_ai_paused():
+        return False
+    spent = await get_daily_spend_usd()
+    if spent >= DAILY_BUDGET_USD:
+        reason = f"Dagelijks AI-budget van ${DAILY_BUDGET_USD:.2f} bereikt (uitgegeven: ${spent:.2f}). Reset om middernacht UTC."
+        logger.warning("Daily AI budget exceeded: $%.4f / $%.2f", spent, DAILY_BUDGET_USD)
+        # Pause until midnight UTC
+        now = datetime.now(timezone.utc)
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        minutes_until_midnight = int((midnight - now).total_seconds() / 60)
+        await _set_ai_pause("budget_guard", reason, midnight, minutes_until_midnight, status="skipped", notify=True)
+        return False
+    return True
 
 
 def is_ai_failure(exc: Exception) -> bool:
