@@ -14,6 +14,7 @@ celery_app = Celery(
         "app.tasks.social_tasks",
         "app.tasks.analysis_tasks",
         "app.tasks.telegram_tasks",
+        "app.tasks.gok_tasks",
     ],
 )
 
@@ -122,6 +123,10 @@ celery_app.conf.update(
         "monitor-telegram-channels-every-30min": {
             "task": "app.tasks.telegram_tasks.monitor_telegram_channels",
             "schedule": 1800.0,
+        },
+        "gok-scan-every-60s": {
+            "task": "app.tasks.gok_tasks.scan_gok_opportunities",
+            "schedule": 60.0,
         },
     },
 )

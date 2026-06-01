@@ -135,11 +135,19 @@ export const api = {
   startCryptoSession: (data: any) => apiFetch('/api/crypto-session/start', { method: 'POST', body: JSON.stringify(data) }),
   stopCryptoSession: () => apiFetch('/api/crypto-session/stop', { method: 'POST' }),
 
-  // ── Gok Sessie ───────────────────────────────────────────────────────────
+  // ── Gok Modus (nieuw systeem) ────────────────────────────────────────────
   getGokStatus: () => apiFetch('/api/gok/status'),
-  scanGokOpportunity: (budget: number) => apiFetch(`/api/gok/scan?budget=${budget}`),
-  executeGok: (data: { asset: string; budget_eur: number; price: number }) =>
-    apiFetch('/api/gok/execute', { method: 'POST', body: JSON.stringify(data) }),
+  getGokStrategies: () => apiFetch('/api/gok/strategies'),
+  scanGok: (strategy: string, budget: number) => apiFetch(`/api/gok/scan?strategy=${encodeURIComponent(strategy)}&budget=${budget}`),
+  executeGok: (data: Record<string, unknown>) => apiFetch('/api/gok/execute', { method: 'POST', body: JSON.stringify(data) }),
+  closeGokPosition: (positionId: string) => apiFetch(`/api/gok/close/${positionId}`, { method: 'POST' }),
+  getGokPositions: () => apiFetch('/api/gok/positions'),
+  getGokHistory: (limit = 50) => apiFetch(`/api/gok/history?limit=${limit}`),
+  getGokStats: () => apiFetch('/api/gok/stats'),
+  runGokBacktest: (strategy: string, lookbackDays: number) => apiFetch('/api/gok/backtest', {
+    method: 'POST',
+    body: JSON.stringify({ strategy, lookback_days: lookbackDays }),
+  }),
 
   // ── Chat (SSE) ───────────────────────────────────────────────────────────
   chatStream: async (messages: {role: string; content: string}[], context?: string): Promise<Response> => {

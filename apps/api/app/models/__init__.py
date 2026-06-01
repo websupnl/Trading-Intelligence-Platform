@@ -20,6 +20,7 @@ from app.models.rules import PendingRule, ActiveRule
 from app.models.outcomes import SignalOutcome
 from app.models.notifications import Notification
 from app.models.token_usage import TokenUsage
+from app.models.gok import GokStrategy, GokSession, GokPosition, GokScoreEvent
 
 __all__ = [
     "TimestampMixin", "Asset", "Candle", "NewsItem", "SocialPost",
@@ -28,4 +29,5 @@ __all__ = [
     "SourceCredibility", "StrategyPerformance", "Setting",
     "PendingRule", "ActiveRule", "SignalOutcome", "Notification",
     "TokenUsage",
+    "GokStrategy", "GokSession", "GokPosition", "GokScoreEvent",
 ]
