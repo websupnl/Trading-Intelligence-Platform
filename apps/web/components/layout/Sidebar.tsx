@@ -5,22 +5,23 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, Zap, Dice5, Rss,
-  Brain, MonitorPlay, Settings, LogOut, MoreHorizontal, X, Activity, Eye,
+  Brain, MonitorPlay, Settings, LogOut, MoreHorizontal, X, Activity, Eye, ScrollText,
 } from 'lucide-react';
 import { api, clearPin } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 
 const nav = [
-  { href: '/',          label: 'Dashboard',    icon: LayoutDashboard },
-  { href: '/posities',  label: 'Posities',     icon: TrendingUp },
-  { href: '/signals',   label: 'Signalen',     icon: Zap },
-  { href: '/gok',       label: 'Gok',          icon: Dice5 },
-  { href: '/oracle',    label: 'Oracle',       icon: Eye },
-  { href: '/feed',      label: 'Feed',         icon: Rss },
-  { href: '/regime',    label: 'Regime',       icon: Activity },
-  { href: '/ai',        label: 'AI Brein',     icon: Brain },
-  { href: '/live',      label: 'Live',         icon: MonitorPlay },
-  { href: '/settings',  label: 'Instellingen', icon: Settings },
+  { href: '/',              label: 'Dashboard',    icon: LayoutDashboard },
+  { href: '/posities',      label: 'Posities',     icon: TrendingUp },
+  { href: '/signals',       label: 'Signalen',     icon: Zap },
+  { href: '/gok',           label: 'Gok',          icon: Dice5 },
+  { href: '/oracle',        label: 'Oracle',       icon: Eye },
+  { href: '/feed',          label: 'Feed',         icon: Rss },
+  { href: '/regime',        label: 'Regime',       icon: Activity },
+  { href: '/activity-log',  label: 'Logs',         icon: ScrollText },
+  { href: '/ai',            label: 'AI Brein',     icon: Brain },
+  { href: '/live',          label: 'Live',         icon: MonitorPlay },
+  { href: '/settings',      label: 'Instellingen', icon: Settings },
 ];
 
 // Bottom nav: 5 primary + "Meer" button
@@ -34,11 +35,12 @@ const mobileNav = [
 
 // Extra items in "Meer" drawer
 const moreNav = [
-  { href: '/feed',     label: 'Feed',         icon: Rss },
-  { href: '/regime',   label: 'Regime',       icon: Activity },
-  { href: '/ai',       label: 'AI Brein',     icon: Brain },
-  { href: '/live',     label: 'Live',         icon: MonitorPlay },
-  { href: '/settings', label: 'Instellingen', icon: Settings },
+  { href: '/feed',          label: 'Feed',         icon: Rss },
+  { href: '/regime',        label: 'Regime',       icon: Activity },
+  { href: '/activity-log',  label: 'Logs',         icon: ScrollText },
+  { href: '/ai',            label: 'AI Brein',     icon: Brain },
+  { href: '/live',          label: 'Live',         icon: MonitorPlay },
+  { href: '/settings',      label: 'Instellingen', icon: Settings },
 ];
 
 export function Sidebar() {

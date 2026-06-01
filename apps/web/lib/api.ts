@@ -122,6 +122,10 @@ export const api = {
   refreshRegime: () => apiFetch('/api/v1/regime/refresh', { method: 'POST' }),
   getRegimeHistory: (limit = 30) => apiFetch(`/api/v1/regime/history?limit=${limit}`),
 
+  // ── System logs ──────────────────────────────────────────────────────────
+  getSystemActivity: (limit = 100) => apiFetch(`/api/system/activity?limit=${limit}`),
+  getSystemErrors: (limit = 100) => apiFetch(`/api/system/errors?limit=${limit}`),
+
   // ── Oracle Morning Brief ─────────────────────────────────────────────────
   getOracleBrief: () => apiFetch('/api/system/oracle/brief'),
   getOracleHistory: (limit = 7) => apiFetch(`/api/system/oracle/history?limit=${limit}`),
