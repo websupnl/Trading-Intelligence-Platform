@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, Zap, Dice5, Rss,
-  Brain, MonitorPlay, Settings, LogOut, MoreHorizontal, X,
+  Brain, MonitorPlay, Settings, LogOut, MoreHorizontal, X, Activity,
 } from 'lucide-react';
 import { api, clearPin } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
@@ -16,6 +16,7 @@ const nav = [
   { href: '/signals',   label: 'Signalen',     icon: Zap },
   { href: '/gok',       label: 'Gok',          icon: Dice5 },
   { href: '/feed',      label: 'Feed',         icon: Rss },
+  { href: '/regime',    label: 'Regime',       icon: Activity },
   { href: '/ai',        label: 'AI Brein',     icon: Brain },
   { href: '/live',      label: 'Live',         icon: MonitorPlay },
   { href: '/settings',  label: 'Instellingen', icon: Settings },
@@ -32,6 +33,7 @@ const mobileNav = [
 
 // Extra items in "Meer" drawer
 const moreNav = [
+  { href: '/regime',   label: 'Regime',       icon: Activity },
   { href: '/ai',       label: 'AI Brein',     icon: Brain },
   { href: '/live',     label: 'Live',         icon: MonitorPlay },
   { href: '/settings', label: 'Instellingen', icon: Settings },

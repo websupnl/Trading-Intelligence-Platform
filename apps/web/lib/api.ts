@@ -118,6 +118,9 @@ export const api = {
 
   // ── AI Usage ────────────────────────────────────────────────────────────
   getAiUsage: () => apiFetch('/api/ai/usage'),
+  getRegime: () => apiFetch('/api/v1/regime/current'),
+  refreshRegime: () => apiFetch('/api/v1/regime/refresh', { method: 'POST' }),
+  getRegimeHistory: (limit = 30) => apiFetch(`/api/v1/regime/history?limit=${limit}`),
 
   // ── Bot health ──────────────────────────────────────────────────────────
   getBotHealth: () => apiFetch('/api/health/bot'),
