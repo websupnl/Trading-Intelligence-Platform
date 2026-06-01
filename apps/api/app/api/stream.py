@@ -1,6 +1,6 @@
 """
 Real-time SSE stream for the Live Session page.
-Pushes: prices, signals, AI activity, portfolio, pipeline status.
+Pushes: prices, signals, AI activity, portfolio, positions, regime, pipeline status.
 """
 import asyncio
 import json
@@ -138,6 +138,35 @@ async def _get_recent_activity(since_seconds: int = 30, limit: int = 10) -> list
         return []
 
 
+async def _get_open_positions_alpaca() -> list:
+    """Fetch open positions from Alpaca REST API."""
+    from app.config import get_settings
+    s = get_settings()
+    if not s.alpaca_configured:
+        return []
+    try:
+        import httpx
+        headers = {
+            "APCA-API-KEY-ID": s.alpaca_api_key,
+            "APCA-API-SECRET-KEY": s.alpaca_secret_key,
+        }
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{s.alpaca_base_url}/v2/positions", headers=headers)
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception:
+        pass
+    return []
+
+
+async def _get_market_regime() -> str:
+    try:
+        from app.services.market_regime import detect_regime
+        return await detect_regime("BTC", "1Day", 50)
+    except Exception:
+        return "unknown"
+
+
 async def _get_alpaca_snapshot() -> dict | None:
     """Quick Alpaca account snapshot."""
     if not settings.alpaca_configured:
@@ -187,6 +216,14 @@ async def session_stream(symbols: list[str]) -> AsyncGenerator[str, None]:
     if portfolio:
         yield _event("portfolio", portfolio)
 
+    # Initial positions
+    positions = await _get_open_positions_alpaca()
+    yield _event("positions", {"positions": positions})
+
+    # Initial market regime
+    regime = await _get_market_regime()
+    yield _event("regime", {"regime": regime})
+
     # Heartbeat + rolling updates
     tick = 0
     last_signal_ids = {s["id"] for s in signals}
@@ -218,11 +255,13 @@ async def session_stream(symbols: list[str]) -> AsyncGenerator[str, None]:
                 if activity:
                     yield _event("activity_batch", {"events": activity})
 
-            # Every 8 ticks (~32s): portfolio update
+            # Every 8 ticks (~32s): portfolio update + positions
             if tick % 8 == 0:
                 portfolio = await _get_alpaca_snapshot()
                 if portfolio:
                     yield _event("portfolio", portfolio)
+                positions = await _get_open_positions_alpaca()
+                yield _event("positions", {"positions": positions})
 
             # Every 15 ticks (~60s): refresh sparkline candles for all symbols
             if tick % 15 == 0:
@@ -231,6 +270,11 @@ async def session_stream(symbols: list[str]) -> AsyncGenerator[str, None]:
                     if candles:
                         yield _event("chart_data", {"symbol": sym, "candles": candles})
                     await asyncio.sleep(0.05)
+
+            # Every 30 ticks (~120s): market regime
+            if tick % 30 == 0:
+                regime = await _get_market_regime()
+                yield _event("regime", {"regime": regime})
 
             # Heartbeat
             yield _event("heartbeat", {"tick": tick})
