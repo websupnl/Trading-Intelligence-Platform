@@ -143,12 +143,20 @@ button, a, [role="button"] {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }
 
-/* Bottom nav height + safe area */
+/* Bottom nav: height + safe area for iPhone home indicator */
 .bottom-nav {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Top safe area (status bar in standalone/PWA mode) */
+/* Chat FAB: always above bottom nav + safe area */
+.chat-float-pos {
+  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.5rem);
+}
+@media (min-width: 768px) {
+  .chat-float-pos { bottom: 1.5rem; }
+}
+
+/* Top safe area — apply to body wrapper, NOT to the header element */
 .pt-safe {
   padding-top: env(safe-area-inset-top, 0px);
 }

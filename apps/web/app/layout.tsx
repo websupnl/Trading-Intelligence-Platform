@@ -34,7 +34,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="nl">
-      <body className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
+      <body className="flex flex-col h-screen overflow-hidden bg-background text-foreground pt-safe">
         <PinGate>
           <ToastProvider>
             <TopBar />

@@ -65,7 +65,7 @@ export function TopBar() {
   }
 
   return (
-    <header className="h-12 border-b border-border bg-card/95 backdrop-blur-sm flex items-center px-4 gap-3 shrink-0 z-40 pt-safe">
+    <header className="h-12 border-b border-border bg-card/95 backdrop-blur-sm flex items-center px-4 gap-3 shrink-0 z-40">
 
       {/* ── Mobile ────────────────────────────────────────────────────────── */}
       <div className="flex md:hidden items-center gap-3 w-full">
