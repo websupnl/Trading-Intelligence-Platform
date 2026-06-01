@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.logging_config import setup_logging
 from app.api import health, config, trading, risk, news, social, rumours, signals, memory, audit, outcomes, notifications
 from app.api import settings as settings_router, chat, pipeline, stream, ai_usage, system, crypto_session
+from app.api import regime
 from app.gok.router import router as gok_router
 from app.services.audit import AuditLogService
 from app.services.settings_store import hydrate_runtime_settings
@@ -105,4 +106,5 @@ app.include_router(stream.router)
 app.include_router(ai_usage.router)
 app.include_router(system.router)
 app.include_router(crypto_session.router)
+app.include_router(regime.router)
 app.include_router(gok_router)

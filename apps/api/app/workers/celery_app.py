@@ -101,6 +101,10 @@ celery_app.conf.update(
             "task": "app.tasks.analysis_tasks.refresh_market_regime",
             "schedule": 3600.0,
         },
+        "refresh-oracle-regime-daily": {
+            "task": "app.tasks.analysis_tasks.refresh_oracle_regime",
+            "schedule": crontab(hour=6, minute=0),
+        },
 
         # Daily summary at 21:30 UTC (after US market close at ~21:00 UTC)
         "daily-summary-after-close": {

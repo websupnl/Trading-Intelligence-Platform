@@ -305,6 +305,19 @@ def refresh_market_regime():
         return {"status": "error", "message": str(e)}
 
 
+@celery_app.task(name="app.tasks.analysis_tasks.refresh_oracle_regime")
+def refresh_oracle_regime():
+    """Refresh Oracle's high-level risk regime and persist a regime_states row."""
+    from app.services.regime_detector import detect_oracle_regime
+    try:
+        state = asyncio.run(detect_oracle_regime(persist=True))
+        logger.info("Oracle regime bijgewerkt: %s", state.get("regime"))
+        return {"status": "ok", "regime": state.get("regime"), "confidence": state.get("confidence")}
+    except Exception as e:
+        logger.error(f"Oracle regime refresh fout: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @celery_app.task(name="app.tasks.analysis_tasks.send_activity_summary")
 def send_activity_summary(hours: int = 24):
     """Send daily P&L + actions summary. Focused on results, not noise."""
