@@ -9,6 +9,7 @@ from app.models.memory import MemoryEntry
 from app.models.notifications import Notification
 from app.models.signals import Signal
 from app.models.trades import Trade
+from app.models.memory import MemoryEntry
 from app.services.ai_guard import ai_pause_status, manual_pause_ai, resume_ai
 from app.services.notifications import NotificationService
 
@@ -204,6 +205,72 @@ async def reset_trade_data(db: AsyncSession = Depends(get_db)):
     ))
     await db.commit()
     return {"status": "ok", "deleted": deleted}
+
+
+@router.get("/oracle/brief")
+async def get_oracle_brief(db: AsyncSession = Depends(get_db)):
+    """Haal de meest recente Oracle Morning Brief op."""
+    import json
+    result = await db.execute(
+        select(MemoryEntry)
+        .where(MemoryEntry.memory_type == "oracle_morning_brief")
+        .order_by(desc(MemoryEntry.created_at))
+        .limit(1)
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        return {"brief": None, "message": "Nog geen morning brief beschikbaar"}
+    try:
+        data = json.loads(entry.content)
+    except Exception:
+        data = {"brief_text": entry.content}
+    data["generated_at"] = entry.created_at.isoformat() if entry.created_at else None
+    return {"brief": data}
+
+
+@router.get("/oracle/history")
+async def get_oracle_history(limit: int = Query(7, ge=1, le=30), db: AsyncSession = Depends(get_db)):
+    """Haal Oracle brief geschiedenis op."""
+    import json
+    result = await db.execute(
+        select(MemoryEntry)
+        .where(MemoryEntry.memory_type.in_(["oracle_morning_brief", "oracle_eod_review"]))
+        .order_by(desc(MemoryEntry.created_at))
+        .limit(limit)
+    )
+    entries = result.scalars().all()
+    out = []
+    for e in entries:
+        try:
+            data = json.loads(e.content)
+        except Exception:
+            data = {}
+        out.append({
+            "id": e.id,
+            "type": e.memory_type,
+            "title": e.title,
+            "mood": data.get("mood"),
+            "regime": data.get("regime"),
+            "risk_budget_pct": data.get("risk_budget_pct"),
+            "dag_rating": data.get("dag_rating"),
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        })
+    return {"history": out}
+
+
+@router.post("/oracle/brief/run")
+async def run_oracle_brief_now():
+    """Trigger een Oracle Morning Brief nu (handmatig)."""
+    import asyncio
+    from app.services.oracle_brain import OracleBrainService
+    svc = OracleBrainService()
+    brief = await svc.generate_morning_brief()
+    if brief.get("error"):
+        return {"status": "error", "message": brief["error"]}
+    from app.tasks.oracle_tasks import _write_oracle_md
+    md = OracleBrainService.brief_to_markdown(brief, brief_type="morning")
+    _write_oracle_md(md)
+    return {"status": "ok", "mood": brief.get("mood"), "regime": brief.get("regime")}
 
 
 @router.get("/summary")
