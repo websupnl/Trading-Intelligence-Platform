@@ -70,6 +70,14 @@ TASK_REGISTRY = {
         "schedule_label": "Elke 15 min",
         "category": "trading",
     },
+    "generate_scalp_signals": {
+        "name": "app.tasks.signal_tasks.generate_scalp_signals",
+        "label": "Scalp Signaal Generator",
+        "description": "Snelle 15min/1H intraday signalen op basis van TA-patronen",
+        "schedule_sec": 300,
+        "schedule_label": "Elke 5 min",
+        "category": "trading",
+    },
     "auto_trade": {
         "name": "app.tasks.analysis_tasks.auto_trade",
         "label": "Auto Trader",

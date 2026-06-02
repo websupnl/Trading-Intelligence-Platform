@@ -388,19 +388,25 @@ class SignalGeneratorService:
                 if lessons:
                     ta_summary += f"\n\n🧠 Geheugen {asset}:\n" + "\n".join(f"  {l}" for l in lessons)
 
-                # Candle freshness guard: skip if best available candle is too stale
-                freshness_limit = timedelta(minutes=30) if is_crypto(asset) else timedelta(minutes=90)
+                # Candle freshness guard: use freshest timeframe for the check.
+                # 4H is preferred over 1D because 1D candles are always hours old by midday.
                 latest_candle_time = None
-                if candles:
-                    latest_candle_time = candles[-1].timestamp if hasattr(candles[-1], "timestamp") else None
-                if not latest_candle_time and candles_4h:
-                    latest_candle_time = candles_4h[-1].timestamp if hasattr(candles_4h[-1], "timestamp") else None
+                if candles_4h:
+                    # 4H candles: expect one within the last ~4.5h
+                    check_ts = candles_4h[-1].timestamp if hasattr(candles_4h[-1], "timestamp") else None
+                    freshness_limit = timedelta(hours=5)
+                    latest_candle_time = check_ts
+                elif candles:
+                    # 1D candles: always stamped at midnight; allow up to 26h
+                    check_ts = candles[-1].timestamp if hasattr(candles[-1], "timestamp") else None
+                    freshness_limit = timedelta(hours=26)
+                    latest_candle_time = check_ts
                 if latest_candle_time:
-                    candle_age = datetime.now(timezone.utc) - latest_candle_time.replace(tzinfo=timezone.utc) if latest_candle_time.tzinfo is None else datetime.now(timezone.utc) - latest_candle_time
+                    candle_age = datetime.now(timezone.utc) - (latest_candle_time.replace(tzinfo=timezone.utc) if latest_candle_time.tzinfo is None else latest_candle_time)
                     if candle_age > freshness_limit:
                         await self._log_signal_skip(
                             asset,
-                            f"Candle te oud ({candle_age.seconds // 60}min) — signaal overgeslagen",
+                            f"Candle te oud ({int(candle_age.total_seconds() // 60)}min, limiet {int(freshness_limit.total_seconds() // 60)}min) — signaal overgeslagen",
                             {"direction": "skip", "confidence": 0, "reason": "stale_candle"},
                             data,
                             ta_result,
