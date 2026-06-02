@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useApi } from '@/hooks/useApi';
 import { api } from '@/lib/api';
@@ -37,7 +37,21 @@ export function TopBar() {
   const { data: botHealth, reload: reloadBotHealth } = useApi(
     () => api.getBotHealth(), [], { pollIntervalMs: 10000 }
   );
+  const { data: aiUsage } = useApi(() => api.getAiUsage(), [], { pollIntervalMs: 60000 });
+  const { data: settings } = useApi(() => api.getSettings(), []);
   const [aiBusy, setAiBusy] = useState(false);
+  const [clock, setClock] = useState('');
+  useEffect(() => {
+    const tick = () => setClock(new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const aiSpent: number = (aiUsage as any)?.today_usd ?? 0;
+  const aiBudget: number = (settings as any)?.ai_daily_budget_usd ?? 0;
+  const aiPct = aiBudget > 0 ? Math.min(100, (aiSpent / aiBudget) * 100) : 0;
+  const aiTone = aiPct > 90 ? '#f6465d' : aiPct > 70 ? '#f0b90b' : '#2ebd85';
 
   const killSwitch = (risk as any)?.kill_switch_enabled;
   const liveEnabled = (risk as any)?.live_trading_enabled;
@@ -94,6 +108,7 @@ export function TopBar() {
             Crypto
           </span>
         )}
+        <span className="font-num text-[10px] tabular-nums shrink-0" style={{ color: aiTone }} title="AI vandaag">${aiSpent.toFixed(2)}</span>
 
         <button
           onClick={handleAiToggle}
@@ -124,6 +139,11 @@ export function TopBar() {
         />
         {killSwitch && <StatusPill label="🛑 KILL SWITCH" ok={false} />}
         {aiPaused && <StatusPill label="AI GEPAUZEERD" ok={false} />}
+        <span className="hidden md:inline-flex items-center gap-1 rounded border border-border bg-secondary px-2 py-0.5" title="AI-uitgaven vandaag">
+          <Brain size={11} className="text-muted-foreground" />
+          <span className="font-num text-xs font-medium" style={{ color: aiTone }}>${aiSpent.toFixed(2)}</span>
+          {aiBudget > 0 && <span className="font-num text-[10px] text-muted-foreground">/${aiBudget.toFixed(0)}</span>}
+        </span>
 
         <div className="flex-1" />
 
@@ -147,6 +167,7 @@ export function TopBar() {
           <Brain     size={12} className={aiOk      ? 'text-green-400' : ''} title="Claude AI" />
           <Shield    size={12} className={killSwitch ? 'text-red-400' : 'text-green-400'} title="Kill switch" />
         </div>
+        <span className="hidden lg:inline font-num text-xs text-muted-foreground tabular-nums ml-1">{clock}</span>
       </div>
     </header>
   );

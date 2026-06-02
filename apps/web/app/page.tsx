@@ -6,6 +6,7 @@ import { useToast } from '@/contexts/toast';
 import { fmtUSD, cleanSym } from '@/lib/utils';
 import Link from 'next/link';
 import { TrendingUp, TrendingDown, Dice5, Shield, Activity, Zap, ChevronRight, Power } from 'lucide-react';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 // Shared exchange palette (matches /live)
 const C = {
@@ -57,6 +58,7 @@ export default function DashboardPage() {
   const statusColor = botActive ? C.up : killSwitch ? C.down : C.gold;
   const statusLabel = botActive ? 'Bot actief' : killSwitch ? 'Kill switch' : 'Gepauzeerd';
   const up = dayPnl >= 0;
+  const loading = account === undefined;
 
   return (
     <div className="mx-auto max-w-2xl space-y-3">
@@ -65,7 +67,9 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between">
           <div>
             <span className="text-[11px] uppercase tracking-wider" style={{ color: C.sub }}>Portfolio</span>
-            <div className="mt-1 font-num text-[34px] font-bold leading-none" style={{ color: C.text }}>{fmtUSD(equity)}</div>
+            <div className="mt-1 font-num text-[34px] font-bold leading-none" style={{ color: C.text }}>
+              {loading ? <Skeleton style={{ height: 36, width: 170 }} /> : fmtUSD(equity)}
+            </div>
             <div className="mt-2 flex items-center gap-1.5">
               {up ? <TrendingUp size={14} style={{ color: C.up }} /> : <TrendingDown size={14} style={{ color: C.down }} />}
               <span className="font-num text-sm font-semibold" style={{ color: up ? C.up : C.down }}>
@@ -83,13 +87,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric grid */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-2 animate-in">
+        {loading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={`s${i}`} style={{ height: 62 }} />)}
+        {!loading && (<>
         <Metric label="Open P&L" value={fmtUSD(unrealizedTotal)} tone={unrealizedTotal > 0 ? C.up : unrealizedTotal < 0 ? C.down : C.text} href="/posities" />
         <Metric label="All-time" value={fmtUSD(totalPnl)} tone={totalPnl > 0 ? C.up : totalPnl < 0 ? C.down : C.text} />
         <Metric label="Win rate" value={winRate != null ? `${(winRate * 100).toFixed(0)}%` : '—'} tone={C.text} />
         <Metric label="Posities" value={String(openPositions.length)} tone={C.text} href="/posities" />
         <Metric label="Signalen" value={String(pendingSignals.length)} tone={pendingSignals.length ? C.gold : C.sub} href="/signals" />
         <Metric label="AI ROI" value={roi != null ? `${roi.toFixed(1)}×` : '—'} sub={`$${aiSpend.toFixed(2)}`} tone={roi != null && roi > 1 ? C.up : C.sub} />
+        </>)}
       </div>
 
       {/* Actions */}
