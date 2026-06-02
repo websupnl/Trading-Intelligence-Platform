@@ -30,7 +30,7 @@ function Toggle({
         disabled={loading}
         className={cn(
           'relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50',
-          value ? (danger ? 'bg-red-500' : 'bg-green-500') : 'bg-muted'
+          value ? (danger ? 'bg-[#f6465d]' : 'bg-[#2ebd85]') : 'bg-muted'
         )}
       >
         <span className={cn(
@@ -96,7 +96,7 @@ function NumericField({
             autoFocus
           />
           {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
-          <button onClick={save} disabled={loading} className="text-xs text-green-400 hover:text-green-300 px-1">✓</button>
+          <button onClick={save} disabled={loading} className="text-xs text-[#2ebd85] hover:opacity-80 px-1">✓</button>
           <button onClick={cancel} className="text-xs text-muted-foreground hover:text-foreground px-1">✕</button>
         </div>
       ) : (

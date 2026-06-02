@@ -10,36 +10,37 @@ import {
 import { api, clearPin } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 
+// Core screens first (redesigned), dan secundair, dan instellingen.
 const nav = [
   { href: '/',              label: 'Dashboard',    icon: LayoutDashboard },
-  { href: '/posities',      label: 'Posities',     icon: TrendingUp },
+  { href: '/live',          label: 'Live',         icon: MonitorPlay },
   { href: '/signals',       label: 'Signalen',     icon: Zap },
+  { href: '/posities',      label: 'Posities',     icon: TrendingUp },
   { href: '/gok',           label: 'Gok',          icon: Dice5 },
   { href: '/oracle',        label: 'Oracle',       icon: Eye },
+  { href: '/ai',            label: 'AI Brein',     icon: Brain },
   { href: '/feed',          label: 'Feed',         icon: Rss },
   { href: '/regime',        label: 'Regime',       icon: Activity },
   { href: '/activity-log',  label: 'Logs',         icon: ScrollText },
-  { href: '/ai',            label: 'AI Brein',     icon: Brain },
-  { href: '/live',          label: 'Live',         icon: MonitorPlay },
   { href: '/settings',      label: 'Instellingen', icon: Settings },
 ];
 
-// Bottom nav: 5 primary + "Meer" button
+// Mobiele onderbalk: de 4 kernschermen + "Meer".
 const mobileNav = [
   { href: '/',         label: 'Home',     icon: LayoutDashboard },
-  { href: '/posities', label: 'Posities', icon: TrendingUp },
+  { href: '/live',     label: 'Live',     icon: MonitorPlay },
   { href: '/signals',  label: 'Signalen', icon: Zap },
-  { href: '/oracle',   label: 'Oracle',   icon: Eye },
-  { href: '/gok',      label: 'Gok',      icon: Dice5 },
+  { href: '/posities', label: 'Posities', icon: TrendingUp },
 ];
 
-// Extra items in "Meer" drawer
+// Rest in de "Meer"-drawer.
 const moreNav = [
+  { href: '/gok',           label: 'Gok',          icon: Dice5 },
+  { href: '/oracle',        label: 'Oracle',       icon: Eye },
+  { href: '/ai',            label: 'AI Brein',     icon: Brain },
   { href: '/feed',          label: 'Feed',         icon: Rss },
   { href: '/regime',        label: 'Regime',       icon: Activity },
   { href: '/activity-log',  label: 'Logs',         icon: ScrollText },
-  { href: '/ai',            label: 'AI Brein',     icon: Brain },
-  { href: '/live',          label: 'Live',         icon: MonitorPlay },
   { href: '/settings',      label: 'Instellingen', icon: Settings },
 ];
 
