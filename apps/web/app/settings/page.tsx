@@ -10,13 +10,14 @@ import { LoadingSpinner } from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 
 function Toggle({
-  label, value, description, onToggle, loading
+  label, value, description, onToggle, loading, danger
 }: {
   label: string;
   value: boolean;
   description?: string;
   onToggle: () => void;
   loading?: boolean;
+  danger?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between py-3 border-b border-border last:border-0">
@@ -29,7 +30,7 @@ function Toggle({
         disabled={loading}
         className={cn(
           'relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50',
-          value ? 'bg-green-500' : 'bg-muted'
+          value ? (danger ? 'bg-red-500' : 'bg-green-500') : 'bg-muted'
         )}
       >
         <span className={cn(
@@ -41,9 +42,79 @@ function Toggle({
   );
 }
 
+function NumericField({
+  label, value, description, onSave, loading, min, max, step, suffix, prefix
+}: {
+  label: string;
+  value: number;
+  description?: string;
+  onSave: (v: number) => void;
+  loading?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  suffix?: string;
+  prefix?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    setDraft(String(value));
+    setEditing(true);
+  }
+
+  function cancel() {
+    setEditing(false);
+  }
+
+  function save() {
+    const num = parseFloat(draft);
+    if (isNaN(num)) return;
+    onSave(num);
+    setEditing(false);
+  }
+
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-border last:border-0">
+      <div>
+        <p className="text-sm font-medium">{label}</p>
+        {description && <p className="text-xs text-muted-foreground">{description}</p>}
+      </div>
+      {editing ? (
+        <div className="flex items-center gap-1.5">
+          {prefix && <span className="text-xs text-muted-foreground">{prefix}</span>}
+          <input
+            type="number"
+            className="w-24 text-right text-sm bg-background border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
+            value={draft}
+            min={min}
+            max={max}
+            step={step ?? 1}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
+            autoFocus
+          />
+          {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
+          <button onClick={save} disabled={loading} className="text-xs text-green-400 hover:text-green-300 px-1">✓</button>
+          <button onClick={cancel} className="text-xs text-muted-foreground hover:text-foreground px-1">✕</button>
+        </div>
+      ) : (
+        <button
+          onClick={startEdit}
+          disabled={loading}
+          className="text-sm font-medium tabular-nums hover:text-primary transition-colors group flex items-center gap-1.5"
+        >
+          {prefix}{value != null ? value : '—'}{suffix && <span className="text-muted-foreground">{suffix}</span>}
+          <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100">✎</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: settings, loading, reload } = useApi(() => api.getSettings(), []);
-  const { data: risk } = useApi(() => api.getRiskStatus(), []);
   const [saving, setSaving] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const { toast } = useToast();
@@ -52,7 +123,7 @@ export default function SettingsPage() {
     if (!confirm('Weet je zeker dat je alle trade- en signaaldata wilt wissen? Dit kan niet ongedaan worden gemaakt.\n\nNews, candles en memory blijven bewaard.')) return;
     setResetting(true);
     try {
-      const result = await api.resetTradeData();
+      await api.resetTradeData();
       toast('✅ Trade data gewist — schone lei', 'success');
       reload();
     } catch (e: any) {
@@ -66,10 +137,23 @@ export default function SettingsPage() {
     setSaving(key);
     try {
       await api.updateRuntimeSettings({ [key]: !current });
-      toast(`✅ ${key.replace(/_/g, ' ')} bijgewerkt naar ${!current}`, 'success');
+      toast(`✅ ${key.replace(/_/g, ' ')} → ${!current}`, 'success');
       await reload();
     } catch (e: any) {
-      toast(`❌ ${e?.detail || 'Instelling opslaan mislukt'}`, 'error');
+      toast(`❌ ${e?.detail || 'Opslaan mislukt'}`, 'error');
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function saveNum(key: string, value: number) {
+    setSaving(key);
+    try {
+      await api.updateRuntimeSettings({ [key]: value });
+      toast(`✅ ${key.replace(/_/g, ' ')} → ${value}`, 'success');
+      await reload();
+    } catch (e: any) {
+      toast(`❌ ${e?.detail || 'Opslaan mislukt'}`, 'error');
     } finally {
       setSaving(null);
     }
@@ -97,6 +181,7 @@ export default function SettingsPage() {
 
       {settings && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
           {/* Trading veiligheid */}
           <Card>
             <CardHeader><CardTitle>⚙️ Trading Veiligheid</CardTitle></CardHeader>
@@ -107,6 +192,7 @@ export default function SettingsPage() {
                 description="Blokkeert alle orders direct"
                 onToggle={() => handleKillSwitch(!settings.kill_switch_enabled)}
                 loading={saving === 'kill_switch'}
+                danger
               />
               <Toggle
                 label="Live Trading"
@@ -114,6 +200,7 @@ export default function SettingsPage() {
                 description="Schakel live orders in (gevaarlijk!)"
                 onToggle={() => toggle('live_trading_enabled', settings.live_trading_enabled)}
                 loading={saving === 'live_trading_enabled'}
+                danger
               />
               <Toggle
                 label="Handmatige Bevestiging"
@@ -123,26 +210,143 @@ export default function SettingsPage() {
                 loading={saving === 'require_manual_confirmation'}
               />
               <Toggle
+                label="Crypto 24/7"
+                value={settings.crypto_24_7_enabled}
+                description="Handel ook buiten markturen in crypto"
+                onToggle={() => toggle('crypto_24_7_enabled', settings.crypto_24_7_enabled)}
+                loading={saving === 'crypto_24_7_enabled'}
+              />
+              <Toggle
                 label="Micro Trading"
                 value={settings.micro_trading_enabled}
-                description="Rule-based scalping op 15m candles (crypto, 24/7, geen AI)"
+                description="Rule-based scalping op 15m candles (geen AI)"
                 onToggle={() => toggle('micro_trading_enabled', settings.micro_trading_enabled)}
                 loading={saving === 'micro_trading_enabled'}
               />
-
+              <Toggle
+                label="Short Selling"
+                value={settings.allow_short_selling}
+                description="Sta verkoop-posities toe (standaard uit)"
+                onToggle={() => toggle('allow_short_selling', settings.allow_short_selling)}
+                loading={saving === 'allow_short_selling'}
+                danger
+              />
               <div className="mt-3 flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Trading Mode:</span>
                 <Badge variant={settings.trading_mode === 'paper' ? 'warning' : 'danger'}>
                   {settings.trading_mode}
                 </Badge>
               </div>
-
               {settings.runtime_overrides?.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Safety-instellingen actief: {settings.runtime_overrides.join(', ')}
-                  <br />Opgeslagen in de database en gedeeld met workers via Redis.
+                  Actieve overrides: {settings.runtime_overrides.join(', ')}
                 </p>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Risk limieten */}
+          <Card>
+            <CardHeader><CardTitle>🛡️ Risk Limieten</CardTitle></CardHeader>
+            <CardContent>
+              <NumericField
+                label="Positie grootte"
+                value={Math.round(settings.position_size_pct * 100)}
+                description="% van account equity per trade"
+                onSave={v => saveNum('position_size_pct', v / 100)}
+                loading={saving === 'position_size_pct'}
+                min={1} max={50} step={1} suffix="%"
+              />
+              <NumericField
+                label="Max positie (USD)"
+                value={settings.max_position_size_usd}
+                description="Maximaal bedrag per order"
+                onSave={v => saveNum('max_position_size_usd', v)}
+                loading={saving === 'max_position_size_usd'}
+                min={10} step={10} prefix="$"
+              />
+              <NumericField
+                label="Max dagverlies"
+                value={Math.round(settings.max_daily_loss_pct * 100)}
+                description="Circuit breaker bij dagverlies"
+                onSave={v => saveNum('max_daily_loss_pct', v / 100)}
+                loading={saving === 'max_daily_loss_pct'}
+                min={1} max={50} step={1} suffix="%"
+              />
+              <NumericField
+                label="Max open posities"
+                value={settings.max_open_positions}
+                description="Gelijktijdige posities"
+                onSave={v => saveNum('max_open_positions', v)}
+                loading={saving === 'max_open_positions'}
+                min={1} max={20} step={1}
+              />
+              <NumericField
+                label="Max trades/dag"
+                value={settings.max_trades_per_day}
+                description="Dagelijks handelslimiet"
+                onSave={v => saveNum('max_trades_per_day', v)}
+                loading={saving === 'max_trades_per_day'}
+                min={1} max={100} step={1}
+              />
+              <NumericField
+                label="Min. confidence (auto)"
+                value={Math.round(settings.min_confidence_for_auto * 100)}
+                description="Onder dit niveau → handmatig"
+                onSave={v => saveNum('min_confidence_for_auto', v / 100)}
+                loading={saving === 'min_confidence_for_auto'}
+                min={30} max={95} step={1} suffix="%"
+              />
+              <NumericField
+                label="Min. confidence (reject)"
+                value={Math.round(settings.manual_approval_threshold * 100)}
+                description="Onder dit niveau → geblokkeerd"
+                onSave={v => saveNum('manual_approval_threshold', v / 100)}
+                loading={saving === 'manual_approval_threshold'}
+                min={10} max={90} step={1} suffix="%"
+              />
+            </CardContent>
+          </Card>
+
+          {/* AI budget & model */}
+          <Card>
+            <CardHeader><CardTitle>🤖 AI Instellingen</CardTitle></CardHeader>
+            <CardContent>
+              <NumericField
+                label="Dagbudget AI"
+                value={settings.ai_daily_budget_usd}
+                description="Max AI-kosten per dag (0 = onbeperkt)"
+                onSave={v => saveNum('ai_daily_budget_usd', v)}
+                loading={saving === 'ai_daily_budget_usd'}
+                min={0} step={0.5} prefix="$"
+              />
+              <div className="flex justify-between text-sm py-3 border-b border-border">
+                <span className="text-muted-foreground">Signaal model</span>
+                <span className="font-medium truncate ml-4">{settings.anthropic_model}</span>
+              </div>
+              <div className="flex justify-between text-sm py-3 border-b border-border">
+                <span className="text-muted-foreground">Analyse model</span>
+                <span className="font-medium truncate ml-4">{settings.anthropic_analysis_model}</span>
+              </div>
+              <div className="flex justify-between text-sm py-3 border-b border-border">
+                <span className="text-muted-foreground">Max tokens</span>
+                <span className="font-medium">{settings.anthropic_max_tokens?.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm py-3 border-b border-border">
+                <span className="text-muted-foreground">Prompt caching</span>
+                <Badge variant={settings.anthropic_enable_prompt_caching ? 'success' : 'muted'}>
+                  {settings.anthropic_enable_prompt_caching ? 'Aan' : 'Uit'}
+                </Badge>
+              </div>
+              <div className="flex justify-between text-sm py-3">
+                <span className="text-muted-foreground">Web search</span>
+                <Badge variant={settings.anthropic_enable_web_search ? 'success' : 'muted'}>
+                  {settings.anthropic_enable_web_search ? 'Aan' : 'Uit'}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Model en API keys wijzigen: update env vars in Coolify en herstart.
+              </p>
             </CardContent>
           </Card>
 
@@ -164,65 +368,20 @@ export default function SettingsPage() {
                   <Badge variant={ok ? 'success' : 'muted'}>{ok ? 'Geconfigureerd' : 'Niet ingesteld'}</Badge>
                 </div>
               ))}
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm text-muted-foreground">AI Model</span>
-                <span className="text-sm font-medium">{settings.anthropic_model}</span>
+              <div className="flex justify-between py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground">Nieuws feeds</span>
+                <span className="text-sm">{settings.news_feed_count} feeds</span>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-sm text-muted-foreground">Crypto feeds</span>
+                <span className="text-sm">{settings.crypto_feed_count} feeds</span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
-                API keys aanpassen: update .env en herstart.
+                API keys instellen via env vars in Coolify.
               </p>
             </CardContent>
           </Card>
 
-          {/* Risk limieten */}
-          <Card>
-            <CardHeader><CardTitle>🛡️ Risk Limieten</CardTitle></CardHeader>
-            <CardContent>
-              {risk && (
-                <div className="space-y-2">
-                  {[
-                    ['Max Positiegrootte', `$${risk.max_position_size_usd?.toLocaleString()}`],
-                    ['Max Trades/Dag', String(risk.max_trades_per_day)],
-                    ['Max Open Posities', String(risk.max_open_positions)],
-                    ['Auto Trade Threshold', risk.auto_trade_threshold != null ? `${(risk.auto_trade_threshold * 100).toFixed(0)}% confidence` : `${(risk.min_confidence_for_auto * 100 || 60).toFixed(0)}% confidence`],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex justify-between text-sm border-b border-border last:border-0 py-2">
-                      <span className="text-muted-foreground">{label}</span>
-                      <span className="font-medium">{value}</span>
-                    </div>
-                  ))}
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Limieten aanpassen: update risk_engine.py of voeg SystemSettings DB toe.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* AI instellingen */}
-          <Card>
-            <CardHeader><CardTitle>🤖 AI Instellingen</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between border-b border-border py-2">
-                  <span className="text-muted-foreground">Provider</span>
-                  <span>{settings.default_ai_provider}</span>
-                </div>
-                <div className="flex justify-between border-b border-border py-2">
-                  <span className="text-muted-foreground">Model</span>
-                  <span>{settings.anthropic_model}</span>
-                </div>
-                <div className="flex justify-between border-b border-border py-2">
-                  <span className="text-muted-foreground">Nieuws Feeds</span>
-                  <span>{settings.news_feed_count} feeds</span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-muted-foreground">Crypto Feeds</span>
-                  <span>{settings.crypto_feed_count} feeds</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -246,7 +405,7 @@ export default function SettingsPage() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Reset ook je Alpaca paper account via <span className="font-mono">paper.alpaca.markets</span> → Account → Reset om open posities te sluiten.
+            Reset ook je Alpaca paper account via <span className="font-mono">paper.alpaca.markets</span> → Account → Reset.
           </p>
         </CardContent>
       </Card>

@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     max_daily_loss_pct: float = 0.10  # 10% daily loss triggers circuit breaker
     crypto_24_7_enabled: bool = True  # 24/7 crypto trading — persists across restarts
 
+    # Risk limits (overridable at runtime via Redis)
+    max_position_size_usd: float = 10000.0
+    max_open_positions: int = 4
+    max_trades_per_day: int = 30
+    min_confidence_for_auto: float = 0.55
+    manual_approval_threshold: float = 0.50
+
+    # AI budget guard (daily limit in USD — 0 = unlimited)
+    ai_daily_budget_usd: float = 2.00
+
     # Alpaca (US stocks + crypto fallback)
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
@@ -46,9 +56,6 @@ class Settings(BaseSettings):
 
     # CryptoPanic (free tier: 1000 req/day — cryptopanic.com)
     cryptopanic_api_key: str = ""
-
-    # AI budget guard (daily limit in USD — 0 = unlimited)
-    ai_daily_budget_usd: float = 0.0
 
     # Anthropic
     anthropic_api_key: str = ""

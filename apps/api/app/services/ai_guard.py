@@ -15,8 +15,12 @@ PAUSE_KEY = "anthropic_disabled_until"
 REASON_KEY = "anthropic_disabled_reason"
 LAST_ALERT_KEY = "anthropic_last_alert_at"
 
-# Hard daily AI budget — auto-pause when exceeded
-DAILY_BUDGET_USD = 2.00  # ~€1.85/dag max
+_DEFAULT_DAILY_BUDGET_USD = 2.00
+
+
+def _get_daily_budget() -> float:
+    from app.config import get_settings
+    return get_runtime_value("ai_daily_budget_usd", get_settings().ai_daily_budget_usd)
 
 
 def _now() -> datetime:
@@ -68,9 +72,10 @@ async def check_daily_budget() -> bool:
     if is_ai_paused():
         return False
     spent = await get_daily_spend_usd()
-    if spent >= DAILY_BUDGET_USD:
-        reason = f"Dagelijks AI-budget van ${DAILY_BUDGET_USD:.2f} bereikt (uitgegeven: ${spent:.2f}). Reset om middernacht UTC."
-        logger.warning("Daily AI budget exceeded: $%.4f / $%.2f", spent, DAILY_BUDGET_USD)
+    budget = _get_daily_budget()
+    if budget > 0 and spent >= budget:
+        reason = f"Dagelijks AI-budget van ${budget:.2f} bereikt (uitgegeven: ${spent:.2f}). Reset om middernacht UTC."
+        logger.warning("Daily AI budget exceeded: $%.4f / $%.2f", spent, budget)
         # Pause until midnight UTC
         now = datetime.now(timezone.utc)
         midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)

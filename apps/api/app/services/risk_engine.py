@@ -9,14 +9,6 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Risk limits
-MAX_DAILY_LOSS_PCT = 0.05
-MAX_POSITION_SIZE_USD = 10000.0
-MAX_OPEN_POSITIONS = 4
-MAX_TRADES_PER_DAY = 30
-MIN_CONFIDENCE_FOR_AUTO = 0.55
-MANUAL_APPROVAL_THRESHOLD = 0.5
-
 # Correlation clusters: max 2 simultaneous positions per cluster
 CORRELATION_CLUSTERS: dict[str, frozenset[str]] = {
     "crypto_majors":  frozenset({"BTC", "ETH", "SOL", "LTC", "BCH"}),
@@ -26,6 +18,26 @@ CORRELATION_CLUSTERS: dict[str, frozenset[str]] = {
     "tech_momentum":  frozenset({"NVDA", "AMD", "TSLA", "MSTR", "COIN", "PLTR"}),
 }
 MAX_PER_CLUSTER = 2
+
+
+# Risk limits read from Redis at call time — updatable without restart
+def _max_position_size_usd() -> float:
+    return float(get_runtime_value("max_position_size_usd", settings.max_position_size_usd))
+
+def _max_open_positions() -> int:
+    return int(get_runtime_value("max_open_positions", settings.max_open_positions))
+
+def _max_trades_per_day() -> int:
+    return int(get_runtime_value("max_trades_per_day", settings.max_trades_per_day))
+
+def _max_daily_loss_pct() -> float:
+    return float(get_runtime_value("max_daily_loss_pct", settings.max_daily_loss_pct))
+
+def _min_confidence_for_auto() -> float:
+    return float(get_runtime_value("min_confidence_for_auto", settings.min_confidence_for_auto))
+
+def _manual_approval_threshold() -> float:
+    return float(get_runtime_value("manual_approval_threshold", settings.manual_approval_threshold))
 
 
 async def _check_correlation_cluster_async(symbol: str) -> list[str]:
@@ -85,7 +97,7 @@ class RiskEngine:
         # Per-profile position size check
         from app.services.asset_profile import get_asset_profile
         asset_profile = get_asset_profile(req.symbol) if req.symbol else None
-        effective_max = asset_profile.max_notional_usd if asset_profile else MAX_POSITION_SIZE_USD
+        effective_max = asset_profile.max_notional_usd if asset_profile else _max_position_size_usd()
         if req.estimated_notional and req.estimated_notional > effective_max:
             reasons.append(
                 f"Order grootte ${req.estimated_notional:.2f} overschrijdt maximum voor {asset_profile.label if asset_profile else 'onbekend'} (${effective_max:.2f})"
@@ -95,11 +107,13 @@ class RiskEngine:
 
         # Confidence check
         if req.confidence is not None:
-            if req.confidence < MANUAL_APPROVAL_THRESHOLD:
-                reasons.append(f"Confidence {req.confidence:.2%} te laag (minimum {MANUAL_APPROVAL_THRESHOLD:.2%})")
+            manual_threshold = _manual_approval_threshold()
+            auto_threshold = _min_confidence_for_auto()
+            if req.confidence < manual_threshold:
+                reasons.append(f"Confidence {req.confidence:.2%} te laag (minimum {manual_threshold:.2%})")
                 approved = False
                 blocked_by = "low_confidence"
-            elif req.confidence < MIN_CONFIDENCE_FOR_AUTO:
+            elif req.confidence < auto_threshold:
                 warnings.append(f"Lage confidence {req.confidence:.2%} - handmatige bevestiging aanbevolen")
                 required_manual = True
 
@@ -125,7 +139,7 @@ class RiskEngine:
             required_manual_approval=required_manual,
             reasons=reasons,
             warnings=warnings,
-            max_position_size=MAX_POSITION_SIZE_USD,
+            max_position_size=_max_position_size_usd(),
             blocked_by_rule=blocked_by,
         )
 
@@ -166,11 +180,11 @@ class RiskEngine:
             "live_trading_enabled": get_runtime_value("live_trading_enabled", settings.live_trading_enabled),
             "kill_switch_enabled": get_runtime_value("kill_switch_enabled", settings.kill_switch_enabled),
             "require_manual_confirmation": get_runtime_value("require_manual_confirmation", settings.require_manual_confirmation),
-            "max_position_size_usd": MAX_POSITION_SIZE_USD,
-            "max_daily_loss_pct": MAX_DAILY_LOSS_PCT,
-            "max_open_positions": MAX_OPEN_POSITIONS,
-            "max_trades_per_day": MAX_TRADES_PER_DAY,
-            "min_confidence_for_auto": MIN_CONFIDENCE_FOR_AUTO,
-            "auto_trade_threshold": 0.55,
+            "max_position_size_usd": _max_position_size_usd(),
+            "max_daily_loss_pct": _max_daily_loss_pct(),
+            "max_open_positions": _max_open_positions(),
+            "max_trades_per_day": _max_trades_per_day(),
+            "min_confidence_for_auto": _min_confidence_for_auto(),
+            "auto_trade_threshold": _min_confidence_for_auto(),
             "position_size_pct": get_runtime_value("position_size_pct", settings.position_size_pct),
         }

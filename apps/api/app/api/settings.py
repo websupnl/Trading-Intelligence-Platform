@@ -16,22 +16,40 @@ _runtime_overrides: dict = {}
 
 
 def _effective_settings():
-    """Get settings with runtime overrides applied."""
-    s = cfg_module.get_settings()
-    return s
+    return cfg_module.get_settings()
 
 
 @router.get("")
 async def get_settings_endpoint():
     s = _effective_settings()
     return {
+        # Toggles
         "trading_mode": get_runtime_value("trading_mode", s.trading_mode),
         "live_trading_enabled": get_runtime_value("live_trading_enabled", s.live_trading_enabled),
         "kill_switch_enabled": get_runtime_value("kill_switch_enabled", s.kill_switch_enabled),
         "require_manual_confirmation": get_runtime_value("require_manual_confirmation", s.require_manual_confirmation),
         "use_mock_data": s.use_mock_data,
+        "crypto_24_7_enabled": is_crypto_24_7_enabled(),
+        "micro_trading_enabled": get_runtime_value("micro_trading_enabled", False),
+        "allow_short_selling": get_runtime_value("allow_short_selling", s.allow_short_selling),
+        # Risk limits
+        "position_size_pct": get_runtime_value("position_size_pct", s.position_size_pct),
+        "max_position_size_usd": get_runtime_value("max_position_size_usd", s.max_position_size_usd),
+        "max_open_positions": int(get_runtime_value("max_open_positions", s.max_open_positions)),
+        "max_trades_per_day": int(get_runtime_value("max_trades_per_day", s.max_trades_per_day)),
+        "max_daily_loss_pct": get_runtime_value("max_daily_loss_pct", s.max_daily_loss_pct),
+        "min_confidence_for_auto": get_runtime_value("min_confidence_for_auto", s.min_confidence_for_auto),
+        "manual_approval_threshold": get_runtime_value("manual_approval_threshold", s.manual_approval_threshold),
+        # AI budget
+        "ai_daily_budget_usd": get_runtime_value("ai_daily_budget_usd", s.ai_daily_budget_usd),
+        # AI model config
         "default_ai_provider": s.default_ai_provider,
         "anthropic_model": s.anthropic_model,
+        "anthropic_analysis_model": s.anthropic_analysis_model,
+        "anthropic_max_tokens": s.anthropic_max_tokens,
+        "anthropic_enable_prompt_caching": s.anthropic_enable_prompt_caching,
+        "anthropic_enable_web_search": s.anthropic_enable_web_search,
+        # Integration status
         "alpaca_configured": s.alpaca_configured,
         "bitvavo_configured": s.bitvavo_configured,
         "anthropic_configured": s.anthropic_configured,
@@ -41,8 +59,6 @@ async def get_settings_endpoint():
         "telegram_configured": s.telegram_configured,
         "news_feed_count": len(s.news_feed_list),
         "crypto_feed_count": len(s.crypto_feed_list),
-        "crypto_24_7_enabled": is_crypto_24_7_enabled(),
-        "micro_trading_enabled": get_runtime_value("micro_trading_enabled", False),
         "runtime_overrides": list(_runtime_overrides.keys()),
     }
 
@@ -51,33 +67,65 @@ async def get_settings_endpoint():
 async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)):
     """
     Toggle runtime settings without restarting.
-    Supported keys: require_manual_confirmation, live_trading_enabled, trading_mode
-    Note: kill_switch is managed via /api/risk/kill-switch endpoints.
+    Bool keys: require_manual_confirmation, live_trading_enabled, crypto_24_7_enabled,
+               micro_trading_enabled, allow_short_selling
+    Numeric keys: position_size_pct, max_position_size_usd, max_daily_loss_pct,
+                  min_confidence_for_auto, manual_approval_threshold, ai_daily_budget_usd,
+                  max_open_positions, max_trades_per_day
+    String keys: trading_mode (paper|live)
     """
     audit = AuditLogService(db)
-    allowed_keys = {"require_manual_confirmation", "live_trading_enabled", "trading_mode", "crypto_24_7_enabled", "micro_trading_enabled"}
-    changed = {}
 
-    invalid = {
-        key: value for key, value in body.items()
-        if (
-            key in {"require_manual_confirmation", "live_trading_enabled", "crypto_24_7_enabled", "micro_trading_enabled"} and not isinstance(value, bool)
-        ) or (
-            key == "trading_mode" and value not in {"paper", "live"}
-        )
+    bool_keys = {
+        "require_manual_confirmation", "live_trading_enabled", "crypto_24_7_enabled",
+        "micro_trading_enabled", "allow_short_selling",
     }
-    if invalid:
-        raise HTTPException(status_code=422, detail={"invalid_runtime_settings": invalid})
+    float_keys = {
+        "position_size_pct", "max_position_size_usd", "max_daily_loss_pct",
+        "min_confidence_for_auto", "manual_approval_threshold", "ai_daily_budget_usd",
+    }
+    int_keys = {"max_open_positions", "max_trades_per_day"}
+    allowed_keys = bool_keys | float_keys | int_keys | {"trading_mode"}
 
+    # Validation
+    invalid: dict = {}
     for key, value in body.items():
         if key not in allowed_keys:
             continue
+        if key in bool_keys and not isinstance(value, bool):
+            invalid[key] = value
+        elif key == "trading_mode" and value not in {"paper", "live"}:
+            invalid[key] = value
+        elif key in float_keys:
+            try:
+                float(value)
+            except (TypeError, ValueError):
+                invalid[key] = value
+        elif key in int_keys:
+            try:
+                int(value)
+            except (TypeError, ValueError):
+                invalid[key] = value
+    if invalid:
+        raise HTTPException(status_code=422, detail={"invalid_runtime_settings": invalid})
+
+    changed = {}
+    for key, value in body.items():
+        if key not in allowed_keys:
+            continue
+        # Coerce numeric types
+        if key in float_keys:
+            value = float(value)
+        elif key in int_keys:
+            value = int(value)
+
         if key == "crypto_24_7_enabled":
             if not set_crypto_24_7(value):
                 raise HTTPException(status_code=503, detail="crypto_24_7_enabled kon niet worden opgeslagen in Redis.")
             _runtime_overrides[key] = value
             changed[key] = value
             continue
+
         if not set_runtime_value(key, value):
             raise HTTPException(
                 status_code=503,
@@ -88,9 +136,6 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
         changed[key] = value
 
     if changed:
-        # Patch the already-cached settings object directly in-process.
-        # Do NOT clear lru_cache — that would create a fresh object from .env.
-        # object.__setattr__ bypasses pydantic's immutability protection.
         s = cfg_module.get_settings()
         for key, value in changed.items():
             try:

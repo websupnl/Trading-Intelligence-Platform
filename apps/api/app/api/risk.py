@@ -32,9 +32,12 @@ async def risk_status():
         "trading_mode": get_runtime_value("trading_mode", s.trading_mode),
         "live_trading_enabled": get_runtime_value("live_trading_enabled", s.live_trading_enabled),
         "require_manual_confirmation": get_runtime_value("require_manual_confirmation", s.require_manual_confirmation),
-        "max_position_size_usd": 10000.0,
-        "max_trades_per_day": 20,
-        "max_open_positions": 10,
+        "max_position_size_usd": get_runtime_value("max_position_size_usd", s.max_position_size_usd),
+        "max_trades_per_day": int(get_runtime_value("max_trades_per_day", s.max_trades_per_day)),
+        "max_open_positions": int(get_runtime_value("max_open_positions", s.max_open_positions)),
+        "max_daily_loss_pct": get_runtime_value("max_daily_loss_pct", s.max_daily_loss_pct),
+        "min_confidence_for_auto": get_runtime_value("min_confidence_for_auto", s.min_confidence_for_auto),
+        "position_size_pct": get_runtime_value("position_size_pct", s.position_size_pct),
         "active_learning_rules": active_rules,
     }
 
