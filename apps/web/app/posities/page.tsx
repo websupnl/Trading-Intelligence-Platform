@@ -4,8 +4,13 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 import { useToast } from '@/contexts/toast';
-import { cn, fmtUSD, fmtPrice, cleanSym } from '@/lib/utils';
+import { fmtUSD, fmtPrice, cleanSym } from '@/lib/utils';
 
+const C = {
+  panel: '#12161c', panel2: '#171c24', line: '#1e2630',
+  text: '#eaeef3', sub: '#7a8694', faint: '#4a5563',
+  up: '#2ebd85', down: '#f6465d', gold: '#f0b90b',
+};
 type Tab = 'open' | 'gesloten' | 'orders';
 
 export default function PositiesPage() {
@@ -22,136 +27,88 @@ export default function PositiesPage() {
   const { data: account } = useApi(() => api.getAccount(), [], { pollIntervalMs: 30000 });
   const { data: orders } = useApi(() => api.getOrders('all'), []);
 
-  const openPositions: any[] = Array.isArray(positions) ? positions : [];
+  const open: any[] = Array.isArray(positions) ? positions : [];
   const allTrades: any[] = Array.isArray(trades) ? trades : [];
-  const closedTrades = allTrades.filter(t => t.status === 'closed');
+  const closed = allTrades.filter(t => t.status === 'closed');
   const allOrders: any[] = Array.isArray(orders) ? orders : [];
 
-  const unrealizedTotal = openPositions.reduce((s, p) => s + parseFloat(p.unrealized_pl || 0), 0);
+  const unrealized = open.reduce((s, p) => s + parseFloat(p.unrealized_pl || 0), 0);
   const totalPnl = (pnl as any)?.total_pnl ?? 0;
   const winRate: number | null = (pnl as any)?.win_rate ?? null;
   const totalTrades = (pnl as any)?.total_trades ?? 0;
   const equity = parseFloat((account as any)?.equity || '0');
 
   async function handleClose(symbol: string) {
-    try {
-      await api.closePosition(symbol);
-      toast(`✅ ${cleanSym(symbol)} gesloten`, 'success');
-      reloadPositions();
-    } catch (e: any) {
-      toast(e?.detail || 'Sluiten mislukt', 'error');
-    }
+    try { await api.closePosition(symbol); toast(`✅ ${cleanSym(symbol)} gesloten`, 'success'); reloadPositions(); }
+    catch (e: any) { toast(e?.detail || 'Sluiten mislukt', 'error'); }
   }
-
   async function handlePlaceOrder() {
     if (!orderSym.trim() || !orderAmount) { toast('Vul ticker en bedrag in', 'error'); return; }
     setPlacing(true);
     try {
-      await api.submitPaperOrder({
-        symbol: orderSym.toUpperCase(),
-        side: orderSide,
-        notional: parseFloat(orderAmount),
-        order_type: 'market',
-      });
+      await api.submitPaperOrder({ symbol: orderSym.toUpperCase(), side: orderSide, notional: parseFloat(orderAmount), order_type: 'market' });
       toast(`${orderSide.toUpperCase()} ${orderSym.toUpperCase()} geplaatst`, 'success');
       setOrderSym(''); setOrderAmount('');
-    } catch (e: any) {
-      toast(e?.detail || 'Order mislukt', 'error');
-    }
+    } catch (e: any) { toast(e?.detail || 'Order mislukt', 'error'); }
     setPlacing(false);
   }
-
   async function handleCancelOrder(alpacaId: string) {
-    try {
-      await api.cancelOrder(alpacaId);
-      toast('Order geannuleerd', 'success');
-    } catch (e: any) {
-      toast(e?.detail || 'Fout', 'error');
-    }
+    try { await api.cancelOrder(alpacaId); toast('Order geannuleerd', 'success'); }
+    catch (e: any) { toast(e?.detail || 'Fout', 'error'); }
   }
 
-  const TABS: { key: Tab; label: string }[] = [
-    { key: 'open', label: `Open (${openPositions.length})` },
-    { key: 'gesloten', label: `Gesloten (${closedTrades.length})` },
-    { key: 'orders', label: `Orders (${allOrders.length})` },
-  ];
+  const TABS: [Tab, string][] = [['open', `Open ${open.length}`], ['gesloten', `Gesloten ${closed.length}`], ['orders', `Orders ${allOrders.length}`]];
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
-
-      {/* Stats */}
+    <div className="mx-auto max-w-2xl space-y-3">
+      {/* Stat strip */}
       <div className="grid grid-cols-4 gap-2">
-        {[
-          { label: 'Portfolio', value: fmtUSD(equity), color: '' },
-          { label: 'Unrealized', value: fmtUSD(unrealizedTotal), color: unrealizedTotal >= 0 ? 'text-green-400' : 'text-red-400' },
-          { label: 'All-time P&L', value: fmtUSD(totalPnl), color: totalPnl >= 0 ? 'text-green-400' : 'text-red-400' },
-          { label: 'Win rate', value: winRate !== null ? `${(winRate * 100).toFixed(0)}%` : '—', color: winRate !== null && winRate >= 0.5 ? 'text-green-400' : 'text-red-400' },
-        ].map(s => (
-          <div key={s.label} className="bg-card border border-border rounded-2xl p-3 text-center">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{s.label}</p>
-            <p className={cn('text-base font-bold font-num', s.color)}>{s.value}</p>
-          </div>
-        ))}
+        <Metric label="Portfolio" value={fmtUSD(equity)} tone={C.text} />
+        <Metric label="Unrealized" value={fmtUSD(unrealized)} tone={unrealized > 0 ? C.up : unrealized < 0 ? C.down : C.text} />
+        <Metric label="All-time" value={fmtUSD(totalPnl)} tone={totalPnl > 0 ? C.up : totalPnl < 0 ? C.down : C.text} />
+        <Metric label="Win rate" value={winRate != null ? `${(winRate * 100).toFixed(0)}%` : '—'} tone={winRate != null && winRate >= 0.5 ? C.up : C.sub} />
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-card border border-border rounded-xl p-1">
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={cn('flex-1 py-2 rounded-lg text-sm font-semibold transition-colors',
-              tab === t.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')}>
-            {t.label}
-          </button>
+      <div className="flex gap-1 rounded-xl p-1" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        {TABS.map(([k, label]) => (
+          <button key={k} onClick={() => setTab(k)} className="flex-1 rounded-lg py-2 text-sm font-semibold"
+            style={{ background: tab === k ? C.panel2 : 'transparent', color: tab === k ? C.text : C.sub,
+                     borderBottom: tab === k ? `2px solid ${C.gold}` : '2px solid transparent' }}>{label}</button>
         ))}
       </div>
 
-      {/* ── Open positions ────────────────────────────────────────────── */}
+      {/* Open positions */}
       {tab === 'open' && (
         <div className="space-y-2">
-          {openPositions.length === 0 && (
-            <Empty text="Geen open posities — de bot is aan het wachten op de juiste kans" />
-          )}
-          {openPositions.map((pos: any) => {
-            const pl = parseFloat(pos.unrealized_pl || '0');
-            const plPct = parseFloat(pos.unrealized_plpc || '0') * 100;
-            const mv = parseFloat(pos.market_value || '0');
-            const entry = parseFloat(pos.avg_entry_price || '0');
-            const current = parseFloat(pos.current_price || '0');
-            const sym = cleanSym(pos.symbol);
+          {open.length === 0 && <Empty text="Geen open posities — de bot wacht op de juiste kans" />}
+          {open.map((p: any) => {
+            const pl = parseFloat(p.unrealized_pl || '0'); const pct = parseFloat(p.unrealized_plpc || '0') * 100;
+            const u = pl >= 0; const sym = cleanSym(p.symbol);
             return (
-              <div key={pos.symbol} className="bg-card border border-border rounded-2xl p-4">
-                <div className="flex items-start justify-between mb-3">
+              <div key={p.symbol} className="rounded-xl p-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+                <div className="mb-3 flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="font-bold text-lg">{sym}</p>
-                      <span className="text-[10px] text-muted-foreground uppercase">{pos.side || 'long'}</span>
+                      <span className="text-lg font-bold" style={{ color: C.text }}>{sym}</span>
+                      <span className="text-[10px] uppercase" style={{ color: C.faint }}>{p.side || 'long'}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground font-num mt-0.5">
-                      {pos.qty} stuks · entry {fmtPrice(entry)} → {fmtPrice(current)}
-                    </p>
+                    <div className="mt-0.5 font-num text-xs" style={{ color: C.sub }}>
+                      {p.qty} @ {fmtPrice(parseFloat(p.avg_entry_price || '0'))} → {fmtPrice(parseFloat(p.current_price || '0'))}
+                    </div>
                   </div>
                   <div className="text-right">
-                    <p className={cn('text-xl font-bold font-num', pl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                      {pl >= 0 ? '+' : ''}{fmtUSD(pl)}
-                    </p>
-                    <p className={cn('text-sm font-num', pl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                      {plPct >= 0 ? '+' : ''}{plPct.toFixed(2)}%
-                    </p>
+                    <div className="font-num text-xl font-bold" style={{ color: u ? C.up : C.down }}>{u ? '+' : ''}{fmtUSD(pl)}</div>
+                    <div className="font-num text-sm" style={{ color: u ? C.up : C.down }}>{u ? '+' : ''}{pct.toFixed(2)}%</div>
                   </div>
                 </div>
-                {/* P&L bar */}
-                <div className="h-1 bg-muted rounded-full overflow-hidden mb-3">
-                  <div
-                    className={cn('h-full rounded-full transition-all', pl >= 0 ? 'bg-green-400' : 'bg-red-400')}
-                    style={{ width: `${Math.min(Math.abs(plPct) * 5, 100)}%` }}
-                  />
+                <div className="mb-3 h-1 overflow-hidden rounded-full" style={{ background: C.line }}>
+                  <div className="h-full rounded-full" style={{ width: `${Math.min(Math.abs(pct) * 5, 100)}%`, background: u ? C.up : C.down }} />
                 </div>
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground font-num">Marktwaarde: {fmtUSD(mv)}</p>
-                  <button onClick={() => handleClose(pos.symbol)}
-                    className="text-xs font-bold text-red-400 border border-red-400/30 hover:bg-red-400/10 px-3 py-1.5 rounded-lg transition-colors">
-                    Sluit positie
-                  </button>
+                  <span className="font-num text-xs" style={{ color: C.sub }}>Marktwaarde {fmtUSD(parseFloat(p.market_value || '0'))}</span>
+                  <button onClick={() => handleClose(p.symbol)} className="rounded-lg px-3 py-1.5 text-xs font-bold"
+                    style={{ background: C.panel2, color: C.down, border: `1px solid ${C.down}44` }}>Sluit positie</button>
                 </div>
               </div>
             );
@@ -159,53 +116,31 @@ export default function PositiesPage() {
         </div>
       )}
 
-      {/* ── Closed trades ─────────────────────────────────────────────── */}
+      {/* Closed trades */}
       {tab === 'gesloten' && (
-        <div className="space-y-3">
-          {/* Summary */}
-          {closedTrades.length > 0 && (
-            <div className="bg-card border border-border rounded-2xl px-4 py-3 flex items-center gap-6">
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Trades</p>
-                <p className="font-bold font-num">{totalTrades}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Win rate</p>
-                <p className={cn('font-bold font-num', winRate !== null && winRate >= 0.5 ? 'text-green-400' : 'text-red-400')}>
-                  {winRate !== null ? `${(winRate * 100).toFixed(0)}%` : '—'}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Totaal P&L</p>
-                <p className={cn('font-bold font-num', totalPnl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                  {totalPnl >= 0 ? '+' : ''}{fmtUSD(totalPnl)}
-                </p>
-              </div>
+        <div className="space-y-2.5">
+          {closed.length > 0 && (
+            <div className="flex items-center gap-6 rounded-xl px-4 py-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+              <Mini label="Trades" value={String(totalTrades)} tone={C.text} />
+              <Mini label="Win rate" value={winRate != null ? `${(winRate * 100).toFixed(0)}%` : '—'} tone={winRate != null && winRate >= 0.5 ? C.up : C.down} />
+              <Mini label="Totaal P&L" value={`${totalPnl >= 0 ? '+' : ''}${fmtUSD(totalPnl)}`} tone={totalPnl >= 0 ? C.up : C.down} />
             </div>
           )}
-
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            {closedTrades.length === 0 && <Empty text="Nog geen gesloten trades" />}
-            {closedTrades.map((t: any) => {
-              const pnlVal = t.pnl ?? 0;
-              const pnlPct = t.pnl_pct ?? 0;
+          <div className="overflow-hidden rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+            {closed.length === 0 && <Empty text="Nog geen gesloten trades" />}
+            {closed.map((t: any) => {
+              const v = t.pnl ?? 0; const pct = t.pnl_pct ?? 0; const u = v >= 0;
               return (
-                <div key={t.id} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-0">
-                  <div className={cn('w-1 h-8 rounded-full shrink-0', pnlVal >= 0 ? 'bg-green-400' : 'bg-red-400')} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-sm">{t.symbol}</p>
-                      <span className="text-[10px] text-muted-foreground uppercase">{t.side} · {t.mode || 'auto'}</span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground truncate">{t.exit_reason?.slice(0, 55)}</p>
+                <div key={t.id} className="flex items-center gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: u ? C.up : C.down }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2"><span className="text-sm font-bold" style={{ color: C.text }}>{t.symbol}</span>
+                      <span className="text-[10px] uppercase" style={{ color: C.faint }}>{t.side} · {t.mode || 'auto'}</span></div>
+                    <div className="truncate text-[11px]" style={{ color: C.sub }}>{t.exit_reason?.slice(0, 55)}</div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className={cn('font-bold text-sm font-num', pnlVal >= 0 ? 'text-green-400' : 'text-red-400')}>
-                      {pnlVal >= 0 ? '+' : ''}{fmtUSD(pnlVal)}
-                    </p>
-                    <p className={cn('text-[11px] font-num', pnlVal >= 0 ? 'text-green-400' : 'text-red-400')}>
-                      {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
-                    </p>
+                  <div className="shrink-0 text-right">
+                    <div className="font-num text-sm font-bold" style={{ color: u ? C.up : C.down }}>{u ? '+' : ''}{fmtUSD(v)}</div>
+                    <div className="font-num text-[11px]" style={{ color: u ? C.up : C.down }}>{u ? '+' : ''}{pct.toFixed(2)}%</div>
                   </div>
                 </div>
               );
@@ -214,59 +149,36 @@ export default function PositiesPage() {
         </div>
       )}
 
-      {/* ── Orders ────────────────────────────────────────────────────── */}
+      {/* Orders */}
       {tab === 'orders' && (
-        <div className="space-y-4">
-          {/* Order form */}
-          <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-            <p className="text-sm font-semibold">Paper order plaatsen</p>
+        <div className="space-y-3">
+          <div className="space-y-3 rounded-2xl p-4" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+            <span className="text-sm font-semibold" style={{ color: C.text }}>Paper order plaatsen</span>
             <div className="grid grid-cols-3 gap-2">
-              <input
-                value={orderSym} onChange={e => setOrderSym(e.target.value.toUpperCase())}
-                placeholder="Ticker (BTC)" maxLength={10}
-                className="bg-muted border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary uppercase"
-              />
+              <input value={orderSym} onChange={e => setOrderSym(e.target.value.toUpperCase())} placeholder="BTC" maxLength={10}
+                className="rounded-lg px-3 py-2.5 text-sm uppercase outline-none" style={{ background: C.panel2, border: `1px solid ${C.line}`, color: C.text }} />
               <select value={orderSide} onChange={e => setOrderSide(e.target.value)}
-                className="bg-muted border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary">
-                <option value="buy">Buy / Long</option>
-                <option value="sell">Sell / Short</option>
+                className="rounded-lg px-3 py-2.5 text-sm outline-none" style={{ background: C.panel2, border: `1px solid ${C.line}`, color: C.text }}>
+                <option value="buy">Buy / Long</option><option value="sell">Sell / Short</option>
               </select>
-              <input
-                value={orderAmount} onChange={e => setOrderAmount(e.target.value)}
-                placeholder="Bedrag ($)" type="number" min="1"
-                className="bg-muted border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
-              />
+              <input value={orderAmount} onChange={e => setOrderAmount(e.target.value)} placeholder="Bedrag $" type="number" min="1"
+                className="rounded-lg px-3 py-2.5 text-sm outline-none" style={{ background: C.panel2, border: `1px solid ${C.line}`, color: C.text }} />
             </div>
-            <button onClick={handlePlaceOrder} disabled={placing}
-              className="w-full h-10 rounded-xl bg-primary text-primary-foreground text-sm font-bold disabled:opacity-50 hover:bg-primary/90 transition-colors">
-              {placing ? '…' : 'Paper order plaatsen'}
-            </button>
+            <button onClick={handlePlaceOrder} disabled={placing} className="h-10 w-full rounded-lg text-sm font-bold disabled:opacity-50"
+              style={{ background: orderSide === 'buy' ? C.up : C.down, color: '#06231a' }}>{placing ? '…' : `${orderSide === 'buy' ? 'Kopen' : 'Verkopen'} (paper)`}</button>
           </div>
 
-          {/* Order history */}
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="overflow-hidden rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
             {allOrders.length === 0 && <Empty text="Geen orders" />}
             {allOrders.slice(0, 30).map((o: any) => (
-              <div key={o.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0">
-                <span className={cn('text-[10px] font-bold uppercase w-8 shrink-0',
-                  o.side === 'buy' ? 'text-green-400' : 'text-red-400')}>
-                  {o.side}
-                </span>
-                <p className="font-bold text-sm w-14">{cleanSym(o.symbol)}</p>
-                <p className="text-xs text-muted-foreground flex-1 font-num">
-                  ${o.notional || o.filled_avg_price || '—'}
-                </p>
-                <span className={cn('text-[10px] font-bold',
-                  o.status === 'filled' ? 'text-green-400' :
-                  o.status === 'canceled' ? 'text-muted-foreground' :
-                  'text-amber-400')}>
-                  {o.status}
-                </span>
+              <div key={o.id} className="flex items-center gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+                <span className="w-8 shrink-0 text-[10px] font-bold uppercase" style={{ color: o.side === 'buy' ? C.up : C.down }}>{o.side}</span>
+                <span className="w-14 text-sm font-bold" style={{ color: C.text }}>{cleanSym(o.symbol)}</span>
+                <span className="flex-1 font-num text-xs" style={{ color: C.sub }}>${o.notional || o.filled_avg_price || '—'}</span>
+                <span className="text-[10px] font-bold" style={{ color: o.status === 'filled' ? C.up : o.status === 'canceled' ? C.faint : C.gold }}>{o.status}</span>
                 {(o.status === 'new' || o.status === 'accepted') && o.alpaca_order_id && (
-                  <button onClick={() => handleCancelOrder(o.alpaca_order_id)}
-                    className="text-[10px] text-red-400 border border-red-400/30 px-2 py-0.5 rounded hover:bg-red-400/10 transition-colors">
-                    Annuleer
-                  </button>
+                  <button onClick={() => handleCancelOrder(o.alpaca_order_id)} className="rounded px-2 py-0.5 text-[10px]"
+                    style={{ color: C.down, border: `1px solid ${C.down}44` }}>Annuleer</button>
                 )}
               </div>
             ))}
@@ -277,8 +189,20 @@ export default function PositiesPage() {
   );
 }
 
-function Empty({ text }: { text: string }) {
+function Metric({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
-    <div className="p-10 text-center text-sm text-muted-foreground">{text}</div>
+    <div className="rounded-xl p-3 text-center" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>{label}</div>
+      <div className="mt-1 font-num text-[15px] font-bold" style={{ color: tone }}>{value}</div>
+    </div>
   );
+}
+function Mini({ label, value, tone }: { label: string; value: string; tone: string }) {
+  return (
+    <div><div className="text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>{label}</div>
+      <div className="font-num text-sm font-bold" style={{ color: tone }}>{value}</div></div>
+  );
+}
+function Empty({ text }: { text: string }) {
+  return <div className="p-10 text-center text-sm" style={{ color: C.faint }}>{text}</div>;
 }
