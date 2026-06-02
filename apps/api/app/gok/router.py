@@ -1,7 +1,10 @@
 import asyncio
+import json
 import logging
+import random
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -206,3 +209,39 @@ async def backtest(req: BacktestRequest):
     except Exception as e:
         logger.error(f"Backtest fout: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _sse(event_type: str, data: dict) -> str:
+    return f"data: {json.dumps({**data, 'type': event_type})}\n\n"
+
+
+_GOK_POOL = ["DOGE", "SOL", "AVAX", "LINK", "UNI", "AAVE", "LTC", "BCH", "ALGO"]
+
+
+@router.get("/think")
+async def gok_think(asset: str | None = Query(None), bankroll: float = Query(100.0)):
+    """Stream the Meridian brain live for a speculative bet (SSE).
+
+    One call = one full reasoning run: research → web search → thinking →
+    conviction → AI-chosen stake → bet/pass. Each step is an SSE event.
+    """
+    from app.services.meridian_brain import gamble_stream
+
+    chosen = (asset or random.choice(_GOK_POOL)).upper()
+
+    async def gen():
+        yield _sse("start", {"asset": chosen, "bankroll": bankroll})
+        try:
+            async for ev in gamble_stream(chosen, None, bankroll):
+                etype = ev.get("type") or ("phase" if "phase" in ev else "event")
+                yield _sse(etype, ev)
+        except Exception as e:
+            logger.exception("gok_think fout: %s", e)
+            yield _sse("error", {"message": str(e)[:200]})
+        yield _sse("done", {})
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
