@@ -133,6 +133,7 @@ async def conviction_signal(asset: str, price: float | None, memory: str = "") -
     sources: list[dict] = []
     decision: dict | None = None
     cost = 0.0
+    tin = tout = tcr = tcc = 0
 
     try:
         for _ in range(_MAX_ROUNDS):
@@ -143,6 +144,11 @@ async def conviction_signal(asset: str, price: float | None, memory: str = "") -
                 messages=messages,
             )
             cost += _cost(model, resp.usage)
+            u = resp.usage
+            tin += getattr(u, "input_tokens", 0) or 0
+            tout += getattr(u, "output_tokens", 0) or 0
+            tcr += getattr(u, "cache_read_input_tokens", 0) or 0
+            tcc += getattr(u, "cache_creation_input_tokens", 0) or 0
             for block in resp.content:
                 bt = getattr(block, "type", "")
                 if bt == "web_search_tool_result":
@@ -166,6 +172,7 @@ async def conviction_signal(asset: str, price: float | None, memory: str = "") -
     decision["sources"] = sources[:8]
     decision["cost_usd"] = round(cost, 6)
     decision["model"] = model
+    decision["_usage"] = {"input": tin, "output": tout, "cache_read": tcr, "cache_creation": tcc}
     return decision
 
 
@@ -185,65 +192,93 @@ async def run_brain_signals(max_assets: int = 4, min_confidence: int = 60) -> di
     from app.services.ai_guard import is_ai_paused, get_daily_spend_usd, _get_daily_budget
     from app.services.market_data_service import MarketDataService
 
+    import redis as _redis
+    from app.models.token_usage import TokenUsage
+
     summary: dict = {"analyzed": 0, "created": 0, "skipped": [], "cost_usd": 0.0}
     if is_ai_paused():
         summary["paused"] = True
         return summary
 
-    budget = _get_daily_budget()
-    spent = await get_daily_spend_usd()
-    md = MarketDataService()
-    done = 0
+    # Lock: only one brain-signals run at a time (prevents overlap + double spend).
+    lock = _redis.from_url(get_settings().redis_url, socket_connect_timeout=2)
+    try:
+        got_lock = lock.set("meridian:brain_signals:lock", "1", nx=True, ex=1200)
+    except Exception:
+        got_lock = True  # if Redis is down, don't block the run
+    if not got_lock:
+        summary["locked"] = True
+        return summary
 
-    async with AsyncSessionLocal() as db:
-        for base in _BRAIN_WATCHLIST:
-            if done >= max_assets:
-                break
-            if budget > 0 and (spent + summary["cost_usd"]) >= budget:
-                summary["budget_hit"] = True
-                break
-            # Cooldown: skip assets that already have a pending signal.
-            exists = (await db.execute(
-                select(Signal).where(Signal.asset == base, Signal.status == "pending").limit(1)
-            )).scalar_one_or_none()
-            if exists:
-                continue
+    try:
+        budget = _get_daily_budget()
+        spent = await get_daily_spend_usd()
+        md = MarketDataService()
+        done = 0
 
-            try:
-                candles = await md.get_candles(f"{base}/USD", "15Min", 1)
-                price = float(candles[-1].close) if candles else None
-            except Exception:
-                price = None
+        async with AsyncSessionLocal() as db:
+            for base in _BRAIN_WATCHLIST:
+                if done >= max_assets:
+                    break
+                if budget > 0 and (spent + summary["cost_usd"]) >= budget:
+                    summary["budget_hit"] = True
+                    break
+                # Cooldown: skip assets that already have a pending signal.
+                exists = (await db.execute(
+                    select(Signal).where(Signal.asset == base, Signal.status == "pending").limit(1)
+                )).scalar_one_or_none()
+                if exists:
+                    continue
 
-            dec = await conviction_signal(base, price)
-            summary["analyzed"] += 1
-            summary["cost_usd"] += dec.get("cost_usd", 0.0)
-            done += 1
+                try:
+                    candles = await md.get_candles(f"{base}/USD", "15Min", 1)
+                    price = float(candles[-1].close) if candles else None
+                except Exception:
+                    price = None
 
-            if dec.get("direction") == "buy" and int(dec.get("confidence") or 0) >= min_confidence:
-                db.add(Signal(
-                    asset=base, direction="buy", timeframe="swing",
-                    reason=dec.get("thesis"),
-                    confidence=int(dec.get("confidence") or 0) / 100.0,
-                    suggested_entry=dec.get("suggested_entry"),
-                    suggested_stop=dec.get("suggested_stop"),
-                    suggested_take_profit=dec.get("suggested_take_profit"),
-                    risk_reward=dec.get("risk_reward"),
-                    status="pending",
-                    ai_analysis={
-                        "engine": "meridian_brain",
-                        "conviction": dec.get("confidence"),
-                        "catalyst": dec.get("catalyst"),
-                        "key_risk": dec.get("key_risk"),
-                        "sources": dec.get("sources"),
-                        "model": dec.get("model"),
-                    },
-                    expires_at=datetime.now(timezone.utc) + timedelta(hours=4),
+                dec = await conviction_signal(base, price)
+                summary["analyzed"] += 1
+                summary["cost_usd"] += dec.get("cost_usd", 0.0)
+                done += 1
+
+                # Record spend so the daily budget guard accounts for it.
+                us = dec.get("_usage", {}) or {}
+                db.add(TokenUsage(
+                    model=dec.get("model", "claude-sonnet-4-6"), call_type="brain_signal",
+                    input_tokens=us.get("input", 0), output_tokens=us.get("output", 0),
+                    cache_read_tokens=us.get("cache_read", 0), cache_creation_tokens=us.get("cache_creation", 0),
+                    estimated_cost_usd=dec.get("cost_usd", 0.0),
                 ))
-                summary["created"] += 1
-            else:
-                summary["skipped"].append(base)
-        await db.commit()
+
+                if dec.get("direction") == "buy" and int(dec.get("confidence") or 0) >= min_confidence:
+                    db.add(Signal(
+                        asset=base, direction="buy", timeframe="swing",
+                        reason=dec.get("thesis"),
+                        confidence=int(dec.get("confidence") or 0) / 100.0,
+                        suggested_entry=dec.get("suggested_entry"),
+                        suggested_stop=dec.get("suggested_stop"),
+                        suggested_take_profit=dec.get("suggested_take_profit"),
+                        risk_reward=dec.get("risk_reward"),
+                        status="pending",
+                        ai_analysis={
+                            "engine": "meridian_brain",
+                            "conviction": dec.get("confidence"),
+                            "catalyst": dec.get("catalyst"),
+                            "key_risk": dec.get("key_risk"),
+                            "sources": dec.get("sources"),
+                            "model": dec.get("model"),
+                        },
+                        expires_at=datetime.now(timezone.utc) + timedelta(hours=4),
+                    ))
+                    summary["created"] += 1
+                else:
+                    summary["skipped"].append(base)
+                await db.commit()  # incremental: persist cost + signal per asset
+    finally:
+        try:
+            lock.delete("meridian:brain_signals:lock")
+        except Exception:
+            pass
 
     summary["cost_usd"] = round(summary["cost_usd"], 4)
     return summary
