@@ -100,7 +100,7 @@ export function Sidebar() {
       </aside>
 
       {/* ── Mobile bottom nav ────────────────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-md border-t border-border flex z-50 bottom-nav">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border flex z-50 bottom-nav">
         {mobileNav.map(({ href, label, icon: Icon }) => {
           const active = href === '/' ? pathname === '/' : pathname.startsWith(href);
           return (

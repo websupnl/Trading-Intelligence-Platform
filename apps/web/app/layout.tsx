@@ -5,11 +5,16 @@ import { TopBar } from '@/components/layout/TopBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { PinGate } from '@/components/auth/PinGate';
 import { ToastProvider } from '@/contexts/toast';
+import { RegisterSW } from '@/components/pwa/RegisterSW';
 
 export const metadata: Metadata = {
   title: 'Trading OS',
   description: 'Autonome trading intelligence platform',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/apple-touch-icon.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -34,7 +39,8 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="nl">
-      <body className="flex flex-col h-screen overflow-hidden bg-background text-foreground pt-safe">
+      <body className="flex flex-col h-[100dvh] overflow-hidden bg-background text-foreground pt-safe">
+        <RegisterSW />
         <PinGate>
           <ToastProvider>
             <TopBar />

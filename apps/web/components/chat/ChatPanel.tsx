@@ -191,7 +191,7 @@ export function ChatPanel() {
   };
 
   return (
-    <div className="fixed right-4 z-[60] flex flex-col items-end gap-2 chat-float-pos">
+    <div className="fixed right-4 z-[60] hidden md:flex flex-col items-end gap-2 chat-float-pos">
       {open && (
         <div className="w-[min(92vw,420px)] h-[min(70vh,560px)] bg-card border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
           {/* Header */}
