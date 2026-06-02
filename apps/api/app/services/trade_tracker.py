@@ -5,7 +5,7 @@ writes AI reflections, and stores MemoryEntries for learning.
 import logging
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 import anthropic
 from app.services.token_tracker import usage_record, flush_usage
@@ -128,6 +128,50 @@ class TradeTrackerService:
             logger.info(f"TradeTracker: {closed} trades gesloten en bijgewerkt")
 
         return closed
+
+    async def reconcile_open_positions(self) -> int:
+        """Close DB trades the broker no longer holds — kills phantom positions.
+
+        The old sync only closed trades via matching fills, so when Alpaca
+        positions disappeared (e.g. account reset) the DB kept showing them as
+        open. This compares DB open trades against the broker's CURRENT
+        positions and closes any that no longer exist. A 5-minute age guard
+        prevents racing freshly opened positions that Alpaca hasn't surfaced yet.
+        """
+        if not self.settings.alpaca_configured:
+            return 0
+        from app.services.alpaca_broker import AlpacaBroker
+        try:
+            positions = await AlpacaBroker().get_positions()
+        except Exception as e:
+            logger.error(f"Posities ophalen voor reconciliatie mislukt: {e}")
+            return 0  # never reconcile on a failed fetch — would wrongly close real trades
+
+        def _base(sym: str) -> str:
+            return (sym or "").upper().replace("/", "").replace("USD", "").strip()
+
+        held = {_base(p.get("symbol", "")) for p in positions}
+        now = datetime.now(timezone.utc)
+        reconciled = 0
+        async with AsyncSessionLocal() as db:
+            open_trades = (await db.execute(select(Trade).where(Trade.status == "open"))).scalars().all()
+            for t in open_trades:
+                opened = t.opened_at
+                if opened is not None and opened.tzinfo is None:
+                    opened = opened.replace(tzinfo=timezone.utc)
+                if opened is not None and (now - opened) < timedelta(minutes=5):
+                    continue  # too fresh — give the broker time to reflect it
+                if _base(t.symbol) not in held:
+                    t.status = "closed"
+                    t.exit_reason = "reconciled_no_broker_position"
+                    t.closed_at = now
+                    if t.pnl is None:
+                        t.pnl = 0.0
+                    reconciled += 1
+            if reconciled:
+                await db.commit()
+                logger.warning(f"Reconciliatie: {reconciled} spookposities gesloten (niet meer bij broker)")
+        return reconciled
 
     async def sync_open_trades_from_orders(self) -> int:
         """

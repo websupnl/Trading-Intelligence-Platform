@@ -216,8 +216,10 @@ def sync_closed_trades():
         created = asyncio.run(svc.sync_open_trades_from_orders())
         # Then close any that are now closed
         closed = asyncio.run(svc.sync_closed_trades())
-        logger.info(f"Trade sync: {created} nieuw aangemaakt, {closed} gesloten met P&L")
-        return {"status": "ok", "created": created, "closed": closed}
+        # Finally reconcile against the broker's CURRENT positions (kills phantoms)
+        reconciled = asyncio.run(svc.reconcile_open_positions())
+        logger.info(f"Trade sync: {created} nieuw, {closed} gesloten, {reconciled} spook-reconciled")
+        return {"status": "ok", "created": created, "closed": closed, "reconciled": reconciled}
     except Exception as e:
         logger.error(f"Trade sync fout: {e}")
         return {"status": "error", "message": str(e)}

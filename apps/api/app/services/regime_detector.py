@@ -293,10 +293,11 @@ async def detect_oracle_regime(*, persist: bool = True) -> dict[str, Any]:
 
     set_runtime_value(ORACLE_REGIME_KEY, state)
 
-    # Keep existing downstream sizing logic in sync.
-    legacy = {"risk_on": "bull", "risk_off": "bear", "crisis": "bear", "chop": "ranging"}[regime]
-    set_runtime_value("market_regime", legacy)
-    set_runtime_value("market_regime_updated_at", now.isoformat())
+    # NOTE: the Oracle regime is SPY/stocks-driven and must NOT overwrite the
+    # crypto-facing `market_regime` key — doing so told the crypto signal
+    # generator "bull, be more aggressive" while crypto sat in extreme fear.
+    # The crypto `market_regime` is now owned solely by market_regime.py
+    # (BTC-based). The Oracle state lives under ORACLE_REGIME_KEY for display.
 
     if persist:
         async with AsyncSessionLocal() as db:
