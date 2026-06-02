@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { cn, fmtUSD, cleanSym } from '@/lib/utils';
 import { useSSE } from '@/hooks/useSSE';
 import { useApi } from '@/hooks/useApi';
@@ -253,7 +253,18 @@ export default function LivePage() {
     });
   }, [signals, signalMap, filter, prices]);
 
+  const detailRef = useRef<HTMLDivElement | null>(null);
+  // Eager-load every visible market on mount so the table fills immediately,
+  // instead of trickling in over the SSE cycle (or only on click).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { ALL.forEach((s) => loadCandles(s)); }, []);
   useEffect(() => { if (selected) loadCandles(selected); }, [selected, loadCandles]);
+  // On mobile, jump straight to the chart when a market is picked.
+  useEffect(() => {
+    if (selected && typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
+      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [selected]);
 
   async function doTrade(id: string) {
     setActing(id);
@@ -328,7 +339,7 @@ export default function LivePage() {
         </div>
 
         {/* Detail + lower tabs */}
-        <div className="flex flex-col" style={{ background: C.bg }}>
+        <div ref={detailRef} className="flex flex-col scroll-mt-16" style={{ background: C.bg }}>
           <Detail sym={sel} price={prices[sel]} candles={candles[sel] ?? []} signal={signalMap[sel]}
             onClose={() => setSelected(null)} onTrade={doTrade} onReject={doReject} acting={acting} />
 
