@@ -56,3 +56,18 @@ def generate_scalp_signals():
     except Exception as e:
         logger.error(f"Scalp signal generatie fout: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@celery_app.task(name="app.tasks.signal_tasks.generate_brain_signals")
+def generate_brain_signals():
+    """Web-researched conviction signals via het Meridian-brein (catalysts/geruchten via web search)."""
+    from app.services.meridian_brain import run_brain_signals
+    try:
+        result = asyncio.run(run_brain_signals())
+        logger.info(f"Brein-signalen: {result}")
+        if result.get("created", 0) > 0:
+            celery_app.send_task("app.tasks.analysis_tasks.auto_trade")
+        return {"status": "ok", **result}
+    except Exception as e:
+        logger.error(f"Brein-signalen fout: {e}")
+        return {"status": "error", "message": str(e)}

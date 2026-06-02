@@ -69,6 +69,185 @@ SUBMIT_BET_TOOL = {
 _WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 _WEB_FETCH = {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 3}
 
+# ── Signal brain (non-streaming, for the regular signal pipeline) ────────────
+SIGNAL_DOCTRINE = """\
+Je bent een long-only crypto trading-analist. Je edge is het vinden van een
+ECHTE, nabije katalysator die de markt nog niet volledig heeft ingeprijsd.
+
+Onderzoek de huidige situatie met web search: vers nieuws, geruchten, aankomende
+events (listings, unlocks, upgrades, ETF/regulatory, partnerships), sentiment.
+Citeer wat je vindt — geen verzonnen katalysatoren.
+
+Regels:
+- Geen concrete katalysator of edge binnen uren-tot-dagen → SKIP. SKIP is in ~75%
+  van de gevallen het juiste antwoord; idle cash is prima.
+- Long-only: een bearish view = SKIP, geen short.
+- confidence 0-100. Alleen BUY bij duidelijke edge én R/R >= 1.5.
+- Bij BUY: entry rond de huidige prijs, een stop waar je thesis fout is, en een
+  target met R/R >= 1.5. Stop en target verplicht.
+
+Doe je research, redeneer, en roep dan EXACT ÉÉN keer submit_signal aan.
+"""
+
+SUBMIT_SIGNAL_TOOL = {
+    "name": "submit_signal",
+    "description": "Leg je definitieve signaal-beslissing vast. Roep exact één keer aan.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "direction": {"type": "string", "enum": ["buy", "skip"]},
+            "confidence": {"type": "integer"},
+            "thesis": {"type": "string"},
+            "catalyst": {"type": "string"},
+            "suggested_entry": {"type": ["number", "null"]},
+            "suggested_stop": {"type": ["number", "null"]},
+            "suggested_take_profit": {"type": ["number", "null"]},
+            "risk_reward": {"type": ["number", "null"]},
+            "key_risk": {"type": "string"},
+        },
+        "required": ["direction", "confidence", "thesis", "key_risk"],
+    },
+}
+
+_MAX_ROUNDS = 6
+
+
+async def conviction_signal(asset: str, price: float | None, memory: str = "") -> dict:
+    """Deep, web-researched conviction call for one asset. Non-streaming.
+    Returns a dict with the structured signal decision + sources + cost_usd."""
+    s = get_settings()
+    if not s.anthropic_api_key:
+        return {"direction": "skip", "confidence": 0, "thesis": "Geen API key", "cost_usd": 0.0, "sources": []}
+
+    client = anthropic.AsyncAnthropic(api_key=s.anthropic_api_key)
+    model = "claude-sonnet-4-6"
+    system = [{"type": "text", "text": SIGNAL_DOCTRINE, "cache_control": {"type": "ephemeral"}}]
+    if memory:
+        system.append({"type": "text", "text": memory, "cache_control": {"type": "ephemeral"}})
+    dossier = (
+        f"ASSET: {asset}\nHuidige prijs: {price if price is not None else 'zoek zelf op'}\n\n"
+        f"Onderzoek of er nú een long-setup met een nabije katalysator in {asset} zit. "
+        f"Beslis buy of skip; bij buy geef entry, stop en target (R/R >= 1.5)."
+    )
+    messages = [{"role": "user", "content": dossier}]
+    sources: list[dict] = []
+    decision: dict | None = None
+    cost = 0.0
+
+    try:
+        for _ in range(_MAX_ROUNDS):
+            resp = await client.messages.create(
+                model=model, max_tokens=4000, system=system,
+                tools=[_WEB_SEARCH, _WEB_FETCH, SUBMIT_SIGNAL_TOOL],
+                thinking={"type": "adaptive"},
+                messages=messages,
+            )
+            cost += _cost(model, resp.usage)
+            for block in resp.content:
+                bt = getattr(block, "type", "")
+                if bt == "web_search_tool_result":
+                    for r in (getattr(block, "content", None) or []):
+                        if getattr(r, "url", None):
+                            sources.append({"url": r.url, "title": getattr(r, "title", "") or ""})
+                elif bt == "tool_use" and getattr(block, "name", "") == "submit_signal":
+                    decision = dict(block.input)
+            if decision is not None:
+                break
+            if resp.stop_reason == "pause_turn":
+                messages.append({"role": "assistant", "content": resp.content})
+                continue
+            break
+    except Exception as exc:
+        logger.warning("conviction_signal %s fout: %s", asset, exc)
+        return {"direction": "skip", "confidence": 0, "thesis": f"fout: {exc}"[:200], "cost_usd": round(cost, 6), "sources": sources}
+
+    if decision is None:
+        decision = {"direction": "skip", "confidence": 0, "thesis": "Geen beslissing."}
+    decision["sources"] = sources[:8]
+    decision["cost_usd"] = round(cost, 6)
+    decision["model"] = model
+    return decision
+
+
+_BRAIN_WATCHLIST = ["BTC", "ETH", "SOL", "LINK", "DOGE", "AVAX", "UNI", "AAVE"]
+
+
+async def run_brain_signals(max_assets: int = 4, min_confidence: int = 60) -> dict:
+    """Run the conviction brain over the watchlist and save buy-signals.
+
+    Budget-guarded and capped per run so web-search costs stay bounded. Each
+    saved signal carries the web-researched thesis, catalyst and sources.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models.signals import Signal
+    from app.services.ai_guard import is_ai_paused, get_daily_spend_usd, _get_daily_budget
+    from app.services.market_data_service import MarketDataService
+
+    summary: dict = {"analyzed": 0, "created": 0, "skipped": [], "cost_usd": 0.0}
+    if is_ai_paused():
+        summary["paused"] = True
+        return summary
+
+    budget = _get_daily_budget()
+    spent = await get_daily_spend_usd()
+    md = MarketDataService()
+    done = 0
+
+    async with AsyncSessionLocal() as db:
+        for base in _BRAIN_WATCHLIST:
+            if done >= max_assets:
+                break
+            if budget > 0 and (spent + summary["cost_usd"]) >= budget:
+                summary["budget_hit"] = True
+                break
+            # Cooldown: skip assets that already have a pending signal.
+            exists = (await db.execute(
+                select(Signal).where(Signal.asset == base, Signal.status == "pending").limit(1)
+            )).scalar_one_or_none()
+            if exists:
+                continue
+
+            try:
+                candles = await md.get_candles(f"{base}/USD", "15Min", 1)
+                price = float(candles[-1].close) if candles else None
+            except Exception:
+                price = None
+
+            dec = await conviction_signal(base, price)
+            summary["analyzed"] += 1
+            summary["cost_usd"] += dec.get("cost_usd", 0.0)
+            done += 1
+
+            if dec.get("direction") == "buy" and int(dec.get("confidence") or 0) >= min_confidence:
+                db.add(Signal(
+                    asset=base, direction="buy", timeframe="swing",
+                    reason=dec.get("thesis"),
+                    confidence=int(dec.get("confidence") or 0) / 100.0,
+                    suggested_entry=dec.get("suggested_entry"),
+                    suggested_stop=dec.get("suggested_stop"),
+                    suggested_take_profit=dec.get("suggested_take_profit"),
+                    risk_reward=dec.get("risk_reward"),
+                    status="pending",
+                    ai_analysis={
+                        "engine": "meridian_brain",
+                        "conviction": dec.get("confidence"),
+                        "catalyst": dec.get("catalyst"),
+                        "key_risk": dec.get("key_risk"),
+                        "sources": dec.get("sources"),
+                        "model": dec.get("model"),
+                    },
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=4),
+                ))
+                summary["created"] += 1
+            else:
+                summary["skipped"].append(base)
+        await db.commit()
+
+    summary["cost_usd"] = round(summary["cost_usd"], 4)
+    return summary
+
 
 def _cost(model: str, usage) -> float:
     pin, pout = _PRICES.get(model, _PRICES["claude-sonnet-4-6"])

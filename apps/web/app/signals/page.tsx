@@ -29,12 +29,14 @@ export default function SignalsPage() {
   const withDebate = all.filter(s => s.bull_case || s.bear_case);
   const regime: string = (status as any)?.market_regime || 'unknown';
 
-  async function generate(type: 'swing' | 'scalp') {
+  async function generate(type: 'swing' | 'scalp' | 'brain') {
     setGenerating(true);
+    const task = { swing: 'generate_signals', scalp: 'generate_scalp_signals', brain: 'generate_brain_signals' }[type];
+    const label = { swing: 'Swing', scalp: 'Scalp', brain: 'Brein (web research)' }[type];
     try {
-      await api.triggerTask(type === 'swing' ? 'generate_signals' : 'generate_scalp_signals');
-      toast(`${type === 'swing' ? 'Swing' : 'Scalp'} signalen worden gegenereerd…`, 'info');
-      setTimeout(reload, 10000);
+      await api.triggerTask(task);
+      toast(`${label} signalen worden gegenereerd…`, 'info');
+      setTimeout(reload, type === 'brain' ? 30000 : 10000);
     } catch (e: any) { toast(e?.detail || 'Genereren mislukt', 'error'); }
     setGenerating(false);
   }
@@ -66,7 +68,10 @@ export default function SignalsPage() {
             style={{ background: C.panel2, color: C.sub, border: `1px solid ${C.line}` }}>Scalp</button>
           <button onClick={() => generate('swing')} disabled={generating}
             className="h-8 rounded-lg px-3 text-xs font-bold disabled:opacity-50"
-            style={{ background: C.gold, color: '#221a00' }}>{generating ? '…' : '⚡ Swing'}</button>
+            style={{ background: C.panel2, color: C.sub, border: `1px solid ${C.line}` }}>Swing</button>
+          <button onClick={() => generate('brain')} disabled={generating}
+            className="h-8 rounded-lg px-3 text-xs font-bold disabled:opacity-50"
+            style={{ background: C.gold, color: '#221a00' }}>{generating ? '…' : '🧠 Brein'}</button>
         </div>
       </div>
 

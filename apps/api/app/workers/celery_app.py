@@ -75,6 +75,11 @@ celery_app.conf.update(
             "task": "app.tasks.signal_tasks.generate_scalp_signals",
             "schedule": 900.0,
         },
+        # Brain signals: web-researched conviction per asset, hourly (budget-guarded, capped)
+        "generate-brain-signals-hourly": {
+            "task": "app.tasks.signal_tasks.generate_brain_signals",
+            "schedule": 3600.0,
+        },
         # Every 2 min: fallback sweep for any unexecuted pending signals
         "auto-trade-every-2min": {
             "task": "app.tasks.analysis_tasks.auto_trade",

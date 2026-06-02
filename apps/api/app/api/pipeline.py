@@ -78,6 +78,14 @@ TASK_REGISTRY = {
         "schedule_label": "Elke 5 min",
         "category": "trading",
     },
+    "generate_brain_signals": {
+        "name": "app.tasks.signal_tasks.generate_brain_signals",
+        "label": "Brein Signalen (web research)",
+        "description": "Meridian-brein: web search naar verse catalysts/geruchten + conviction per asset",
+        "schedule_sec": 3600,
+        "schedule_label": "Elk uur",
+        "category": "ai",
+    },
     "auto_trade": {
         "name": "app.tasks.analysis_tasks.auto_trade",
         "label": "Auto Trader",
