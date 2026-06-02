@@ -3,13 +3,19 @@
 import { api } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 import { useToast } from '@/contexts/toast';
-import { cn, fmtUSD, cleanSym } from '@/lib/utils';
+import { fmtUSD, cleanSym } from '@/lib/utils';
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, Dice5, Shield, Activity, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, Dice5, Shield, Activity, Zap, ChevronRight, Power } from 'lucide-react';
+
+// Shared exchange palette (matches /live)
+const C = {
+  panel: '#12161c', panel2: '#171c24', line: '#1e2630',
+  text: '#eaeef3', sub: '#7a8694', faint: '#4a5563',
+  up: '#2ebd85', down: '#f6465d', gold: '#f0b90b',
+};
 
 export default function DashboardPage() {
   const { toast } = useToast();
-
   const { data: account } = useApi(() => api.getAccount(), [], { pollIntervalMs: 30000 });
   const { data: pnl } = useApi(() => api.getPnlSummary(), [], { pollIntervalMs: 60000 });
   const { data: positions } = useApi(() => api.getPositions(), [], { pollIntervalMs: 20000 });
@@ -26,9 +32,7 @@ export default function DashboardPage() {
   const dayPnlPct = lastEquity > 0 ? (dayPnl / lastEquity) * 100 : 0;
 
   const openPositions: any[] = Array.isArray(positions) ? positions : [];
-  const pendingSignals = (Array.isArray(signals) ? signals as any[] : []).filter(
-    (s: any) => !s.status || s.status === 'pending'
-  );
+  const pendingSignals = (Array.isArray(signals) ? signals as any[] : []).filter((s: any) => !s.status || s.status === 'pending');
 
   const killSwitch = !!(status as any)?.kill_switch_enabled;
   const aiPaused = !!(botHealth as any)?.ai_guard?.paused;
@@ -40,218 +44,161 @@ export default function DashboardPage() {
   const aiSpend: number = (aiUsage as any)?.today_usd ?? 0;
   const roi = aiSpend > 0 ? totalPnl / aiSpend : null;
   const unrealizedTotal = openPositions.reduce((s, p) => s + parseFloat(p.unrealized_pl || 0), 0);
-
   const recentTrades: any[] = Array.isArray(trades) ? trades : [];
-  const recentLogs: any[] = Array.isArray(auditLogs) ? (auditLogs as any[]).slice(0, 15) : [];
+  const recentLogs: any[] = Array.isArray(auditLogs) ? (auditLogs as any[]).slice(0, 12) : [];
 
   async function toggleKillSwitch() {
     try {
-      if (killSwitch) {
-        await api.disableKillSwitch();
-        toast('Kill switch uitgeschakeld — bot kan handelen', 'success');
-      } else {
-        await api.enableKillSwitch();
-        toast('Kill switch AAN — alle handel gestopt', 'warning');
-      }
-    } catch (e: any) {
-      toast(e?.detail || 'Fout', 'error');
-    }
+      if (killSwitch) { await api.disableKillSwitch(); toast('Kill switch uit — bot kan handelen', 'success'); }
+      else { await api.enableKillSwitch(); toast('Kill switch AAN — handel gestopt', 'warning'); }
+    } catch (e: any) { toast(e?.detail || 'Fout', 'error'); }
   }
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-4">
+  const statusColor = botActive ? C.up : killSwitch ? C.down : C.gold;
+  const statusLabel = botActive ? 'Bot actief' : killSwitch ? 'Kill switch' : 'Gepauzeerd';
+  const up = dayPnl >= 0;
 
+  return (
+    <div className="mx-auto max-w-2xl space-y-3">
       {/* Portfolio hero */}
-      <div className="bg-card border border-border rounded-2xl p-5">
-        <div className="flex items-start justify-between gap-4">
+      <div className="rounded-2xl p-5" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+        <div className="flex items-start justify-between">
           <div>
-            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Portfolio</p>
-            <p className="text-4xl font-bold font-num">{fmtUSD(equity)}</p>
-            <div className="flex items-center gap-2 mt-1.5">
-              {dayPnl >= 0
-                ? <TrendingUp size={13} className="text-green-400" />
-                : <TrendingDown size={13} className="text-red-400" />}
-              <span className={cn('text-sm font-bold font-num', dayPnl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                {dayPnl >= 0 ? '+' : ''}{fmtUSD(dayPnl)} ({dayPnlPct >= 0 ? '+' : ''}{dayPnlPct.toFixed(2)}%)
+            <span className="text-[11px] uppercase tracking-wider" style={{ color: C.sub }}>Portfolio</span>
+            <div className="mt-1 font-num text-[34px] font-bold leading-none" style={{ color: C.text }}>{fmtUSD(equity)}</div>
+            <div className="mt-2 flex items-center gap-1.5">
+              {up ? <TrendingUp size={14} style={{ color: C.up }} /> : <TrendingDown size={14} style={{ color: C.down }} />}
+              <span className="font-num text-sm font-semibold" style={{ color: up ? C.up : C.down }}>
+                {up ? '+' : ''}{fmtUSD(dayPnl)} ({up ? '+' : ''}{dayPnlPct.toFixed(2)}%)
               </span>
-              <span className="text-xs text-muted-foreground">vandaag</span>
+              <span className="text-xs" style={{ color: C.faint }}>vandaag</span>
             </div>
           </div>
-          <div className="text-right shrink-0">
-            <span className={cn(
-              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border',
-              botActive ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-              killSwitch ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-              'bg-amber-500/10 text-amber-400 border-amber-500/20'
-            )}>
-              <span className={cn('w-1.5 h-1.5 rounded-full',
-                botActive ? 'bg-green-400 animate-pulse' : killSwitch ? 'bg-red-400' : 'bg-amber-400')} />
-              {botActive ? 'Bot actief' : killSwitch ? 'Kill switch' : 'Gepauzeerd'}
-            </span>
-            <p className="text-xs text-muted-foreground mt-2">
-              All-time: <span className={cn('font-bold font-num', totalPnl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                {totalPnl >= 0 ? '+' : ''}{fmtUSD(totalPnl)}
-              </span>
-            </p>
-            {winRate !== null && (
-              <p className="text-xs text-muted-foreground">
-                Win rate: <span className="font-bold">{(winRate * 100).toFixed(0)}%</span>
-              </p>
-            )}
-          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold"
+            style={{ background: statusColor + '1a', color: statusColor }}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: statusColor }} />
+            {statusLabel}
+          </span>
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
-        <Link href="/posities">
-          <StatCard label="Open posities" value={openPositions.length.toString()}
-            sub={unrealizedTotal !== 0 ? `${unrealizedTotal >= 0 ? '+' : ''}${fmtUSD(unrealizedTotal)}` : 'Geen open'}
-            subColor={unrealizedTotal >= 0 ? 'green' : 'red'} />
-        </Link>
-        <Link href="/signals">
-          <StatCard label="Signalen" value={pendingSignals.length.toString()}
-            sub={pendingSignals.length > 0 ? 'Wachten' : 'Niets pending'}
-            subColor={pendingSignals.length > 0 ? 'amber' : 'muted'} />
-        </Link>
-        <StatCard label="AI ROI"
-          value={roi !== null ? `${roi.toFixed(1)}×` : '—'}
-          sub={`$${aiSpend.toFixed(2)} AI kosten`}
-          subColor={roi !== null && roi > 1 ? 'green' : 'muted'} />
+      {/* Metric grid */}
+      <div className="grid grid-cols-3 gap-2">
+        <Metric label="Open P&L" value={fmtUSD(unrealizedTotal)} tone={unrealizedTotal > 0 ? C.up : unrealizedTotal < 0 ? C.down : C.text} href="/posities" />
+        <Metric label="All-time" value={fmtUSD(totalPnl)} tone={totalPnl > 0 ? C.up : totalPnl < 0 ? C.down : C.text} />
+        <Metric label="Win rate" value={winRate != null ? `${(winRate * 100).toFixed(0)}%` : '—'} tone={C.text} />
+        <Metric label="Posities" value={String(openPositions.length)} tone={C.text} href="/posities" />
+        <Metric label="Signalen" value={String(pendingSignals.length)} tone={pendingSignals.length ? C.gold : C.sub} href="/signals" />
+        <Metric label="AI ROI" value={roi != null ? `${roi.toFixed(1)}×` : '—'} sub={`$${aiSpend.toFixed(2)}`} tone={roi != null && roi > 1 ? C.up : C.sub} />
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-2 gap-3">
-        <Link href="/gok"
-          className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center gap-3 hover:bg-amber-500/15 transition-colors">
-          <Dice5 size={22} className="text-amber-400 shrink-0" />
-          <div>
-            <p className="font-bold text-sm">Gok Modus</p>
-            <p className="text-xs text-muted-foreground">AI-gedreven speculatieve bet</p>
-          </div>
+      {/* Actions */}
+      <div className="grid grid-cols-2 gap-2">
+        <Link href="/gok" className="flex items-center gap-3 rounded-xl p-3.5 transition-colors"
+          style={{ background: C.gold + '14', border: `1px solid ${C.gold}33` }}>
+          <Dice5 size={20} style={{ color: C.gold }} />
+          <div><div className="text-sm font-semibold" style={{ color: C.text }}>Gok Modus</div>
+            <div className="text-[11px]" style={{ color: C.sub }}>Speculatieve bet</div></div>
         </Link>
-        <button onClick={toggleKillSwitch}
-          className={cn(
-            'rounded-2xl p-4 flex items-center gap-3 transition-colors text-left w-full',
-            killSwitch
-              ? 'bg-green-500/10 border border-green-500/20 hover:bg-green-500/15'
-              : 'bg-red-500/10 border border-red-500/20 hover:bg-red-500/15'
-          )}>
-          <Shield size={22} className={cn('shrink-0', killSwitch ? 'text-green-400' : 'text-red-400')} />
-          <div>
-            <p className="font-bold text-sm">{killSwitch ? 'Handel hervatten' : 'Kill switch'}</p>
-            <p className="text-xs text-muted-foreground">{killSwitch ? 'Kill switch staat aan' : 'Alles direct stoppen'}</p>
-          </div>
+        <button onClick={toggleKillSwitch} className="flex items-center gap-3 rounded-xl p-3.5 text-left transition-colors"
+          style={{ background: (killSwitch ? C.up : C.down) + '14', border: `1px solid ${(killSwitch ? C.up : C.down)}33` }}>
+          {killSwitch ? <Power size={20} style={{ color: C.up }} /> : <Shield size={20} style={{ color: C.down }} />}
+          <div><div className="text-sm font-semibold" style={{ color: C.text }}>{killSwitch ? 'Hervatten' : 'Kill switch'}</div>
+            <div className="text-[11px]" style={{ color: C.sub }}>{killSwitch ? 'Handel weer aan' : 'Alles stoppen'}</div></div>
         </button>
       </div>
 
-      {/* Pending signals alert */}
+      {/* Pending signals banner */}
       {pendingSignals.length > 0 && (
-        <Link href="/signals"
-          className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-2xl p-4 hover:bg-primary/10 transition-colors">
-          <Zap size={18} className="text-primary shrink-0" />
+        <Link href="/signals" className="flex items-center gap-3 rounded-xl p-3.5"
+          style={{ background: C.gold + '10', border: `1px solid ${C.gold}33` }}>
+          <Zap size={18} style={{ color: C.gold }} />
           <div className="flex-1">
-            <p className="text-sm font-bold">{pendingSignals.length} signaal{pendingSignals.length !== 1 ? 'en' : ''} wachten</p>
-            <p className="text-xs text-muted-foreground">
-              {pendingSignals.slice(0, 3).map((s: any) => s.asset || s.symbol).join(' · ')}
-              {pendingSignals.length > 3 ? ` +${pendingSignals.length - 3}` : ''}
-            </p>
+            <div className="text-sm font-semibold" style={{ color: C.text }}>{pendingSignals.length} signaal{pendingSignals.length !== 1 ? 'en' : ''} wachten</div>
+            <div className="text-[11px]" style={{ color: C.sub }}>{pendingSignals.slice(0, 4).map((s: any) => s.asset || s.symbol).join(' · ')}{pendingSignals.length > 4 ? ` +${pendingSignals.length - 4}` : ''}</div>
           </div>
-          <span className="text-xs text-primary font-bold">Bekijk →</span>
+          <ChevronRight size={16} style={{ color: C.sub }} />
         </Link>
       )}
 
-      {/* Open positions preview */}
+      {/* Open positions */}
       {openPositions.length > 0 && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <p className="text-sm font-semibold">Open posities</p>
-            <Link href="/posities" className="text-xs text-primary hover:underline">Alle →</Link>
-          </div>
-          {openPositions.slice(0, 5).map((pos: any) => {
-            const pl = parseFloat(pos.unrealized_pl || '0');
-            const plPct = parseFloat(pos.unrealized_plpc || '0') * 100;
+        <Panel title="Open posities" href="/posities">
+          {openPositions.slice(0, 6).map((p: any) => {
+            const pl = parseFloat(p.unrealized_pl || '0'); const pct = parseFloat(p.unrealized_plpc || '0') * 100; const u = pl >= 0;
             return (
-              <div key={pos.symbol} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0">
-                <p className="font-bold text-sm w-16">{cleanSym(pos.symbol)}</p>
-                <p className="text-xs text-muted-foreground font-num flex-1">{fmtUSD(parseFloat(pos.market_value || '0'))}</p>
-                <p className={cn('text-sm font-bold font-num', pl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                  {pl >= 0 ? '+' : ''}{fmtUSD(pl)}
-                </p>
-                <p className={cn('text-xs font-num w-12 text-right', pl >= 0 ? 'text-green-400' : 'text-red-400')}>
-                  {plPct >= 0 ? '+' : ''}{plPct.toFixed(2)}%
-                </p>
-              </div>
+              <Row key={p.symbol}>
+                <span className="w-16 text-[13px] font-semibold" style={{ color: C.text }}>{cleanSym(p.symbol)}</span>
+                <span className="flex-1 font-num text-[11px]" style={{ color: C.sub }}>{fmtUSD(parseFloat(p.market_value || '0'))}</span>
+                <span className="font-num text-[13px] font-semibold" style={{ color: u ? C.up : C.down }}>{u ? '+' : ''}{fmtUSD(pl)}</span>
+                <span className="w-14 text-right font-num text-[11px]" style={{ color: u ? C.up : C.down }}>{u ? '+' : ''}{pct.toFixed(2)}%</span>
+              </Row>
             );
           })}
-        </div>
+        </Panel>
       )}
 
       {/* Recent trades */}
       {recentTrades.length > 0 && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <p className="text-sm font-semibold">Recente trades</p>
-            <Link href="/posities" className="text-xs text-primary hover:underline">Alle →</Link>
-          </div>
+        <Panel title="Recente trades" href="/posities">
           {recentTrades.map((t: any) => {
-            const pnlVal = t.pnl ?? 0;
+            const v = t.pnl ?? 0; const u = v >= 0;
             return (
-              <div key={t.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-0">
-                <div className={cn('w-1 h-6 rounded-full shrink-0', pnlVal >= 0 ? 'bg-green-400' : 'bg-red-400')} />
-                <p className="font-bold text-sm w-14">{t.symbol}</p>
-                <p className="text-xs text-muted-foreground flex-1 truncate">{t.exit_reason?.slice(0, 45) || t.side}</p>
-                <p className={cn('text-sm font-bold font-num shrink-0', pnlVal >= 0 ? 'text-green-400' : 'text-red-400')}>
-                  {pnlVal >= 0 ? '+' : ''}{fmtUSD(pnlVal)}
-                </p>
-              </div>
+              <Row key={t.id}>
+                <span className="h-5 w-1 shrink-0 rounded-full" style={{ background: u ? C.up : C.down }} />
+                <span className="w-14 text-[13px] font-semibold" style={{ color: C.text }}>{t.symbol}</span>
+                <span className="flex-1 truncate text-[11px]" style={{ color: C.sub }}>{t.exit_reason?.slice(0, 40) || t.side}</span>
+                <span className="font-num text-[13px] font-semibold" style={{ color: u ? C.up : C.down }}>{u ? '+' : ''}{fmtUSD(v)}</span>
+              </Row>
             );
           })}
-        </div>
+        </Panel>
       )}
 
-      {/* Bot activiteit */}
+      {/* Activity */}
       {recentLogs.length > 0 && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-            <Activity size={14} className="text-muted-foreground" />
-            <p className="text-sm font-semibold">Bot activiteit</p>
-          </div>
-          <div className="divide-y divide-border max-h-64 overflow-y-auto">
+        <Panel title="Bot activiteit" icon={<Activity size={13} style={{ color: C.sub }} />}>
+          <div className="max-h-64 overflow-y-auto">
             {recentLogs.map((log: any) => (
-              <div key={log.id} className="px-4 py-2 flex items-start gap-3">
-                <span className="text-[10px] text-muted-foreground font-num shrink-0 mt-0.5 tabular-nums w-10">
+              <Row key={log.id}>
+                <span className="w-10 shrink-0 font-num text-[10px]" style={{ color: C.faint }}>
                   {new Date(log.created_at).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}
                 </span>
-                <p className="flex-1 text-xs leading-snug truncate">{log.message || log.action}</p>
-                <span className={cn('text-[9px] font-bold shrink-0 uppercase',
-                  log.status === 'success' ? 'text-green-400' :
-                  log.status === 'error' ? 'text-red-400' : 'text-muted-foreground')}>
-                  {log.status}
-                </span>
-              </div>
+                <span className="flex-1 truncate text-[12px]" style={{ color: C.text }}>{log.message || log.action}</span>
+                <span className="shrink-0 text-[9px] font-bold uppercase"
+                  style={{ color: log.status === 'success' ? C.up : log.status === 'error' ? C.down : C.faint }}>{log.status}</span>
+              </Row>
             ))}
           </div>
-        </div>
+        </Panel>
       )}
     </div>
   );
 }
 
-function StatCard({ label, value, sub, subColor = 'muted' }: {
-  label: string; value: string; sub: string; subColor?: string;
-}) {
-  return (
-    <div className="bg-card border border-border rounded-2xl p-3.5 text-center hover:border-primary/30 transition-colors h-full">
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-2xl font-bold font-num">{value}</p>
-      <p className={cn('text-[11px] mt-1 font-medium truncate',
-        subColor === 'green' ? 'text-green-400' :
-        subColor === 'red' ? 'text-red-400' :
-        subColor === 'amber' ? 'text-amber-400' :
-        'text-muted-foreground')}>
-        {sub}
-      </p>
+function Metric({ label, value, sub, tone, href }: { label: string; value: string; sub?: string; tone: string; href?: string }) {
+  const inner = (
+    <div className="rounded-xl p-3" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="text-[10px] uppercase tracking-wide" style={{ color: C.sub }}>{label}</div>
+      <div className="mt-1 font-num text-base font-bold leading-none" style={{ color: tone }}>{value}</div>
+      {sub && <div className="mt-0.5 font-num text-[10px]" style={{ color: C.faint }}>{sub}</div>}
     </div>
   );
+  return href ? <Link href={href}>{inner}</Link> : inner;
+}
+
+function Panel({ title, href, icon, children }: { title: string; href?: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-2xl" style={{ background: C.panel, border: `1px solid ${C.line}` }}>
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex items-center gap-2"><span className="text-sm font-semibold" style={{ color: C.text }}>{title}</span>{icon}</div>
+        {href && <Link href={href} className="text-[11px]" style={{ color: C.gold }}>Alle →</Link>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Row({ children }: { children: React.ReactNode }) {
+  return <div className="flex items-center gap-3 px-4 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>{children}</div>;
 }
