@@ -140,6 +140,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  xscraper:
+    build:
+      context: ./apps/xscraper
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql+psycopg://${POSTGRES_USER:-trading_os}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-trading_os}
+      - X_AUTH_TOKEN=${X_AUTH_TOKEN:-}
+      - X_CT0=${X_CT0:-}
+      - X_SCRAPE_INTERVAL_SEC=${X_SCRAPE_INTERVAL_SEC:-1800}
+      - X_MIN_FAVES=${X_MIN_FAVES:-50}
+      - X_SEARCH_QUERIES=${X_SEARCH_QUERIES:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   web:
     build:
       context: ./apps/web

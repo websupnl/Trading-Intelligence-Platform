@@ -30,7 +30,6 @@ async def get_settings_endpoint():
         "require_manual_confirmation": get_runtime_value("require_manual_confirmation", s.require_manual_confirmation),
         "use_mock_data": s.use_mock_data,
         "crypto_24_7_enabled": is_crypto_24_7_enabled(),
-        "micro_trading_enabled": get_runtime_value("micro_trading_enabled", False),
         "allow_short_selling": get_runtime_value("allow_short_selling", s.allow_short_selling),
         # Risk limits
         "position_size_pct": get_runtime_value("position_size_pct", s.position_size_pct),
@@ -68,7 +67,7 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
     """
     Toggle runtime settings without restarting.
     Bool keys: require_manual_confirmation, live_trading_enabled, crypto_24_7_enabled,
-               micro_trading_enabled, allow_short_selling
+               allow_short_selling
     Numeric keys: position_size_pct, max_position_size_usd, max_daily_loss_pct,
                   min_confidence_for_auto, manual_approval_threshold, ai_daily_budget_usd,
                   max_open_positions, max_trades_per_day
@@ -78,7 +77,7 @@ async def update_runtime_settings(body: dict, db: AsyncSession = Depends(get_db)
 
     bool_keys = {
         "require_manual_confirmation", "live_trading_enabled", "crypto_24_7_enabled",
-        "micro_trading_enabled", "allow_short_selling",
+        "allow_short_selling",
     }
     float_keys = {
         "position_size_pct", "max_position_size_usd", "max_daily_loss_pct",

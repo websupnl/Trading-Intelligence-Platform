@@ -266,33 +266,6 @@ def run_gok_scan():
         return {"status": "error", "message": str(e)}
 
 
-@celery_app.task(name="app.tasks.analysis_tasks.run_micro_trader")
-def run_micro_trader():
-    """Rule-based micro trader — scans for 15min setups, executes without AI. Crypto only."""
-    from app.services.micro_trader import MicroTraderService
-    try:
-        svc = MicroTraderService()
-        count = asyncio.run(svc.run_cycle())
-        if count:
-            logger.info(f"Micro trader: {count} trades uitgevoerd")
-        return {"status": "ok", "executed": count}
-    except Exception as e:
-        logger.error(f"Micro trader fout: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@celery_app.task(name="app.tasks.analysis_tasks.run_micro_monitor")
-def run_micro_monitor():
-    """Fast SL/TP monitor for micro trades — runs every 10 seconds."""
-    from app.services.micro_trader import MicroTraderService
-    try:
-        svc = MicroTraderService()
-        count = asyncio.run(svc.run_micro_monitor())
-        return {"status": "ok", "closed": count}
-    except Exception as e:
-        logger.error(f"Micro monitor fout: {e}")
-        return {"status": "error", "message": str(e)}
-
 
 @celery_app.task(name="app.tasks.analysis_tasks.refresh_market_regime")
 def refresh_market_regime():

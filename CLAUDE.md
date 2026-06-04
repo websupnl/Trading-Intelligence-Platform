@@ -47,7 +47,6 @@ apps/
         market_data_service.py  Alpaca + Bitvavo prijzen, candles, batch fetch
         risk_engine.py          Risk checks, correlatie clusters
         gok_session.py          Gok sessie: scan + execute (auto-execute bij score >= 0.75)
-        micro_trader.py         Rule-based scalper (BOUNCE/BREAKOUT/SQUEEZE)
         market_regime.py        Bull/bear/ranging detectie → Redis 1h TTL
         asset_universe.py       CRYPTO_CORE, CRYPTO_SPECULATIVE, STOCKS_FOCUS
         asset_profile.py        Per-tier risk parameters (confidence, sizing, max hold)
@@ -60,7 +59,10 @@ apps/
         rss_service.py          Nieuws ingestie: Alpaca News → CryptoPanic → CoinGecko → RSS
         news_analyzer.py        Claude-haiku analyse: sentiment, impact, gok_opportunity flag
         telegram_monitor_service.py  Scrape publieke Telegram kanalen (t.me/s/)
-        x_monitor_service.py    X/Twitter hoog-engagement tweets via bearer token
+        x_monitor_service.py    X/Twitter via bearer token (legacy, gratis tier ~nutteloos)
+  xscraper/                     LOSSE service: X via Playwright + GraphQL intercept
+    scraper.py                  Cookie-auth, intercept SearchTimeline/UserTweets → social_posts
+    Dockerfile                  Op officiële Playwright-image (Chromium preinstalled)
       models/                   SQLAlchemy ORM modellen
       tasks/                    Celery tasks (signal, news, analysis, social, telegram)
       workers/celery_app.py     Beat schedule
@@ -107,18 +109,16 @@ DOGE, AVAX, LINK, AAVE, UNI, ALGO, BAT, CRV, MKR, SUSHI, YFI, XTZ
 - Positie: **12% van equity** (max $1200)
 - Max hold: **12 uur**
 
-### 4. Gok sessie (apart)
+### 4. Gok sessie (apart) — de opportunity-finder
 - Max **2 per dag**, max **1 tegelijk**
 - TP: **+15%**, SL: **-5%**, max hold: **4 uur**
-- AI scant nieuws + social + TA momentum
+- AI scant nieuws + social + TA momentum, scoort op conviction (news+social+TA)
 - Mode: `gok` in Trade tabel
 
-### 5. Micro trading (rule-based, geen AI)
-- Assets: BTC, ETH, SOL, DOGE, AVAX, LINK
-- 3 setups: BOUNCE (RSI<38), BREAKOUT (EMA20 + volume), SQUEEZE (BB)
-- Max **4 tegelijk**, max daily loss **3%**
-- Elke **20 sec** cycle, monitor elke **10 sec**
-- Toggle via UI (Settings → Micro Trading)
+> **Micro/scalp-trading is verwijderd.** Bij €1000 startkapitaal eet spread+slippage
+> de marges op (break-even tot negatief). Filosofie: weinig high-conviction kansen i.p.v.
+> veel microtrades. Verwijderd: `micro_trader.py`, `generate_scalp_signals`, de
+> `micro_trading_enabled` toggle en de scalp-beat-tasks.
 
 ---
 

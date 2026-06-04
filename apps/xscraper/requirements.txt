@@ -1,0 +1,4 @@
+# playwright-package gepind op de base-image browser-versie (chromium-1148 = 1.49.x).
+# Browsers zelf zitten al in de image onder /ms-playwright (PLAYWRIGHT_BROWSERS_PATH).
+playwright==1.49.0
+psycopg[binary]>=3.2.0

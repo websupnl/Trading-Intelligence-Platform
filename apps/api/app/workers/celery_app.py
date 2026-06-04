@@ -70,11 +70,6 @@ celery_app.conf.update(
             "task": "app.tasks.signal_tasks.generate_signals",
             "schedule": 600.0,
         },
-        # Scalp signals: 15min chart analysis every 15 min (crypto 24/7) — was 5min, 3x too expensive
-        "generate-scalp-signals-every-5min": {
-            "task": "app.tasks.signal_tasks.generate_scalp_signals",
-            "schedule": 900.0,
-        },
         # Brain signals: web-researched conviction per asset, hourly (budget-guarded, capped)
         "generate-brain-signals-hourly": {
             "task": "app.tasks.signal_tasks.generate_brain_signals",

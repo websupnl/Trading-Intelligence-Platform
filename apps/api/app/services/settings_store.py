@@ -17,7 +17,6 @@ RUNTIME_SETTING_KEYS = {
     "trading_mode",
     "position_size_pct",
     "max_daily_loss_pct",
-    "micro_trading_enabled",
 }
 
 

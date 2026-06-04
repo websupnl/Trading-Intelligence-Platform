@@ -217,13 +217,6 @@ export default function SettingsPage() {
                 loading={saving === 'crypto_24_7_enabled'}
               />
               <Toggle
-                label="Micro Trading"
-                value={settings.micro_trading_enabled}
-                description="Rule-based scalping op 15m candles (geen AI)"
-                onToggle={() => toggle('micro_trading_enabled', settings.micro_trading_enabled)}
-                loading={saving === 'micro_trading_enabled'}
-              />
-              <Toggle
                 label="Short Selling"
                 value={settings.allow_short_selling}
                 description="Sta verkoop-posities toe (standaard uit)"
