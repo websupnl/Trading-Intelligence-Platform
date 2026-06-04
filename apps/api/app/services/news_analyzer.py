@@ -14,6 +14,66 @@ from app.services.ai_guard import is_ai_paused, is_ai_failure, pause_ai, check_d
 
 logger = logging.getLogger(__name__)
 
+# ── Bron-betrouwbaarheid & ruisfilter (bespaart AI-calls: rotzooi gaat NIET naar Claude) ──
+# Hoog-betrouwbare bronnen: news hiervan gaat altijd door de AI-analyse.
+TRUSTED_SOURCES = {
+    "reuters", "bloomberg", "coindesk", "cointelegraph", "the block", "theblock",
+    "decrypt", "cnbc", "wall street journal", "wsj", "financial times", "ft",
+    "sec", "sec.gov", "associated press", "ap news", "marketwatch", "barron",
+    "forbes", "yahoo finance", "the information", "axios", "alpaca", "coingecko",
+    "cryptopanic", "businesswire", "globenewswire", "prnewswire", "seeking alpha",
+}
+
+# Titels die (bijna) nooit actionable zijn → direct als noise markeren, geen AI.
+_NOISE_TITLE_RE = re.compile(
+    r"(?i)\b("
+    r"price prediction|prijsvoorspelling|top \d+|best .{0,30}\bto buy\b|"
+    r"how to|what is|explained|beginners? guide|sponsored|giveaway|"
+    r"airdrop|casino|promo code|discount|deal of the day|"
+    r"here'?s why .{0,40}could|these \d+ (coins|stocks)|"
+    r"could (explode|soar|moon|10x|100x)|"
+    r"sponsored content|advertorial"
+    r")\b"
+)
+# Pure prijsrecap zonder oorzaak → noise (markt-ruis).
+_PRICE_RECAP_RE = re.compile(
+    r"(?i)^[^,]{0,40}\b(rises?|jumps?|falls?|drops?|surges?|plunges?|soars?|tanks?|"
+    r"gains?|sinks?|climbs?|slips?|rallies|up|down)\b.{0,30}\b(\d+%|today|this week|"
+    r"vandaag|deze week)\b"
+)
+
+
+def _source_trusted(source: str) -> bool:
+    s = (source or "").lower()
+    return any(t in s for t in TRUSTED_SOURCES)
+
+
+def _prefilter_news(items: list) -> tuple[list, list]:
+    """Splits items in (worthy → naar AI, junk → markeer noise zonder AI).
+
+    Doel: bron checken + slechte berichten eruit → minder AI-kosten, betere kwaliteit.
+    Conservatief: alleen duidelijke rotzooi wordt geweerd zodat we geen echt nieuws missen.
+    """
+    worthy, junk = [], []
+    for item in items:
+        title = (item.title or "").strip()
+        trusted = _source_trusted(item.source or "")
+        is_junk = False
+        reason = ""
+        if len(title) < 15:
+            is_junk, reason = True, "Titel te kort/leeg"
+        elif _NOISE_TITLE_RE.search(title):
+            is_junk, reason = True, "Clickbait/guide/promo-patroon"
+        elif not trusted and _PRICE_RECAP_RE.search(title):
+            is_junk, reason = True, "Prijsrecap van niet-vertrouwde bron"
+        if is_junk:
+            item._prefilter_reason = reason
+            junk.append(item)
+        else:
+            worthy.append(item)
+    return worthy, junk
+
+
 ANALYSIS_SYSTEM_PROMPT = """Je bent een nieuwsanalist voor een crypto & aandelen trading systeem.
 
 KERNREGEL: Filter ruis maar mis geen actionable informatie. Voor crypto is de lat lager dan voor aandelen — de markt reageert sneller en heviger.
@@ -109,7 +169,7 @@ JSON formaat:
 }}"""
 
 
-SOCIAL_SYSTEM_PROMPT = """Je analyseert social media posts (Reddit) voor trading signaal-extractie. Je bent zeer kritisch: social hype is meestal een contra-indicator, geen signaal.
+SOCIAL_SYSTEM_PROMPT = """Je analyseert social media posts (Reddit + X/Twitter) voor trading signaal-extractie. Je bent zeer kritisch: social hype is meestal een contra-indicator, geen signaal. Op X weegt engagement (likes/retweets) en of de auteur een bekende/credibele stem is mee.
 
 DEFAULT MINDSET
 - is_noise=true tenzij bewezen anders. Verwacht is_noise>=70% van posts.
@@ -143,8 +203,7 @@ Geef ALLEEN geldig JSON. Geen uitleg eromheen."""
 
 SOCIAL_PROMPT = """Klassificeer deze post.
 
-Subreddit: r/{subreddit}
-Auteur: {author} | Score: {score} | Comments: {comments}
+{source_label}
 Inhoud: {content}
 
 JSON formaat:
@@ -237,6 +296,25 @@ class NewsAnalyzerService:
         if not items:
             return 0
 
+        # Bron-check + ruisfilter VÓÓR de AI → bespaart kosten, betere kwaliteit.
+        worthy, junk = _prefilter_news(items)
+        if junk:
+            async with AsyncSessionLocal() as db:
+                for j in junk:
+                    res = await db.execute(select(NewsItem).where(NewsItem.id == j.id))
+                    dbj = res.scalar_one_or_none()
+                    if dbj:
+                        dbj.ai_analyzed = True
+                        dbj.status = "noise"
+                        dbj.impact_score = 1.0
+                        dbj.ai_analysis = {"skipped": True, "prefiltered": True,
+                                           "reason": getattr(j, "_prefilter_reason", "prefilter")}
+                await db.commit()
+            logger.info("News pre-filter: %s items als noise (geen AI-call)", len(junk))
+        items = worthy
+        if not items:
+            return 0
+
         client = self._get_client()
         analyzed = 0
 
@@ -263,15 +341,18 @@ class NewsAnalyzerService:
                         await flush_usage(db, [usage_record(self.settings.anthropic_model, "news_analysis", resp.usage)])
                         await db.commit()
                         tickers_str = ", ".join(db_item.tickers or []) or "geen ticker"
-                        if (
-                            not analysis.get("is_noise")
-                            and float(analysis.get("impact_score", 0)) >= 8
-                            and analysis.get("urgency") == "high"
-                        ):
+                        _impact = float(analysis.get("impact_score", 0))
+                        _high = analysis.get("urgency") == "high"
+                        # Actiever: vuurt bij echt zwaar nieuws (>=8) OF relevant+urgent (>=7 & high).
+                        if not analysis.get("is_noise") and (_impact >= 8 or (_impact >= 7 and _high)):
+                            _icon = "🚨" if _impact >= 8 else "📰"
+                            _sent = "📈" if analysis.get("sentiment") == "bullish" else ("📉" if analysis.get("sentiment") == "bearish" else "•")
                             await NotificationService(db).send(
                                 "high_impact_news",
-                                f"📰 Breaking nieuws: {tickers_str}",
-                                f"{db_item.source}\n\n{db_item.title[:400]}",
+                                f"{_icon} Breaking: {tickers_str}",
+                                f"{_sent} {db_item.title[:300]}\n\nBron: {db_item.source} | "
+                                f"Impact {_impact:.0f}/10 | {analysis.get('urgency','?')}\n"
+                                f"{analysis.get('trading_implication','')[:200]}",
                                 severity="warning",
                                 entity_type="news",
                                 entity_id=db_item.id,
@@ -418,11 +499,12 @@ class NewsAnalyzerService:
         return analyzed
 
     def _analyze_social_item(self, client, item: SocialPost) -> tuple[dict, any]:
+        if (item.platform or "").lower() == "x":
+            source_label = f"Platform: X/Twitter | @{item.author or 'onbekend'} | Likes: {item.score or 0}"
+        else:
+            source_label = f"Subreddit: r/{item.subreddit or 'unknown'} | u/{item.author or 'unknown'} | Score: {item.score or 0} | Comments: {item.num_comments or 0}"
         user_prompt = SOCIAL_PROMPT.format(
-            subreddit=item.subreddit or "unknown",
-            author=item.author or "unknown",
-            score=item.score or 0,
-            comments=item.num_comments or 0,
+            source_label=source_label,
             content=item.content[:600],
         )
         response = client.messages.create(

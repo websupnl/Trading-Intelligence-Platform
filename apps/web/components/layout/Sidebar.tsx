@@ -5,30 +5,27 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, TrendingUp, Zap, Dice5, Rss,
-  Brain, MonitorPlay, Settings, LogOut, MoreHorizontal, X, Activity, Eye, ScrollText,
+  Brain, Settings, LogOut, MoreHorizontal, X, ScrollText,
 } from 'lucide-react';
 import { api, clearPin } from '@/lib/api';
 import { useApi } from '@/hooks/useApi';
 
-// Core screens first (redesigned), dan secundair, dan instellingen.
+// Gefocust op het doel: nieuws/X-gedreven opportunity-bot. Feed staat centraal.
 const nav = [
   { href: '/',              label: 'Dashboard',    icon: LayoutDashboard },
-  { href: '/live',          label: 'Live',         icon: MonitorPlay },
+  { href: '/feed',          label: 'Feed',         icon: Rss },
   { href: '/signals',       label: 'Signalen',     icon: Zap },
   { href: '/posities',      label: 'Posities',     icon: TrendingUp },
   { href: '/gok',           label: 'Gok',          icon: Dice5 },
-  { href: '/oracle',        label: 'Oracle',       icon: Eye },
   { href: '/ai',            label: 'AI Brein',     icon: Brain },
-  { href: '/feed',          label: 'Feed',         icon: Rss },
-  { href: '/regime',        label: 'Regime',       icon: Activity },
   { href: '/activity-log',  label: 'Logs',         icon: ScrollText },
   { href: '/settings',      label: 'Instellingen', icon: Settings },
 ];
 
-// Mobiele onderbalk: de 4 kernschermen + "Meer".
+// Mobiele onderbalk: 4 kernschermen + "Meer".
 const mobileNav = [
   { href: '/',         label: 'Home',     icon: LayoutDashboard },
-  { href: '/live',     label: 'Live',     icon: MonitorPlay },
+  { href: '/feed',     label: 'Feed',     icon: Rss },
   { href: '/signals',  label: 'Signalen', icon: Zap },
   { href: '/posities', label: 'Posities', icon: TrendingUp },
 ];
@@ -36,10 +33,7 @@ const mobileNav = [
 // Rest in de "Meer"-drawer.
 const moreNav = [
   { href: '/gok',           label: 'Gok',          icon: Dice5 },
-  { href: '/oracle',        label: 'Oracle',       icon: Eye },
   { href: '/ai',            label: 'AI Brein',     icon: Brain },
-  { href: '/feed',          label: 'Feed',         icon: Rss },
-  { href: '/regime',        label: 'Regime',       icon: Activity },
   { href: '/activity-log',  label: 'Logs',         icon: ScrollText },
   { href: '/settings',      label: 'Instellingen', icon: Settings },
 ];
